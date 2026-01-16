@@ -1,16 +1,17 @@
 """SQLite caching for API responses and watchlist storage."""
 
 import json
+import os
 import sqlite3
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-# Default cache location
-CACHE_DIR = Path.home() / ".tradfi"
-CACHE_DB = CACHE_DIR / "cache.db"
-CONFIG_FILE = CACHE_DIR / "config.json"
+# Default cache location - supports environment variable overrides for cloud deployment
+CACHE_DIR = Path(os.environ.get("TRADFI_DATA_DIR", str(Path.home() / ".tradfi")))
+CACHE_DB = Path(os.environ.get("TRADFI_DB_PATH", str(CACHE_DIR / "cache.db")))
+CONFIG_FILE = Path(os.environ.get("TRADFI_CONFIG_PATH", str(CACHE_DIR / "config.json")))
 
 # Default settings
 DEFAULT_CACHE_TTL = 30 * 60  # 30 minutes
