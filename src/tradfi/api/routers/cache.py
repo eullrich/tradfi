@@ -13,7 +13,7 @@ async def get_stats():
     """Get cache statistics."""
     stats = get_cache_stats()
     return CacheStatsSchema(
-        total=stats["total"],
+        total=stats["total_cached"],
         fresh=stats["fresh"],
         stale=stats["stale"],
     )
