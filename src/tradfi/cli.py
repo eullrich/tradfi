@@ -42,6 +42,31 @@ def ui() -> None:
     run_tui()
 
 
+@app.command()
+def api(
+    host: str = typer.Option("0.0.0.0", "--host", "-h", help="Host to bind to"),
+    port: int = typer.Option(8000, "--port", "-p", help="Port to bind to"),
+    reload: bool = typer.Option(False, "--reload", "-r", help="Enable auto-reload"),
+) -> None:
+    """
+    Start the REST API server.
+
+    The API provides endpoints for stock analysis, screening, and list management.
+    Visit http://localhost:8000/docs for interactive API documentation.
+    """
+    import uvicorn
+
+    console.print(f"[green]Starting TradFi API server on {host}:{port}[/green]")
+    console.print(f"[blue]API docs: http://{host if host != '0.0.0.0' else 'localhost'}:{port}/docs[/blue]")
+
+    uvicorn.run(
+        "tradfi.api.main:app",
+        host=host,
+        port=port,
+        reload=reload,
+    )
+
+
 @app.callback(invoke_without_command=True)
 def main_callback(
     ctx: typer.Context,
