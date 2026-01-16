@@ -1,5 +1,7 @@
 """SQLite caching for API responses and watchlist storage."""
 
+from __future__ import annotations
+
 import json
 import os
 import sqlite3

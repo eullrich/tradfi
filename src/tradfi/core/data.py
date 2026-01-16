@@ -1,5 +1,7 @@
 """Data fetching from yfinance with caching and rate limiting."""
 
+from __future__ import annotations
+
 import time
 from dataclasses import asdict
 

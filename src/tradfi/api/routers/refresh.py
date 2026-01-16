@@ -1,5 +1,7 @@
 """Refresh endpoints for scheduled stock data updates."""
 
+from __future__ import annotations
+
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from pydantic import BaseModel
 

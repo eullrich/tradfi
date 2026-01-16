@@ -1,5 +1,7 @@
 """Main TUI application for tradfi."""
 
+from __future__ import annotations
+
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
