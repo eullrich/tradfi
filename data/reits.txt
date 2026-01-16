@@ -1,0 +1,110 @@
+# REITs (Real Estate Investment Trusts)
+
+# REIT ETFs
+VNQ
+SCHH
+IYR
+XLRE
+RWR
+USRT
+REET
+VNQI
+REM
+MORT
+
+# Data Centers
+EQIX
+DLR
+AMT
+CCI
+SBAC
+
+# Industrial/Logistics
+PLD
+PSA
+EXR
+CUBE
+LSI
+STAG
+REXR
+FR
+TRNO
+
+# Retail
+SPG
+O
+NNN
+STOR
+ADC
+REG
+KIM
+FRT
+BRX
+SITC
+RPAI
+
+# Residential
+EQR
+AVB
+ESS
+UDR
+CPT
+MAA
+INVH
+AMH
+SUI
+ELS
+
+# Healthcare
+WELL
+VTR
+PEAK
+OHI
+LTC
+SBRA
+CTRE
+DOC
+MPW
+HR
+
+# Office
+BXP
+VNO
+SLG
+HIW
+KRC
+ARE
+DEI
+JBGS
+CUZ
+PGRE
+
+# Diversified
+WPC
+EPRT
+BNL
+GLPI
+VICI
+GTY
+
+# Specialty
+IIPR
+CTO
+LAND
+SAFE
+OUT
+LAMR
+CCO
+
+# Mortgage REITs
+NLY
+AGNC
+STWD
+BXMT
+TWO
+RWT
+MFA
+ARI
+KREF
+RITM
+LADR

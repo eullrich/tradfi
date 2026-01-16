@@ -1,0 +1,36 @@
+[project]
+name = "tradfi"
+version = "0.1.0"
+description = "Value investing CLI tool with oversold indicators"
+requires-python = ">=3.11"
+dependencies = [
+    "typer>=0.9.0",
+    "yfinance>=0.2.40",
+    "pandas>=2.0.0",
+    "rich>=13.0.0",
+    "textual>=0.47.0",
+]
+
+[project.scripts]
+tradfi = "tradfi.cli:app"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "ruff>=0.1.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tradfi"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]

@@ -1,0 +1,115 @@
+# Sector ETFs - SPDR Select Sectors and Popular Alternatives
+
+# Technology
+XLK
+VGT
+IYW
+FTEC
+IGV
+SKYY
+WCLD
+CLOU
+HACK
+CIBR
+ARKK
+ARKW
+ARKQ
+
+# Healthcare
+XLV
+VHT
+IYH
+FHLC
+IBB
+XBI
+ARKG
+
+# Financials
+XLF
+VFH
+IYF
+KRE
+KBE
+IAI
+
+# Consumer Discretionary
+XLY
+VCR
+IYC
+FDIS
+XRT
+RTH
+
+# Consumer Staples
+XLP
+VDC
+IYK
+FSTA
+
+# Energy
+XLE
+VDE
+IYE
+XOP
+OIH
+AMLP
+
+# Industrials
+XLI
+VIS
+IYJ
+FIDU
+
+# Materials
+XLB
+VAW
+IYM
+FMAT
+
+# Utilities
+XLU
+VPU
+IDU
+FUTY
+
+# Real Estate
+XLRE
+VNQ
+IYR
+SCHH
+REET
+
+# Communication Services
+XLC
+VOX
+IYZ
+FCOM
+
+# Dividend & Income
+VIG
+SCHD
+DVY
+SDY
+VYM
+DGRO
+NOBL
+SPHD
+
+# Growth vs Value
+VUG
+IWF
+VTV
+IWD
+VLUE
+MTUM
+QUAL
+
+# Size (Large, Mid, Small)
+SPY
+QQQ
+IWM
+MDY
+IJR
+VB
+VO
+VV

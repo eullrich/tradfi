@@ -1,0 +1,132 @@
+# Commodity ETFs and Related Funds
+
+# Broad Commodity
+DBC
+DJP
+PDBC
+GSG
+USCI
+COM
+BCI
+CMDY
+GCC
+
+# Gold
+GLD
+IAU
+GLDM
+SGOL
+BAR
+OUNZ
+AAAU
+GDX
+GDXJ
+RING
+GOAU
+
+# Silver
+SLV
+SIVR
+PSLV
+SIL
+SILJ
+
+# Platinum & Palladium
+PPLT
+PALL
+
+# Precious Metals Broad
+GLTR
+DBP
+
+# Oil & Energy
+USO
+BNO
+UCO
+USL
+OIL
+DBO
+XLE
+VDE
+IYE
+XOP
+OIH
+AMLP
+MLPX
+
+# Natural Gas
+UNG
+BOIL
+GAZ
+KOLD
+FCG
+
+# Agriculture
+DBA
+CORN
+WEAT
+SOYB
+JO
+NIB
+CANE
+COW
+TAGS
+MOO
+VEGI
+
+# Industrial Metals
+DBB
+CPER
+JJC
+JJN
+JJU
+PICK
+XME
+REMX
+
+# Uranium
+URA
+URNM
+SRUUF
+
+# Lithium & Battery Metals
+LIT
+BATT
+LITP
+
+# Water
+PHO
+FIW
+CGW
+AQWA
+PIO
+
+# Timber & Forestry
+WOOD
+CUT
+
+# Commodity Producers (Miners, Drillers)
+XME
+PICK
+SLX
+COPX
+GOEX
+CPER
+FCX
+NEM
+GOLD
+AEM
+WPM
+FNV
+RGLD
+BTG
+KGC
+AU
+HL
+CDE
+AG
+MAG
+FSM
+PAAS
+EXK
+USAS
