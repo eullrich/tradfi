@@ -1,10 +1,5 @@
 """Entry point for Railway web deployment - serves TUI in browser."""
 import os
-import sys
-from pathlib import Path
-
-# Add src to path so tradfi package can be imported
-sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from textual_serve.server import Server
 
@@ -12,9 +7,9 @@ from textual_serve.server import Server
 port = int(os.environ.get("PORT", 8000))
 host = os.environ.get("HOST", "0.0.0.0")
 
-# Create server that runs the TUI app
+# Create server that runs the TUI app via run_tui.py
 server = Server(
-    command=f"python -c \"import sys; sys.path.insert(0, 'src'); from tradfi.tui.app import ScreenerApp; ScreenerApp().run()\"",
+    command="python run_tui.py",
     host=host,
     port=port,
 )
