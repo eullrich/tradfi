@@ -32,14 +32,22 @@ app.add_typer(lists_app, name="list")
 
 
 @app.command()
-def ui() -> None:
+def ui(
+    api_url: str = typer.Option(
+        None,
+        "--api",
+        help="Remote API URL (e.g., https://deepvalue-production.up.railway.app)",
+    ),
+) -> None:
     """
     Launch interactive TUI for browsing and screening stocks.
 
     Navigate with arrow keys, Enter to select, Escape to go back, q to quit.
+
+    Use --api to connect to a remote TradFi server instead of fetching locally.
     """
     from tradfi.tui.app import run_tui
-    run_tui()
+    run_tui(api_url=api_url)
 
 
 @app.command()
@@ -77,6 +85,11 @@ def main_callback(
         help="Show version and exit.",
         is_eager=True,
     ),
+    api_url: str = typer.Option(
+        None,
+        "--api",
+        help="Remote API URL for TUI (e.g., https://deepvalue-production.up.railway.app)",
+    ),
 ) -> None:
     """
     TradFi - Value investing CLI tool with oversold indicators.
@@ -90,7 +103,7 @@ def main_callback(
     # If no command provided, launch the TUI
     if ctx.invoked_subcommand is None:
         from tradfi.tui.app import run_tui
-        run_tui()
+        run_tui(api_url=api_url)
 
 
 if __name__ == "__main__":
