@@ -18,13 +18,16 @@ router = APIRouter(prefix="/stocks", tags=["stocks"])
 async def get_stock(
     ticker: str,
     use_cache: bool = Query(default=True, description="Use cached data if available"),
+    cache_only: bool = Query(default=False, description="Only return cached data, never hit yfinance"),
 ):
     """
     Get complete analysis for a single stock.
 
     Returns all valuation, profitability, technical, and fair value metrics.
+
+    Use cache_only=true for fast responses from pre-cached data (e.g., TUI access).
     """
-    stock = fetch_stock(ticker.upper(), use_cache=use_cache)
+    stock = fetch_stock(ticker.upper(), use_cache=use_cache, cache_only=cache_only)
     if stock is None:
         raise HTTPException(status_code=404, detail=f"Stock {ticker} not found")
     return stock_to_schema(stock)
