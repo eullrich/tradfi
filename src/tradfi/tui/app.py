@@ -761,10 +761,20 @@ class ScreenerApp(App):
         height: 1fr;
     }
 
-    #status-bar {
+    #bottom-bar {
         height: 3;
         border-top: solid $primary;
         padding: 1;
+    }
+
+    #status-bar {
+        width: 1fr;
+    }
+
+    #api-status {
+        width: auto;
+        text-align: right;
+        padding-right: 1;
     }
 
     #research-panel {
@@ -1037,7 +1047,11 @@ class ScreenerApp(App):
             ),
             id="main-container",
         )
-        yield Static("[dim]Ready.[/] Press [bold]Space[/] for actions, [bold]/[/] to search, [bold]r[/] to scan.", id="status-bar")
+        yield Horizontal(
+            Static("[dim]Ready.[/] Press [bold]Space[/] for actions, [bold]/[/] to search, [bold]r[/] to scan.", id="status-bar"),
+            Static("[dim]Connecting...[/]", id="api-status"),
+            id="bottom-bar",
+        )
         yield Footer()
 
     def on_mount(self) -> None:
@@ -1053,6 +1067,58 @@ class ScreenerApp(App):
 
         # Populate industry selection list
         self._populate_industries()
+
+        # Fetch API status in background
+        self.run_worker(self._fetch_api_status, thread=True)
+
+    def _fetch_api_status(self) -> dict | None:
+        """Fetch cache stats from the API."""
+        import httpx
+        try:
+            response = httpx.get(
+                f"{self.api_url.rstrip('/')}/api/v1/cache/stats",
+                timeout=5.0
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception:
+            return None
+
+    def _format_relative_time(self, timestamp: int | None) -> str:
+        """Format a timestamp as relative time."""
+        if timestamp is None:
+            return "never"
+        import time
+        age = time.time() - timestamp
+        if age < 60:
+            return "just now"
+        elif age < 3600:
+            return f"{int(age / 60)}m ago"
+        elif age < 86400:
+            return f"{int(age / 3600)}h ago"
+        else:
+            return f"{int(age / 86400)}d ago"
+
+    def _update_api_status(self, stats: dict | None) -> None:
+        """Update the API status widget."""
+        try:
+            api_status = self.query_one("#api-status", Static)
+            if stats:
+                total = stats.get("total_cached", 0)
+                last_updated = stats.get("last_updated")
+                time_str = self._format_relative_time(last_updated)
+                # Extract hostname for display
+                from urllib.parse import urlparse
+                host = urlparse(self.api_url).netloc
+                api_status.update(
+                    f"[green]●[/] [dim]{host}[/] | "
+                    f"[cyan]{total}[/] stocks | "
+                    f"[dim]updated {time_str}[/]"
+                )
+            else:
+                api_status.update("[red]●[/] [dim]API disconnected[/]")
+        except Exception:
+            pass
 
     def _populate_universes(self) -> None:
         """Populate the universe selection list."""
@@ -1340,8 +1406,13 @@ class ScreenerApp(App):
 
     def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
         if event.state.name == "SUCCESS":
-            self.stocks = event.worker.result or []
-            self._populate_table()
+            # Check if this is the API status worker
+            if event.worker.name == "_fetch_api_status":
+                self._update_api_status(event.worker.result)
+            else:
+                # Stock fetch worker
+                self.stocks = event.worker.result or []
+                self._populate_table()
 
     def _populate_table(self) -> None:
         loading = self.query_one("#loading", Container)
