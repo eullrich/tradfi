@@ -947,7 +947,7 @@ class ScreenerApp(App):
         "mos": (lambda s: s.fair_value.margin_of_safety_pct if s.fair_value.margin_of_safety_pct else float("-inf"), True, "MoS%"),
     }
 
-    def __init__(self, api_url: str | None = None) -> None:
+    def __init__(self, api_url: str) -> None:
         super().__init__()
         self.current_preset = None
         self.stocks: list[Stock] = []
@@ -959,18 +959,14 @@ class ScreenerApp(App):
         self.selected_universes: set[str] = set()  # Selected universes
         self._industries_loaded: bool = False  # Track if industries list is populated
 
-        # Remote API provider (if api_url is set)
+        # Remote API provider (required - TUI always uses remote API)
         self.api_url = api_url
-        self.remote_provider = None
-        if api_url:
-            from tradfi.core.remote_provider import RemoteDataProvider
-            self.remote_provider = RemoteDataProvider(api_url)
+        from tradfi.core.remote_provider import RemoteDataProvider
+        self.remote_provider = RemoteDataProvider(api_url)
 
     def _get_stock(self, ticker: str) -> Stock | None:
-        """Fetch a stock using remote provider if available, else local."""
-        if self.remote_provider:
-            return self.remote_provider.fetch_stock(ticker)
-        return fetch_stock(ticker)
+        """Fetch a stock from the remote API."""
+        return self.remote_provider.fetch_stock(ticker)
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -1636,12 +1632,12 @@ class ScreenerApp(App):
         return []
 
 
-def run_tui(api_url: str | None = None) -> None:
+def run_tui(api_url: str) -> None:
     """Run the interactive TUI.
 
     Args:
-        api_url: Optional remote API URL. If provided, fetches data from
-                 the remote server instead of yfinance directly.
+        api_url: Remote API URL (required). All data is fetched from the
+                 remote server - no local yfinance fetching.
     """
     app = ScreenerApp(api_url=api_url)
     app.run()

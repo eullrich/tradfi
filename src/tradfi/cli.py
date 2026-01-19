@@ -1,9 +1,13 @@
 """Main CLI entry point for tradfi."""
 
+import os
 import typer
 from rich.console import Console
 
 from tradfi import __version__
+
+# Default API URL - can be overridden via environment variable
+DEFAULT_API_URL = os.environ.get("TRADFI_API_URL", "https://deepv-production.up.railway.app")
 from tradfi.commands.analyze import analyze
 from tradfi.commands.screen import screen
 from tradfi.commands.quarterly import quarterly
@@ -34,9 +38,9 @@ app.add_typer(lists_app, name="list")
 @app.command()
 def ui(
     api_url: str = typer.Option(
-        None,
+        DEFAULT_API_URL,
         "--api",
-        help="Remote API URL (e.g., https://deepvalue-production.up.railway.app)",
+        help="Remote API URL (default: $TRADFI_API_URL or https://deepv-production.up.railway.app)",
     ),
 ) -> None:
     """
@@ -44,9 +48,17 @@ def ui(
 
     Navigate with arrow keys, Enter to select, Escape to go back, q to quit.
 
-    Use --api to connect to a remote TradFi server instead of fetching locally.
+    The TUI fetches all data from the remote API server (no local data fetching).
+    Set TRADFI_API_URL environment variable to change the default server.
     """
     from tradfi.tui.app import run_tui
+
+    if not api_url:
+        console.print("[red]Error: API URL is required.[/]")
+        console.print("[dim]Set TRADFI_API_URL environment variable or use --api[/]")
+        raise typer.Exit(1)
+
+    console.print(f"[dim]Connecting to API: {api_url}[/]")
     run_tui(api_url=api_url)
 
 
@@ -86,15 +98,17 @@ def main_callback(
         is_eager=True,
     ),
     api_url: str = typer.Option(
-        None,
+        DEFAULT_API_URL,
         "--api",
-        help="Remote API URL for TUI (e.g., https://deepvalue-production.up.railway.app)",
+        help="Remote API URL for TUI (default: $TRADFI_API_URL)",
     ),
 ) -> None:
     """
     TradFi - Value investing CLI tool with oversold indicators.
 
     Run 'tradfi ui' for interactive mode or use subcommands.
+
+    The TUI requires a remote API server. Set TRADFI_API_URL or use --api.
     """
     if version:
         console.print(f"tradfi version {__version__}")
@@ -103,6 +117,13 @@ def main_callback(
     # If no command provided, launch the TUI
     if ctx.invoked_subcommand is None:
         from tradfi.tui.app import run_tui
+
+        if not api_url:
+            console.print("[red]Error: API URL is required for TUI.[/]")
+            console.print("[dim]Set TRADFI_API_URL environment variable or use --api[/]")
+            raise typer.Exit(1)
+
+        console.print(f"[dim]Connecting to API: {api_url}[/]")
         run_tui(api_url=api_url)
 
 
