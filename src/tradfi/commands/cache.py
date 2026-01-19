@@ -51,12 +51,25 @@ def _format_timestamp(ts: int | None) -> str:
 
 
 @app.command("status")
-def cache_status() -> None:
+def cache_status(
+    remote: Optional[str] = typer.Option(
+        None, "--remote", "-r",
+        help="Check remote API cache instead of local (e.g., https://deepv-production.up.railway.app)"
+    ),
+) -> None:
     """Show cache status and statistics."""
+    if remote:
+        _show_remote_cache_status(remote)
+    else:
+        _show_local_cache_status()
+
+
+def _show_local_cache_status() -> None:
+    """Show local cache status."""
     stats = get_cache_stats()
     config = get_config()
 
-    table = Table(title="Cache Status", box=box.ROUNDED)
+    table = Table(title="Local Cache Status", box=box.ROUNDED)
     table.add_column("Setting", style="cyan")
     table.add_column("Value", style="green")
 
@@ -69,6 +82,50 @@ def cache_status() -> None:
     table.add_row("Total Cached Stocks", str(stats["total_cached"]))
     table.add_row("Fresh (within TTL)", f"[green]{stats['fresh']}[/]")
     table.add_row("Stale (expired)", f"[yellow]{stats['stale']}[/]")
+    table.add_row("", "")
+    table.add_row("Last Updated", _format_timestamp(stats.get("last_updated")))
+    table.add_row("Oldest Entry", _format_timestamp(stats.get("oldest_entry")))
+
+    console.print()
+    console.print(table)
+    console.print()
+
+
+def _show_remote_cache_status(api_url: str) -> None:
+    """Show remote API cache status."""
+    import httpx
+
+    # Normalize URL
+    api_url = api_url.rstrip("/")
+    cache_endpoint = f"{api_url}/api/v1/cache/stats"
+
+    console.print(f"[dim]Fetching cache status from {api_url}...[/]")
+
+    try:
+        response = httpx.get(cache_endpoint, timeout=10.0)
+        response.raise_for_status()
+        stats = response.json()
+    except httpx.ConnectError:
+        console.print(f"[red]Could not connect to {api_url}[/]")
+        raise typer.Exit(1)
+    except httpx.HTTPStatusError as e:
+        console.print(f"[red]API error: {e.response.status_code}[/]")
+        raise typer.Exit(1)
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/]")
+        raise typer.Exit(1)
+
+    table = Table(title=f"Remote Cache Status ({api_url})", box=box.ROUNDED)
+    table.add_column("Setting", style="cyan")
+    table.add_column("Value", style="green")
+
+    table.add_row("Cache Enabled", "Yes" if stats.get("cache_enabled", True) else "No")
+    table.add_row("Cache TTL", f"{stats.get('cache_ttl_minutes', 'N/A')} minutes")
+    table.add_row("Rate Limit Delay", f"{stats.get('rate_limit_delay', 'N/A')}s")
+    table.add_row("", "")
+    table.add_row("Total Cached Stocks", str(stats.get("total_cached", 0)))
+    table.add_row("Fresh (within TTL)", f"[green]{stats.get('fresh', 0)}[/]")
+    table.add_row("Stale (expired)", f"[yellow]{stats.get('stale', 0)}[/]")
     table.add_row("", "")
     table.add_row("Last Updated", _format_timestamp(stats.get("last_updated")))
     table.add_row("Oldest Entry", _format_timestamp(stats.get("oldest_entry")))

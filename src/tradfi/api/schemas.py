@@ -324,9 +324,14 @@ class ScreenResultSchema(BaseModel):
 class CacheStatsSchema(BaseModel):
     """Cache statistics."""
 
-    total: int
+    total_cached: int
     fresh: int
     stale: int
+    cache_ttl_minutes: int
+    cache_enabled: bool
+    rate_limit_delay: float
+    last_updated: int | None = None
+    oldest_entry: int | None = None
 
 
 class MessageSchema(BaseModel):

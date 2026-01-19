@@ -10,13 +10,9 @@ router = APIRouter(prefix="/cache", tags=["cache"])
 
 @router.get("/stats", response_model=CacheStatsSchema)
 async def get_stats():
-    """Get cache statistics."""
+    """Get cache statistics including last update timestamps."""
     stats = get_cache_stats()
-    return CacheStatsSchema(
-        total=stats["total_cached"],
-        fresh=stats["fresh"],
-        stale=stats["stale"],
-    )
+    return CacheStatsSchema(**stats)
 
 
 @router.post("/clear", response_model=MessageSchema)
