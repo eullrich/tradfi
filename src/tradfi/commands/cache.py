@@ -154,7 +154,7 @@ def cache_prefetch(
         tradfi cache prefetch sp500 --delay 5   # Safer for 500 stocks
         tradfi cache prefetch all --delay 10    # Safest for all 1241 stocks
     """
-    from tradfi.core.data import fetch_stock
+    from tradfi.core.data import fetch_stock_from_api
 
     # Determine which universes to fetch
     if universe is None:
@@ -249,9 +249,8 @@ def cache_prefetch(
         for ticker in tickers_to_fetch:
             progress.update(task, description=f"Fetching {ticker}...")
 
-            # use_cache=True means it will save to cache after fetching
-            # We already filtered out cached stocks above if skip_cached=True
-            stock = fetch_stock(ticker, use_cache=True)
+            # Fetch from yfinance API and save to cache
+            stock = fetch_stock_from_api(ticker)
             if stock:
                 fetched += 1
             else:
