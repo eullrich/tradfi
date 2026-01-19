@@ -1,5 +1,7 @@
 """Data fetching from yfinance with caching and rate limiting."""
 
+from __future__ import annotations
+
 import time
 from dataclasses import asdict
 
@@ -38,13 +40,14 @@ from tradfi.utils.cache import (
 _last_request_time: float = 0
 
 
-def fetch_stock(ticker_symbol: str, use_cache: bool = True) -> Stock | None:
+def fetch_stock(ticker_symbol: str, use_cache: bool = True, cache_only: bool = False) -> Stock | None:
     """
     Fetch complete stock data from yfinance with caching and rate limiting.
 
     Args:
         ticker_symbol: Stock ticker (e.g., "AAPL")
         use_cache: Whether to use cached data (default True)
+        cache_only: If True, only return cached data, never hit yfinance (default False)
 
     Returns:
         Stock object with all metrics, or None if fetch failed
@@ -53,8 +56,8 @@ def fetch_stock(ticker_symbol: str, use_cache: bool = True) -> Stock | None:
     ticker_symbol = ticker_symbol.upper()
     config = get_config()
 
-    # In offline mode, only return cached data (ignore TTL)
-    if config.offline_mode:
+    # In offline mode or cache_only mode, only return cached data (ignore TTL)
+    if config.offline_mode or cache_only:
         cached = get_cached_stock_data(ticker_symbol, ignore_ttl=True)
         if cached:
             return _dict_to_stock(cached)
@@ -229,8 +232,15 @@ def fetch_stock(ticker_symbol: str, use_cache: bool = True) -> Stock | None:
         return stock
 
     except Exception as e:
-        # Log error in production, for now just return None
+        # Log error
         print(f"Error fetching {ticker_symbol}: {e}")
+
+        # Fallback to stale cache if available (better than returning nothing)
+        stale_cached = get_cached_stock_data(ticker_symbol, ignore_ttl=True)
+        if stale_cached:
+            print(f"Returning stale cached data for {ticker_symbol}")
+            return _dict_to_stock(stale_cached)
+
         return None
 
 

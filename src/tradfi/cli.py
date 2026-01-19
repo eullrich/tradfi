@@ -32,14 +32,47 @@ app.add_typer(lists_app, name="list")
 
 
 @app.command()
-def ui() -> None:
+def ui(
+    api_url: str = typer.Option(
+        None,
+        "--api",
+        help="Remote API URL (e.g., https://deepvalue-production.up.railway.app)",
+    ),
+) -> None:
     """
     Launch interactive TUI for browsing and screening stocks.
 
     Navigate with arrow keys, Enter to select, Escape to go back, q to quit.
+
+    Use --api to connect to a remote TradFi server instead of fetching locally.
     """
     from tradfi.tui.app import run_tui
-    run_tui()
+    run_tui(api_url=api_url)
+
+
+@app.command()
+def api(
+    host: str = typer.Option("0.0.0.0", "--host", "-h", help="Host to bind to"),
+    port: int = typer.Option(8000, "--port", "-p", help="Port to bind to"),
+    reload: bool = typer.Option(False, "--reload", "-r", help="Enable auto-reload"),
+) -> None:
+    """
+    Start the REST API server.
+
+    The API provides endpoints for stock analysis, screening, and list management.
+    Visit http://localhost:8000/docs for interactive API documentation.
+    """
+    import uvicorn
+
+    console.print(f"[green]Starting TradFi API server on {host}:{port}[/green]")
+    console.print(f"[blue]API docs: http://{host if host != '0.0.0.0' else 'localhost'}:{port}/docs[/blue]")
+
+    uvicorn.run(
+        "tradfi.api.main:app",
+        host=host,
+        port=port,
+        reload=reload,
+    )
 
 
 @app.callback(invoke_without_command=True)
@@ -51,6 +84,11 @@ def main_callback(
         "-v",
         help="Show version and exit.",
         is_eager=True,
+    ),
+    api_url: str = typer.Option(
+        None,
+        "--api",
+        help="Remote API URL for TUI (e.g., https://deepvalue-production.up.railway.app)",
     ),
 ) -> None:
     """
@@ -65,7 +103,7 @@ def main_callback(
     # If no command provided, launch the TUI
     if ctx.invoked_subcommand is None:
         from tradfi.tui.app import run_tui
-        run_tui()
+        run_tui(api_url=api_url)
 
 
 if __name__ == "__main__":

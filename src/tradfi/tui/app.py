@@ -1,5 +1,7 @@
 """Main TUI application for tradfi."""
 
+from __future__ import annotations
+
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
@@ -945,7 +947,7 @@ class ScreenerApp(App):
         "mos": (lambda s: s.fair_value.margin_of_safety_pct if s.fair_value.margin_of_safety_pct else float("-inf"), True, "MoS%"),
     }
 
-    def __init__(self) -> None:
+    def __init__(self, api_url: str | None = None) -> None:
         super().__init__()
         self.current_preset = None
         self.stocks: list[Stock] = []
@@ -956,6 +958,19 @@ class ScreenerApp(App):
         self.selected_industries: set[str] = set()  # Selected industries (include)
         self.selected_universes: set[str] = set()  # Selected universes
         self._industries_loaded: bool = False  # Track if industries list is populated
+
+        # Remote API provider (if api_url is set)
+        self.api_url = api_url
+        self.remote_provider = None
+        if api_url:
+            from tradfi.core.remote_provider import RemoteDataProvider
+            self.remote_provider = RemoteDataProvider(api_url)
+
+    def _get_stock(self, ticker: str) -> Stock | None:
+        """Fetch a stock using remote provider if available, else local."""
+        if self.remote_provider:
+            return self.remote_provider.fetch_stock(ticker)
+        return fetch_stock(ticker)
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -1234,7 +1249,7 @@ class ScreenerApp(App):
                 len(stocks), progress, 0, False
             )
 
-            stock = fetch_stock(ticker)
+            stock = self._get_stock(ticker)
             if stock:
                 stocks.append(stock)
 
@@ -1285,7 +1300,7 @@ class ScreenerApp(App):
                 len(passing_stocks), progress, cache_hits, is_cached
             )
 
-            stock = fetch_stock(ticker)
+            stock = self._get_stock(ticker)
             if stock:
                 if is_cached:
                     cache_hits += 1
@@ -1615,13 +1630,18 @@ class ScreenerApp(App):
 
     def _fetch_single_stock(self, ticker: str) -> list[Stock]:
         """Fetch a single stock by ticker."""
-        stock = fetch_stock(ticker)
+        stock = self._get_stock(ticker)
         if stock:
             return [stock]
         return []
 
 
-def run_tui() -> None:
-    """Run the interactive TUI."""
-    app = ScreenerApp()
+def run_tui(api_url: str | None = None) -> None:
+    """Run the interactive TUI.
+
+    Args:
+        api_url: Optional remote API URL. If provided, fetches data from
+                 the remote server instead of yfinance directly.
+    """
+    app = ScreenerApp(api_url=api_url)
     app.run()
