@@ -42,6 +42,24 @@ def ui() -> None:
     run_tui()
 
 
+@app.command()
+def serve(
+    host: str = typer.Option("0.0.0.0", "--host", "-h", help="Host to bind to"),
+    port: int = typer.Option(8000, "--port", "-p", help="Port to bind to"),
+) -> None:
+    """
+    Start the API server for remote cache status and data access.
+
+    Example: tradfi serve --port 8000
+    """
+    import uvicorn
+    from tradfi.api import app as api_app
+
+    console.print(f"[green]Starting TradFi API server on {host}:{port}[/]")
+    console.print(f"[dim]Cache status: http://{host}:{port}/api/cache/status[/]")
+    uvicorn.run(api_app, host=host, port=port)
+
+
 @app.callback(invoke_without_command=True)
 def main_callback(
     ctx: typer.Context,
