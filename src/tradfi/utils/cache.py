@@ -299,6 +299,18 @@ def get_cache_stats() -> dict:
         ).fetchone()[0]
         stale = total - fresh
 
+        # Get most recent cache update time
+        last_update_row = conn.execute(
+            "SELECT MAX(cached_at) FROM stock_cache"
+        ).fetchone()
+        last_updated = last_update_row[0] if last_update_row and last_update_row[0] else None
+
+        # Get oldest cache entry time
+        oldest_row = conn.execute(
+            "SELECT MIN(cached_at) FROM stock_cache"
+        ).fetchone()
+        oldest_entry = oldest_row[0] if oldest_row and oldest_row[0] else None
+
         return {
             "total_cached": total,
             "fresh": fresh,
@@ -306,6 +318,8 @@ def get_cache_stats() -> dict:
             "cache_ttl_minutes": config.cache_ttl // 60,
             "cache_enabled": config.cache_enabled,
             "rate_limit_delay": config.rate_limit_delay,
+            "last_updated": last_updated,
+            "oldest_entry": oldest_entry,
         }
     finally:
         conn.close()

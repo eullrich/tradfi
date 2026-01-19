@@ -1,6 +1,7 @@
 """Cache management commands."""
 
 import time
+from datetime import datetime
 from typing import Optional
 
 import typer
@@ -25,6 +26,30 @@ console = Console()
 app = typer.Typer(help="Manage the stock data cache")
 
 
+def _format_timestamp(ts: int | None) -> str:
+    """Format a timestamp as a human-readable string with relative time."""
+    if ts is None:
+        return "Never"
+
+    dt = datetime.fromtimestamp(ts)
+    age_seconds = time.time() - ts
+
+    # Format relative time
+    if age_seconds < 60:
+        relative = "just now"
+    elif age_seconds < 3600:
+        minutes = int(age_seconds / 60)
+        relative = f"{minutes}m ago"
+    elif age_seconds < 86400:
+        hours = int(age_seconds / 3600)
+        relative = f"{hours}h ago"
+    else:
+        days = int(age_seconds / 86400)
+        relative = f"{days}d ago"
+
+    return f"{dt.strftime('%Y-%m-%d %H:%M:%S')} ({relative})"
+
+
 @app.command("status")
 def cache_status() -> None:
     """Show cache status and statistics."""
@@ -44,6 +69,9 @@ def cache_status() -> None:
     table.add_row("Total Cached Stocks", str(stats["total_cached"]))
     table.add_row("Fresh (within TTL)", f"[green]{stats['fresh']}[/]")
     table.add_row("Stale (expired)", f"[yellow]{stats['stale']}[/]")
+    table.add_row("", "")
+    table.add_row("Last Updated", _format_timestamp(stats.get("last_updated")))
+    table.add_row("Oldest Entry", _format_timestamp(stats.get("oldest_entry")))
 
     console.print()
     console.print(table)
