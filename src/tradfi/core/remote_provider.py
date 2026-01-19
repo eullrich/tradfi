@@ -43,7 +43,11 @@ class RemoteDataProvider:
         """
         try:
             with httpx.Client(timeout=self.timeout) as client:
-                response = client.get(f"{self.api_url}/api/v1/stocks/{ticker}")
+                # Use cache_only=true to only get pre-cached data from the API
+                response = client.get(
+                    f"{self.api_url}/api/v1/stocks/{ticker}",
+                    params={"cache_only": "true"}
+                )
 
             if response.status_code == 200:
                 data = response.json()
