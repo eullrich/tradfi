@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from tradfi import __version__
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
@@ -1048,7 +1049,7 @@ class ScreenerApp(App):
             id="main-container",
         )
         yield Horizontal(
-            Static("[dim]Ready.[/] Press [bold]Space[/] for actions, [bold]/[/] to search, [bold]r[/] to scan.", id="status-bar"),
+            Static(f"[dim]v{__version__}[/] | Press [bold]Space[/] for actions, [bold]/[/] to search, [bold]r[/] to scan.", id="status-bar"),
             Static("[dim]Connecting...[/]", id="api-status"),
             id="bottom-bar",
         )
