@@ -14,8 +14,8 @@ CONFIG_FILE = CACHE_DIR / "config.json"
 
 # Default settings
 DEFAULT_CACHE_TTL = 30 * 60  # 30 minutes
-# yfinance has no official rate limits - disable delay for responsive UX
-DEFAULT_RATE_LIMIT_DELAY = 0.0  # no delay between requests
+# Rate limit for yfinance API calls (only applies on cache miss)
+DEFAULT_RATE_LIMIT_DELAY = 2.0  # seconds between yfinance requests
 
 
 @dataclass

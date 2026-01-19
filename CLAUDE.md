@@ -152,7 +152,7 @@ The system auto-detects which provider to use based on available environment var
 
 ## API Rate Limiting
 
-yfinance has no official rate limits, so no delay is applied between requests by default. Cached data has a configurable TTL (30 minutes).
+Rate limiting (2s delay) only applies when hitting the yfinance API (on cache miss). Cached data is served instantly with no delay. Cache TTL is 30 minutes by default.
 
 ## Signal Logic
 
