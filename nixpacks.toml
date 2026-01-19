@@ -1,8 +1,8 @@
-[phases.build]
-cmds = ["pip install -r requirements.txt"]
+# Nixpacks configuration for Railway
+# Override auto-detected build command (prevents running main.py)
 
-[phases.setup]
-# Don't run main.py during build
+[phases.build]
+cmds = ["echo 'Build complete'"]
 
 [start]
 cmd = "uvicorn server:app --host 0.0.0.0 --port ${PORT:-8000}"
