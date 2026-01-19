@@ -140,7 +140,9 @@ from tradfi.core.screener import (
     AVAILABLE_UNIVERSES,
     PRESET_SCREENS,
     ScreenCriteria,
+    get_universe_categories,
     load_tickers,
+    load_tickers_by_categories,
     screen_stock,
 )
 from tradfi.models.stock import Stock
@@ -857,6 +859,17 @@ class ScreenerApp(App):
         margin-bottom: 1;
     }
 
+    #category-select {
+        height: auto;
+        max-height: 6;
+        margin-bottom: 1;
+        display: none;
+    }
+
+    #category-title {
+        display: none;
+    }
+
     #industry-select {
         height: auto;
         max-height: 12;
@@ -955,6 +968,7 @@ class ScreenerApp(App):
         self._viewing_list: str | None = None  # Track if viewing a position list
         self.selected_industries: set[str] = set()  # Selected industries (include)
         self.selected_universes: set[str] = set()  # Selected universes
+        self.selected_categories: set[str] = set()  # Selected categories (for ETF universe)
         self._industries_loaded: bool = False  # Track if industries list is populated
 
     def compose(self) -> ComposeResult:
@@ -966,6 +980,8 @@ class ScreenerApp(App):
                 Input(placeholder="Ticker (e.g. AAPL)", id="search-input"),
                 Static("Universes (toggle)", classes="section-title"),
                 SelectionList[str](id="universe-select"),
+                Static("Categories", classes="section-title", id="category-title"),
+                SelectionList[str](id="category-select"),
                 Static("Industries (toggle)", classes="section-title"),
                 SelectionList[str](id="industry-select"),
                 Static("Presets", classes="section-title"),
@@ -1097,15 +1113,74 @@ class ScreenerApp(App):
         except Exception:
             pass
 
+    def _populate_categories(self, universe: str) -> None:
+        """Populate the category selection list for a universe."""
+        try:
+            category_select = self.query_one("#category-select", SelectionList)
+            category_title = self.query_one("#category-title", Static)
+
+            # Clear existing options
+            category_select.clear_options()
+            self.selected_categories = set()
+
+            # Get categories for the universe
+            categories = get_universe_categories(universe)
+
+            if not categories:
+                # No categories - hide the widget
+                category_select.styles.display = "none"
+                category_title.styles.display = "none"
+                return
+
+            # Show the widget
+            category_select.styles.display = "block"
+            category_title.styles.display = "block"
+
+            # Add "ALL" option at the top
+            category_select.add_option(("★ ALL", "__all__", False))
+
+            # Add each category
+            for cat in categories:
+                category_select.add_option((cat, cat, False))
+
+        except Exception:
+            pass
+
+    def _hide_categories(self) -> None:
+        """Hide the category selection widget."""
+        try:
+            category_select = self.query_one("#category-select", SelectionList)
+            category_title = self.query_one("#category-title", Static)
+            category_select.styles.display = "none"
+            category_title.styles.display = "none"
+            self.selected_categories = set()
+        except Exception:
+            pass
+
     def on_selection_list_selected_changed(self, event: SelectionList.SelectedChanged) -> None:
-        """Handle selection changes for universes and industries."""
+        """Handle selection changes for universes, categories, and industries."""
         if event.selection_list.id == "universe-select":
             # Update selected universes (filter out __all__ marker)
             selected = set(event.selection_list.selected)
             if "__all__" in selected:
                 self.selected_universes = set()
+                self._hide_categories()
             else:
                 self.selected_universes = selected
+                # Show category selector if exactly one universe with categories is selected
+                if len(selected) == 1:
+                    universe = list(selected)[0]
+                    self._populate_categories(universe)
+                else:
+                    self._hide_categories()
+            self._update_workflow_status()
+        elif event.selection_list.id == "category-select":
+            # Update selected categories (filter out __all__ marker)
+            selected = set(event.selection_list.selected)
+            if "__all__" in selected:
+                self.selected_categories = set()
+            else:
+                self.selected_categories = selected
             self._update_workflow_status()
         elif event.selection_list.id == "industry-select":
             # Update selected industries (filter out __all__ marker)
@@ -1123,7 +1198,10 @@ class ScreenerApp(App):
         universes_to_check = self.selected_universes if self.selected_universes else set(AVAILABLE_UNIVERSES.keys())
         for name in universes_to_check:
             try:
-                total_tickers += len(load_tickers(name))
+                if self.selected_categories:
+                    total_tickers += len(load_tickers_by_categories(name, self.selected_categories))
+                else:
+                    total_tickers += len(load_tickers(name))
             except FileNotFoundError:
                 pass
 
@@ -1134,6 +1212,10 @@ class ScreenerApp(App):
             parts.append(f"{count} universe{'s' if count > 1 else ''}")
         else:
             parts.append("all universes")
+
+        if self.selected_categories:
+            count = len(self.selected_categories)
+            parts.append(f"{count} categor{'ies' if count > 1 else 'y'}")
 
         if self.selected_industries:
             count = len(self.selected_industries)
@@ -1248,7 +1330,12 @@ class ScreenerApp(App):
             # Load from selected universes
             for name in self.selected_universes:
                 try:
-                    ticker_set.update(load_tickers(name))
+                    # If categories are selected, filter by them
+                    if self.selected_categories:
+                        tickers = load_tickers_by_categories(name, self.selected_categories)
+                        ticker_set.update(tickers)
+                    else:
+                        ticker_set.update(load_tickers(name))
                 except FileNotFoundError:
                     pass
         else:
@@ -1566,11 +1653,14 @@ class ScreenerApp(App):
         industry_select.focus()
 
     def action_clear_filters(self) -> None:
-        """Clear all universe and industry selections."""
+        """Clear all universe, category, and industry selections."""
         try:
             universe_select = self.query_one("#universe-select", SelectionList)
             universe_select.deselect_all()
             self.selected_universes = set()
+
+            # Clear and hide categories
+            self._hide_categories()
 
             industry_select = self.query_one("#industry-select", SelectionList)
             industry_select.deselect_all()

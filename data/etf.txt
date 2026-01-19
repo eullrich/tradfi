@@ -1,0 +1,451 @@
+# ETFs - All ETF tickers organized by category
+
+## REITs
+# REIT ETFs
+VNQ
+SCHH
+IYR
+XLRE
+RWR
+USRT
+REET
+VNQI
+REM
+MORT
+
+# Data Centers
+EQIX
+DLR
+AMT
+CCI
+SBAC
+
+# Industrial/Logistics
+PLD
+PSA
+EXR
+CUBE
+LSI
+STAG
+REXR
+FR
+TRNO
+
+# Retail
+SPG
+O
+NNN
+STOR
+ADC
+REG
+KIM
+FRT
+BRX
+SITC
+RPAI
+
+# Residential
+EQR
+AVB
+ESS
+UDR
+CPT
+MAA
+INVH
+AMH
+SUI
+ELS
+
+# Healthcare REITs
+WELL
+VTR
+PEAK
+OHI
+LTC
+SBRA
+CTRE
+DOC
+MPW
+HR
+
+# Office
+BXP
+VNO
+SLG
+HIW
+KRC
+ARE
+DEI
+JBGS
+CUZ
+PGRE
+
+# Diversified REITs
+WPC
+EPRT
+BNL
+GLPI
+VICI
+GTY
+
+# Specialty REITs
+IIPR
+CTO
+LAND
+SAFE
+OUT
+LAMR
+CCO
+
+# Mortgage REITs
+NLY
+AGNC
+STWD
+BXMT
+TWO
+RWT
+MFA
+ARI
+KREF
+RITM
+LADR
+
+## Commodities
+# Broad Commodity
+DBC
+DJP
+PDBC
+GSG
+USCI
+COM
+BCI
+CMDY
+GCC
+
+# Gold
+GLD
+IAU
+GLDM
+SGOL
+BAR
+OUNZ
+AAAU
+GDX
+GDXJ
+RING
+GOAU
+
+# Silver
+SLV
+SIVR
+PSLV
+SIL
+SILJ
+
+# Platinum & Palladium
+PPLT
+PALL
+
+# Precious Metals Broad
+GLTR
+DBP
+
+# Oil & Energy
+USO
+BNO
+UCO
+USL
+OIL
+DBO
+XLE
+VDE
+IYE
+XOP
+OIH
+AMLP
+MLPX
+
+# Natural Gas
+UNG
+BOIL
+GAZ
+KOLD
+FCG
+
+# Agriculture
+DBA
+CORN
+WEAT
+SOYB
+JO
+NIB
+CANE
+COW
+TAGS
+MOO
+VEGI
+
+# Industrial Metals
+DBB
+CPER
+JJC
+JJN
+JJU
+PICK
+XME
+REMX
+
+# Uranium
+URA
+URNM
+SRUUF
+
+# Lithium & Battery Metals
+LIT
+BATT
+LITP
+
+# Water
+PHO
+FIW
+CGW
+AQWA
+PIO
+
+# Timber & Forestry
+WOOD
+CUT
+
+# Commodity Producers
+SLX
+COPX
+GOEX
+FCX
+NEM
+GOLD
+AEM
+WPM
+FNV
+RGLD
+BTG
+KGC
+AU
+HL
+CDE
+AG
+MAG
+FSM
+PAAS
+EXK
+USAS
+
+## Sectors
+# Technology
+XLK
+VGT
+IYW
+FTEC
+IGV
+SKYY
+WCLD
+CLOU
+HACK
+CIBR
+ARKK
+ARKW
+ARKQ
+
+# Healthcare
+XLV
+VHT
+IYH
+FHLC
+IBB
+XBI
+ARKG
+
+# Financials
+XLF
+VFH
+IYF
+KRE
+KBE
+IAI
+
+# Consumer Discretionary
+XLY
+VCR
+IYC
+FDIS
+XRT
+RTH
+
+# Consumer Staples
+XLP
+VDC
+IYK
+FSTA
+
+# Industrials
+XLI
+VIS
+IYJ
+FIDU
+
+# Materials
+XLB
+VAW
+IYM
+FMAT
+
+# Utilities
+XLU
+VPU
+IDU
+FUTY
+
+# Communication Services
+XLC
+VOX
+IYZ
+FCOM
+
+# Dividend & Income ETFs
+VIG
+SCHD
+DVY
+SDY
+VYM
+DGRO
+NOBL
+SPHD
+
+# Growth vs Value
+VUG
+IWF
+VTV
+IWD
+VLUE
+MTUM
+QUAL
+
+# Size (Large, Mid, Small)
+SPY
+QQQ
+IWM
+MDY
+IJR
+VB
+VO
+VV
+
+## International
+# Broad International ETFs
+VEA
+IEFA
+EFA
+VWO
+IEMG
+EEM
+VXUS
+IXUS
+VEU
+
+# Country/Region ETFs
+EWJ
+EWG
+EWU
+EWC
+EWA
+EWZ
+EWY
+EWT
+EWH
+EWS
+INDA
+MCHI
+FXI
+ASHR
+KWEB
+GXC
+THD
+VNM
+EIDO
+EPHE
+ENZL
+EWW
+EWP
+EWI
+EWQ
+EWL
+EWN
+EWO
+EWK
+EWD
+NORW
+EFNL
+EDEN
+GREK
+TUR
+EPOL
+RSX
+
+# European ADRs
+ASML
+NVO
+SAP
+TM
+SNY
+GSK
+AZN
+BP
+SHEL
+TTE
+EQNR
+NVS
+UL
+DEO
+BUD
+LRLCY
+NSRGY
+
+# Asian ADRs
+TSM
+BABA
+JD
+PDD
+BIDU
+NIO
+LI
+XPEV
+SONY
+HMC
+MUFG
+SMFG
+MFG
+KB
+SHG
+WIT
+INFY
+HDB
+IBN
+
+# Latin American ADRs
+NU
+STNE
+PAGS
+MELI
+BSBR
+ITUB
+BBD
+PBR
+VALE
+SQM
+BSAC
+EC
+
+# Other International
+SE
+GRAB
+CPNG
+TCEHY
