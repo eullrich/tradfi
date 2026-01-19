@@ -32,18 +32,22 @@ class RemoteDataProvider:
         self.api_url = api_url.rstrip("/")
         self.timeout = timeout
 
-    def fetch_stock(self, ticker: str) -> Optional[Stock]:
+    def fetch_stock(self, ticker: str, cache_only: bool = True) -> Optional[Stock]:
         """Fetch stock data from the remote API.
 
         Args:
             ticker: Stock ticker symbol
+            cache_only: Only return cached data, don't trigger yfinance calls (default True)
 
         Returns:
             Stock object or None if not found/error
         """
         try:
             with httpx.Client(timeout=self.timeout) as client:
-                response = client.get(f"{self.api_url}/api/v1/stocks/{ticker}")
+                response = client.get(
+                    f"{self.api_url}/api/v1/stocks/{ticker}",
+                    params={"cache_only": str(cache_only).lower()}
+                )
 
             if response.status_code == 200:
                 data = response.json()
