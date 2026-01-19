@@ -149,9 +149,6 @@ from tradfi.core.screener import (
 from tradfi.models.stock import Stock
 from tradfi.utils.cache import (
     add_to_saved_list,
-    get_all_cached_industries,
-    get_cache_stats,
-    get_cached_stock_data,
     get_saved_list,
     list_saved_lists,
     save_list,
@@ -1070,7 +1067,7 @@ class ScreenerApp(App):
         self._populate_industries()
 
         # Fetch API status in background
-        self.run_worker(self._fetch_api_status, thread=True)
+        self.run_worker(self._fetch_api_status, thread=True, name="api_status")
 
     def _fetch_api_status(self) -> dict | None:
         """Fetch cache stats from the API."""
@@ -1148,28 +1145,52 @@ class ScreenerApp(App):
             pass
 
     def _populate_industries(self) -> None:
-        """Populate the industry selection list from cached data."""
+        """Fetch industries from API and populate the selection list."""
+        # Show loading state
         try:
             industry_select = self.query_one("#industry-select", SelectionList)
+            industry_select.add_option(("Loading...", "loading", False))
+        except Exception:
+            pass
+        # Fetch from API in background
+        self.run_worker(self._fetch_industries_from_api, thread=True, name="industries_fetch")
 
-            # Get industries from cache
-            industries = get_all_cached_industries()
+    def _fetch_industries_from_api(self) -> list[dict] | None:
+        """Fetch industries from the API."""
+        import httpx
+        try:
+            response = httpx.get(
+                f"{self.api_url.rstrip('/')}/api/v1/cache/industries",
+                timeout=10.0
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception:
+            return None
+
+    def _populate_industries_from_api(self, industries: list[dict] | None) -> None:
+        """Populate the industry selection list from API response."""
+        try:
+            industry_select = self.query_one("#industry-select", SelectionList)
+            industry_select.clear_options()
 
             if not industries:
-                industry_select.add_option(("No cached data", "none", False))
+                industry_select.add_option(("No data from API", "none", False))
                 return
 
             # Add "ALL" option at the top
-            total_stocks = sum(count for _, count in industries)
+            total_stocks = sum(ind.get("count", 0) for ind in industries)
             industry_select.add_option((f"★ ALL ({total_stocks})", "__all__", False))
 
             # Sort industries alphabetically and add all
-            sorted_industries = sorted(industries, key=lambda x: x[0].lower())
-            for industry, count in sorted_industries:
+            sorted_industries = sorted(industries, key=lambda x: x.get("name", "").lower())
+            for ind in sorted_industries:
+                name = ind.get("name", "Unknown")
+                count = ind.get("count", 0)
                 # Shorten long industry names for display
-                display_name = _simplify_industry(industry)
+                display_name = _simplify_industry(name)
                 label = f"{display_name} ({count})"
-                industry_select.add_option((label, industry, False))
+                industry_select.add_option((label, name, False))
 
             self._industries_loaded = True
         except Exception:
@@ -1350,24 +1371,17 @@ class ScreenerApp(App):
 
         passing_stocks = []
         total = len(ticker_list)
-        cache_hits = 0
 
         for i, ticker in enumerate(ticker_list):
-            # Check if cached
-            is_cached = get_cached_stock_data(ticker) is not None
-
             # Update progress via call_from_thread
             progress = (i + 1) / total * 100
             self.call_from_thread(
                 self._update_progress, ticker, i + 1, total,
-                len(passing_stocks), progress, cache_hits, is_cached
+                len(passing_stocks), progress
             )
 
             stock = self._get_stock(ticker)
             if stock:
-                if is_cached:
-                    cache_hits += 1
-
                 # Apply screening criteria
                 if not screen_stock(stock, criteria):
                     continue
@@ -1382,21 +1396,18 @@ class ScreenerApp(App):
         return passing_stocks
 
     def _update_progress(self, ticker: str, current: int, total: int, found: int,
-                         progress: float, cache_hits: int, is_cached: bool) -> None:
+                         progress: float) -> None:
         try:
             # Current ticker being processed
             loading_detail = self.query_one("#loading-detail", Static)
-            cache_indicator = "[green]⚡[/]" if is_cached else "[yellow]○[/]"
-            loading_detail.update(f"{cache_indicator} [bold]{ticker}[/]")
+            loading_detail.update(f"[cyan]●[/] [bold]{ticker}[/]")
 
             # Stats line
             loading_stats = self.query_one("#loading-stats", Static)
             pct = int(progress)
-            cache_pct = int(cache_hits / current * 100) if current > 0 else 0
             loading_stats.update(
                 f"[dim]Progress:[/] {current}/{total} ({pct}%)  "
-                f"[dim]Found:[/] [green]{found}[/]  "
-                f"[dim]Cache:[/] {cache_pct}%"
+                f"[dim]Found:[/] [green]{found}[/]"
             )
         except Exception:
             pass  # Ignore if widgets not available
@@ -1408,8 +1419,10 @@ class ScreenerApp(App):
     def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
         if event.state.name == "SUCCESS":
             # Check if this is the API status worker
-            if event.worker.name == "_fetch_api_status":
+            if event.worker.name == "api_status":
                 self._update_api_status(event.worker.result)
+            elif event.worker.name == "industries_fetch":
+                self._populate_industries_from_api(event.worker.result)
             else:
                 # Stock fetch worker
                 self.stocks = event.worker.result or []
