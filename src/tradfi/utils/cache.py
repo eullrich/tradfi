@@ -14,10 +14,8 @@ CONFIG_FILE = CACHE_DIR / "config.json"
 
 # Default settings
 DEFAULT_CACHE_TTL = 30 * 60  # 30 minutes
-# Yahoo Finance allows ~360 requests/hour = 1 request per 10 seconds
-# Using 2 seconds as default - aggressive but usually works for small batches
-# For large prefetches, recommend using 5-10 seconds
-DEFAULT_RATE_LIMIT_DELAY = 2.0  # seconds between requests
+# yfinance has no official rate limits - disable delay for responsive UX
+DEFAULT_RATE_LIMIT_DELAY = 0.0  # no delay between requests
 
 
 @dataclass

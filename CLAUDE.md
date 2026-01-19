@@ -152,7 +152,7 @@ The system auto-detects which provider to use based on available environment var
 
 ## API Rate Limiting
 
-yfinance has no official rate limits, but the code implements a configurable delay between requests (see `utils/cache.py` for config). Cached data has a configurable TTL.
+yfinance has no official rate limits, so no delay is applied between requests by default. Cached data has a configurable TTL (30 minutes).
 
 ## Signal Logic
 
