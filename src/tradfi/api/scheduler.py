@@ -120,10 +120,11 @@ async def daily_refresh_job():
     """
     Daily job to refresh all configured universes.
 
-    Runs universes in order: dow30, nasdaq100, sp500, russell2000
-    with delays between each to avoid rate limiting.
+    Runs universes in order with delays between each to avoid rate limiting.
     """
-    universes = os.environ.get("TRADFI_REFRESH_UNIVERSES", "dow30,nasdaq100,sp500").split(",")
+    # Default to all main universes
+    default_universes = "dow30,nasdaq100,sp500,russell2000,sweetspot,dividends,value,reits,commodities,sectors"
+    universes = os.environ.get("TRADFI_REFRESH_UNIVERSES", default_universes).split(",")
     delay = float(os.environ.get("TRADFI_REFRESH_DELAY", "2.0"))
 
     logger.info(f"Starting daily refresh for universes: {universes}")
