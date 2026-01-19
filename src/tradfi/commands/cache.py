@@ -28,6 +28,8 @@ app = typer.Typer(help="Manage the stock data cache")
 @app.command("status")
 def cache_status() -> None:
     """Show cache status and statistics."""
+    from datetime import datetime
+
     stats = get_cache_stats()
     config = get_config()
 
@@ -44,6 +46,24 @@ def cache_status() -> None:
     table.add_row("Total Cached Stocks", str(stats["total_cached"]))
     table.add_row("Fresh (within TTL)", f"[green]{stats['fresh']}[/]")
     table.add_row("Stale (expired)", f"[yellow]{stats['stale']}[/]")
+
+    # Show last updated time
+    if stats.get("last_updated"):
+        last_dt = datetime.fromtimestamp(stats["last_updated"])
+        age_seconds = time.time() - stats["last_updated"]
+        if age_seconds < 60:
+            age_str = f"{int(age_seconds)}s ago"
+        elif age_seconds < 3600:
+            age_str = f"{int(age_seconds / 60)}m ago"
+        elif age_seconds < 86400:
+            age_str = f"{int(age_seconds / 3600)}h ago"
+        else:
+            age_str = f"{int(age_seconds / 86400)}d ago"
+        table.add_row("", "")
+        table.add_row("Last Updated", f"{last_dt.strftime('%Y-%m-%d %H:%M:%S')} ({age_str})")
+    else:
+        table.add_row("", "")
+        table.add_row("Last Updated", "[dim]Never[/]")
 
     console.print()
     console.print(table)
