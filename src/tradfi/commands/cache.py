@@ -130,6 +130,24 @@ def _show_remote_cache_status(api_url: str) -> None:
     table.add_row("Last Updated", _format_timestamp(stats.get("last_updated")))
     table.add_row("Oldest Entry", _format_timestamp(stats.get("oldest_entry")))
 
+    # Show last updated time
+    if stats.get("last_updated"):
+        last_dt = datetime.fromtimestamp(stats["last_updated"])
+        age_seconds = time.time() - stats["last_updated"]
+        if age_seconds < 60:
+            age_str = f"{int(age_seconds)}s ago"
+        elif age_seconds < 3600:
+            age_str = f"{int(age_seconds / 60)}m ago"
+        elif age_seconds < 86400:
+            age_str = f"{int(age_seconds / 3600)}h ago"
+        else:
+            age_str = f"{int(age_seconds / 86400)}d ago"
+        table.add_row("", "")
+        table.add_row("Last Updated", f"{last_dt.strftime('%Y-%m-%d %H:%M:%S')} ({age_str})")
+    else:
+        table.add_row("", "")
+        table.add_row("Last Updated", "[dim]Never[/]")
+
     console.print()
     console.print(table)
     console.print()
@@ -239,7 +257,7 @@ def cache_prefetch(
         tradfi cache prefetch sp500 --delay 5   # Safer for 500 stocks
         tradfi cache prefetch all --delay 10    # Safest for all 1241 stocks
     """
-    from tradfi.core.data import fetch_stock
+    from tradfi.core.data import fetch_stock_from_api
 
     # Determine which universes to fetch
     if universe is None:
@@ -334,9 +352,8 @@ def cache_prefetch(
         for ticker in tickers_to_fetch:
             progress.update(task, description=f"Fetching {ticker}...")
 
-            # use_cache=True means it will save to cache after fetching
-            # We already filtered out cached stocks above if skip_cached=True
-            stock = fetch_stock(ticker, use_cache=True)
+            # Fetch from yfinance API and save to cache
+            stock = fetch_stock_from_api(ticker)
             if stock:
                 fetched += 1
             else:

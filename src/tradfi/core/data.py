@@ -42,12 +42,31 @@ _last_request_time: float = 0
 
 def fetch_stock(ticker_symbol: str, use_cache: bool = True, cache_only: bool = False) -> Stock | None:
     """
-    Fetch complete stock data from yfinance with caching and rate limiting.
+    Fetch stock data from cache only. Does not hit yfinance API.
 
     Args:
         ticker_symbol: Stock ticker (e.g., "AAPL")
-        use_cache: Whether to use cached data (default True)
-        cache_only: If True, only return cached data, never hit yfinance (default False)
+        use_cache: Ignored (always reads from cache)
+
+    Returns:
+        Stock object with all metrics, or None if not in cache
+    """
+    ticker_symbol = ticker_symbol.upper()
+
+    # Only serve from cache - never hit yfinance
+    cached = get_cached_stock_data(ticker_symbol, ignore_ttl=True)
+    if cached:
+        return _dict_to_stock(cached)
+    return None
+
+
+def fetch_stock_from_api(ticker_symbol: str) -> Stock | None:
+    """
+    Fetch stock data directly from yfinance API and cache it.
+    Used only for cache population (prefetch command).
+
+    Args:
+        ticker_symbol: Stock ticker (e.g., "AAPL")
 
     Returns:
         Stock object with all metrics, or None if fetch failed
@@ -55,19 +74,6 @@ def fetch_stock(ticker_symbol: str, use_cache: bool = True, cache_only: bool = F
     global _last_request_time
     ticker_symbol = ticker_symbol.upper()
     config = get_config()
-
-    # In offline mode or cache_only mode, only return cached data (ignore TTL)
-    if config.offline_mode or cache_only:
-        cached = get_cached_stock_data(ticker_symbol, ignore_ttl=True)
-        if cached:
-            return _dict_to_stock(cached)
-        return None
-
-    # Try cache first
-    if use_cache:
-        cached = get_cached_stock_data(ticker_symbol)
-        if cached:
-            return _dict_to_stock(cached)
 
     # Rate limiting
     elapsed = time.time() - _last_request_time
@@ -140,7 +146,7 @@ def fetch_stock(ticker_symbol: str, use_cache: bool = True, cache_only: bool = F
             earnings_growth_yoy=_to_pct(info.get("earningsGrowth")),
         )
 
-        # Dividend info (dividendYield from yfinance is already in percentage form, e.g., 1.9 = 1.9%)
+        # Dividend info
         stock.dividends = DividendInfo(
             dividend_yield=info.get("dividendYield"),
             dividend_rate=info.get("dividendRate"),
@@ -158,9 +164,9 @@ def fetch_stock(ticker_symbol: str, use_cache: bool = True, cache_only: bool = F
         metrics_52w = calculate_52w_metrics(high_52w, low_52w, current_price)
 
         # Calculate period returns from historical prices
-        return_1m = _calculate_return(close_prices, 21)   # ~21 trading days = 1 month
-        return_6m = _calculate_return(close_prices, 126)  # ~126 trading days = 6 months
-        return_1y = _calculate_return(close_prices, 252)  # ~252 trading days = 1 year
+        return_1m = _calculate_return(close_prices, 21)
+        return_6m = _calculate_return(close_prices, 126)
+        return_1y = _calculate_return(close_prices, 252)
 
         stock.technical = TechnicalIndicators(
             rsi_14=rsi_14,
@@ -181,10 +187,8 @@ def fetch_stock(ticker_symbol: str, use_cache: bool = True, cache_only: bool = F
         graham_number = calculate_graham_number(stock.eps, stock.book_value_per_share)
         pe_fair_value = calculate_pe_fair_value(stock.eps, target_pe=15)
 
-        # DCF calculation - estimate growth from earnings growth or use conservative default
-        growth_rate = 0.05  # Default 5%
+        growth_rate = 0.05
         if stock.growth.earnings_growth_yoy is not None and stock.growth.earnings_growth_yoy > 0:
-            # Use half of recent growth as conservative estimate, capped at 15%
             growth_rate = min(stock.growth.earnings_growth_yoy / 100 / 2, 0.15)
 
         dcf_value = calculate_dcf_fair_value(
@@ -195,8 +199,6 @@ def fetch_stock(ticker_symbol: str, use_cache: bool = True, cache_only: bool = F
             terminal_growth=0.03,
         )
 
-        # Calculate margin of safety using best available fair value
-        # Priority: DCF > Graham Number > P/E Fair Value
         best_fair_value = dcf_value or graham_number or pe_fair_value
         margin_of_safety = None
         if best_fair_value is not None and current_price is not None and current_price > 0:
@@ -222,12 +224,11 @@ def fetch_stock(ticker_symbol: str, use_cache: bool = True, cache_only: bool = F
             fcf_yield_pct=fcf_yield,
             cash_per_share=info.get("totalCashPerShare"),
             shares_outstanding=info.get("sharesOutstanding"),
-            shares_outstanding_prior=None,  # Not directly available from yfinance
+            shares_outstanding_prior=None,
         )
 
         # Cache the result
-        if use_cache:
-            cache_stock_data(ticker_symbol, _stock_to_dict(stock))
+        cache_stock_data(ticker_symbol, _stock_to_dict(stock))
 
         return stock
 

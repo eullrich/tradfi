@@ -118,12 +118,9 @@ AVAILABLE_UNIVERSES: dict[str, str] = {
     "nasdaq100": "NASDAQ-100 (100 largest NASDAQ stocks)",
     "russell2000": "Russell 2000 sample (~200 small-cap stocks)",
     "sweetspot": "$2-12B market cap sweet spot (under-followed + fallen angels)",
-    "commodities": "Commodity ETFs (gold, silver, oil, agriculture, etc.)",
-    "sectors": "Sector ETFs (XLK, XLF, XLE, etc.)",
+    "etf": "ETFs (REITs, Commodities, Sectors, International)",
     "dividends": "Dividend Aristocrats & high-yield stocks",
     "value": "Value-focused stocks and ETFs",
-    "reits": "REITs (Real Estate Investment Trusts)",
-    "international": "International ETFs and ADRs",
 }
 
 
@@ -158,7 +155,7 @@ def load_tickers(universe: str = "sp500") -> list[str]:
 
     Args:
         universe: Name of the universe (sp500, dow30, nasdaq100, russell2000,
-                  commodities, sectors, dividends, value, reits, international)
+                  sweetspot, etf, dividends, value)
 
     Returns:
         List of ticker symbols
@@ -179,6 +176,104 @@ def load_tickers(universe: str = "sp500") -> list[str]:
         tickers = [line.strip() for line in f if line.strip() and not line.startswith("#")]
 
     return tickers
+
+
+def load_tickers_with_categories(universe: str) -> dict[str, list[str]]:
+    """
+    Load tickers organized by category from a universe file.
+
+    Categories are defined by '## Category Name' headers in the data file.
+    Tickers without a category header are placed under 'Uncategorized'.
+
+    Args:
+        universe: Name of the universe (e.g., 'etf')
+
+    Returns:
+        Dict mapping category names to lists of tickers
+    """
+    data_dir = get_data_dir()
+    ticker_file = data_dir / f"{universe}.txt"
+
+    if not ticker_file.exists():
+        available = ", ".join(AVAILABLE_UNIVERSES.keys())
+        raise FileNotFoundError(
+            f"Universe '{universe}' not found. Available: {available}"
+        )
+
+    categories: dict[str, list[str]] = {}
+    current_category = "Uncategorized"
+
+    with open(ticker_file) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+
+            # Check for category header (## Category Name)
+            if line.startswith("## "):
+                current_category = line[3:].strip()
+                if current_category not in categories:
+                    categories[current_category] = []
+            # Skip comments
+            elif line.startswith("#"):
+                continue
+            # It's a ticker
+            else:
+                if current_category not in categories:
+                    categories[current_category] = []
+                categories[current_category].append(line)
+
+    return categories
+
+
+def get_universe_categories(universe: str) -> list[str]:
+    """
+    Get list of category names for a universe.
+
+    Args:
+        universe: Name of the universe (e.g., 'etf')
+
+    Returns:
+        List of category names, or empty list if no categories
+    """
+    try:
+        categories = load_tickers_with_categories(universe)
+        # Return categories in order, excluding 'Uncategorized' if empty
+        result = [cat for cat in categories.keys() if cat != "Uncategorized" or categories[cat]]
+        return result
+    except FileNotFoundError:
+        return []
+
+
+def load_tickers_by_categories(
+    universe: str, selected_categories: set[str] | None = None
+) -> list[str]:
+    """
+    Load tickers filtered by selected categories.
+
+    Args:
+        universe: Name of the universe
+        selected_categories: Set of category names to include, or None for all
+
+    Returns:
+        List of tickers from the selected categories
+    """
+    categories = load_tickers_with_categories(universe)
+
+    if selected_categories is None:
+        # Return all tickers
+        all_tickers = []
+        for tickers in categories.values():
+            all_tickers.extend(tickers)
+        return all_tickers
+
+    # Filter by selected categories
+    filtered_tickers = []
+    for cat_name, tickers in categories.items():
+        if cat_name in selected_categories:
+            filtered_tickers.extend(tickers)
+
+    return filtered_tickers
 
 
 def screen_stock(stock: Stock, criteria: ScreenCriteria) -> bool:

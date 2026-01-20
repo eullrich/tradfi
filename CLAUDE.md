@@ -12,6 +12,7 @@ TradFi is a Python CLI tool for value investors to screen stocks and analyze com
 - **pandas** - Data processing
 - **Rich** - Terminal formatting with tables/colors
 - **Textual** - TUI (Terminal User Interface)
+- **FastAPI** - REST API server
 - **SQLite** - Caching and data persistence
 
 ## Project Structure
@@ -22,6 +23,7 @@ tradfi/
 ├── PLAN.md                  # Detailed implementation plan
 ├── src/tradfi/
 │   ├── cli.py               # Main CLI entry point (Typer app)
+│   ├── api.py               # FastAPI server for remote cache access
 │   ├── commands/
 │   │   ├── analyze.py       # Single stock analysis
 │   │   ├── screen.py        # Stock screener with filters
@@ -31,7 +33,7 @@ tradfi/
 │   │   ├── cache.py         # Cache management commands
 │   │   └── lists.py         # Stock list management (with categories & notes)
 │   ├── core/
-│   │   ├── data.py          # yfinance data fetching with caching
+│   │   ├── data.py          # Stock data (cache-only mode, no live API calls)
 │   │   ├── technical.py     # RSI, moving averages, 52W metrics
 │   │   ├── valuation.py     # Graham number, DCF, P/E fair value
 │   │   ├── screener.py      # Screening logic and presets
@@ -50,8 +52,33 @@ tradfi/
     ├── dow30.txt            # Dow 30 tickers
     ├── nasdaq100.txt        # NASDAQ 100 tickers
     ├── russell2000.txt      # Russell 2000 tickers
-    └── [other lists].txt    # Sector/thematic lists
+    ├── sweetspot.txt        # $2-12B market cap stocks
+    ├── etf.txt              # ETFs with category headers (REITs, Commodities, Sectors, International)
+    ├── dividends.txt        # Dividend stocks
+    └── value.txt            # Value-focused stocks
 ```
+
+## Available Universes
+
+The following universes are available for screening:
+- **sp500** - S&P 500 (~500 large-cap US stocks)
+- **dow30** - Dow Jones Industrial Average (30 stocks)
+- **nasdaq100** - NASDAQ-100 (100 largest NASDAQ stocks)
+- **russell2000** - Russell 2000 sample (~200 small-cap stocks)
+- **sweetspot** - $2-12B market cap sweet spot (under-followed + fallen angels)
+- **etf** - ETFs with categories: REITs, Commodities, Sectors, International
+- **dividends** - Dividend Aristocrats & high-yield stocks
+- **value** - Value-focused stocks and ETFs
+
+### ETF Categories
+
+The `etf` universe supports category filtering. Categories are defined in `data/etf.txt` using `## Category` headers:
+- **REITs** - Real Estate Investment Trusts
+- **Commodities** - Gold, silver, oil, agriculture ETFs
+- **Sectors** - Technology, healthcare, financials sector ETFs
+- **International** - Country ETFs and ADRs
+
+In the TUI, when you select the `etf` universe, a category filter appears allowing you to filter by specific ETF types.
 
 ## Key Commands
 
@@ -95,9 +122,18 @@ tradfi list note my-picks AAPL "Strong moat, waiting for pullback"
 tradfi list note my-picks AAPL --thesis "Services growth" --target 200 --entry 165
 tradfi list notes my-picks       # Show all notes in list
 
+# Cache management
+tradfi cache status          # Show cache stats and last updated time
+tradfi cache prefetch sp500  # Prefetch stocks from yfinance to cache
+tradfi cache prefetch dow30 --delay 5  # Prefetch with custom rate limit
+tradfi cache clear           # Clear cached data
+
+# API server (for remote cache access)
+tradfi serve                 # Start API server on port 8000
+tradfi serve --port 3000     # Start on custom port
+
 # Utilities
 tradfi watchlist add AAPL    # Add to watchlist
-tradfi cache clear           # Clear cached data
 ```
 
 ## Core Data Models
@@ -150,9 +186,41 @@ Uses `claude-sonnet-4-20250514` (paid).
 
 The system auto-detects which provider to use based on available environment variables. OpenRouter is checked first, then Anthropic.
 
-## API Rate Limiting
+## Cache-Only Mode (Railway Deployment)
 
-yfinance has no official rate limits, but the code implements a configurable delay between requests (see `utils/cache.py` for config). Cached data has a configurable TTL.
+The app runs in **cache-only mode** - it never hits the yfinance API during normal operation. All stock data is served from the SQLite cache for fast, consistent performance.
+
+To populate the cache, use the prefetch command:
+```bash
+tradfi cache prefetch sp500 --delay 5   # Prefetch S&P 500
+tradfi cache prefetch all --delay 10    # Prefetch all universes
+```
+
+Rate limiting (2s delay by default) only applies during prefetch operations.
+
+## API Server
+
+Start the API server for remote cache access:
+```bash
+tradfi serve --port 8000
+```
+
+### Endpoints
+
+- `GET /api/cache/status` - Cache stats and last updated time
+- `GET /health` - Health check
+
+Example response from `/api/cache/status`:
+```json
+{
+  "total_cached": 500,
+  "fresh": 450,
+  "stale": 50,
+  "cache_ttl_minutes": 30,
+  "last_updated": "2024-01-15T10:30:00",
+  "last_updated_ago": "2h ago"
+}
+```
 
 ## Signal Logic
 
@@ -179,6 +247,9 @@ The TUI has been simplified for easier navigation:
 - **Sort By**: P/E, Price, RSI, Margin of Safety, etc.
 - **Actions**: Refresh, Save list
 - **View**: Help, Stock detail, Quarterly trends
+
+### Category Filtering
+When selecting a single universe that has categories (like `etf`), a category filter appears in the sidebar. Select one or more categories to filter the results.
 
 ### Simplified Data Table
 Default columns: `Ticker | Price | P/E | ROE | RSI | MoS% | Div | Signal`
