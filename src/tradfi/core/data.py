@@ -1,5 +1,7 @@
 """Data fetching from yfinance with caching and rate limiting."""
 
+from __future__ import annotations
+
 import time
 from dataclasses import asdict
 
@@ -38,7 +40,7 @@ from tradfi.utils.cache import (
 _last_request_time: float = 0
 
 
-def fetch_stock(ticker_symbol: str, use_cache: bool = True) -> Stock | None:
+def fetch_stock(ticker_symbol: str, use_cache: bool = True, cache_only: bool = False) -> Stock | None:
     """
     Fetch stock data from cache only. Does not hit yfinance API.
 
@@ -231,7 +233,15 @@ def fetch_stock_from_api(ticker_symbol: str) -> Stock | None:
         return stock
 
     except Exception as e:
+        # Log error
         print(f"Error fetching {ticker_symbol}: {e}")
+
+        # Fallback to stale cache if available (better than returning nothing)
+        stale_cached = get_cached_stock_data(ticker_symbol, ignore_ttl=True)
+        if stale_cached:
+            print(f"Returning stale cached data for {ticker_symbol}")
+            return _dict_to_stock(stale_cached)
+
         return None
 
 

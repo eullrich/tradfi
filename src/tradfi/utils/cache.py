@@ -1,21 +1,26 @@
 """SQLite caching for API responses and watchlist storage."""
 
+from __future__ import annotations
+
 import json
+import os
 import sqlite3
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-# Default cache location
-CACHE_DIR = Path.home() / ".tradfi"
-CACHE_DB = CACHE_DIR / "cache.db"
-CONFIG_FILE = CACHE_DIR / "config.json"
+# Default cache location - supports environment variable overrides for cloud deployment
+CACHE_DIR = Path(os.environ.get("TRADFI_DATA_DIR", str(Path.home() / ".tradfi")))
+CACHE_DB = Path(os.environ.get("TRADFI_DB_PATH", str(CACHE_DIR / "cache.db")))
+CONFIG_FILE = Path(os.environ.get("TRADFI_CONFIG_PATH", str(CACHE_DIR / "config.json")))
 
-# Default settings
-DEFAULT_CACHE_TTL = 30 * 60  # 30 minutes
-# Rate limit for yfinance API calls (only applies on cache miss)
-DEFAULT_RATE_LIMIT_DELAY = 2.0  # seconds between yfinance requests
+# Default settings - use env var for cloud deployments
+DEFAULT_CACHE_TTL = int(os.environ.get("TRADFI_CACHE_TTL", 24 * 60 * 60))  # 24 hours default
+# Yahoo Finance allows ~360 requests/hour = 1 request per 10 seconds
+# Using 2 seconds as default - aggressive but usually works for small batches
+# For large prefetches, recommend using 5-10 seconds
+DEFAULT_RATE_LIMIT_DELAY = 2.0  # seconds between requests
 
 
 @dataclass
@@ -295,10 +300,16 @@ def get_cache_stats() -> dict:
         stale = total - fresh
 
         # Get most recent cache update time
-        last_updated_row = conn.execute(
+        last_update_row = conn.execute(
             "SELECT MAX(cached_at) FROM stock_cache"
         ).fetchone()
-        last_updated = last_updated_row[0] if last_updated_row and last_updated_row[0] else None
+        last_updated = last_update_row[0] if last_update_row and last_update_row[0] else None
+
+        # Get oldest cache entry time
+        oldest_row = conn.execute(
+            "SELECT MIN(cached_at) FROM stock_cache"
+        ).fetchone()
+        oldest_entry = oldest_row[0] if oldest_row and oldest_row[0] else None
 
         return {
             "total_cached": total,
@@ -308,6 +319,7 @@ def get_cache_stats() -> dict:
             "cache_enabled": config.cache_enabled,
             "rate_limit_delay": config.rate_limit_delay,
             "last_updated": last_updated,
+            "oldest_entry": oldest_entry,
         }
     finally:
         conn.close()

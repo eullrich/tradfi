@@ -1,5 +1,7 @@
 """Fair value calculation methods."""
 
+from __future__ import annotations
+
 import math
 
 

@@ -1,5 +1,7 @@
 """Main TUI application for tradfi."""
 
+from __future__ import annotations
+
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
@@ -761,10 +763,20 @@ class ScreenerApp(App):
         height: 1fr;
     }
 
-    #status-bar {
+    #bottom-bar {
         height: 3;
         border-top: solid $primary;
         padding: 1;
+    }
+
+    #status-bar {
+        width: 1fr;
+    }
+
+    #api-status {
+        width: auto;
+        text-align: right;
+        padding-right: 1;
     }
 
     #research-panel {
@@ -958,7 +970,7 @@ class ScreenerApp(App):
         "mos": (lambda s: s.fair_value.margin_of_safety_pct if s.fair_value.margin_of_safety_pct else float("-inf"), True, "MoS%"),
     }
 
-    def __init__(self) -> None:
+    def __init__(self, api_url: str) -> None:
         super().__init__()
         self.current_preset = None
         self.stocks: list[Stock] = []
@@ -970,6 +982,15 @@ class ScreenerApp(App):
         self.selected_universes: set[str] = set()  # Selected universes
         self.selected_categories: set[str] = set()  # Selected categories (for ETF universe)
         self._industries_loaded: bool = False  # Track if industries list is populated
+
+        # Remote API provider (required - TUI always uses remote API)
+        self.api_url = api_url
+        from tradfi.core.remote_provider import RemoteDataProvider
+        self.remote_provider = RemoteDataProvider(api_url)
+
+    def _get_stock(self, ticker: str) -> Stock | None:
+        """Fetch a stock from the remote API."""
+        return self.remote_provider.fetch_stock(ticker)
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -1042,7 +1063,11 @@ class ScreenerApp(App):
             ),
             id="main-container",
         )
-        yield Static("[dim]Ready.[/] Press [bold]Space[/] for actions, [bold]/[/] to search, [bold]r[/] to scan.", id="status-bar")
+        yield Horizontal(
+            Static("[dim]Ready.[/] Press [bold]Space[/] for actions, [bold]/[/] to search, [bold]r[/] to scan.", id="status-bar"),
+            Static("[dim]Connecting...[/]", id="api-status"),
+            id="bottom-bar",
+        )
         yield Footer()
 
     def on_mount(self) -> None:
@@ -1058,6 +1083,58 @@ class ScreenerApp(App):
 
         # Populate industry selection list
         self._populate_industries()
+
+        # Fetch API status in background
+        self.run_worker(self._fetch_api_status, thread=True)
+
+    def _fetch_api_status(self) -> dict | None:
+        """Fetch cache stats from the API."""
+        import httpx
+        try:
+            response = httpx.get(
+                f"{self.api_url.rstrip('/')}/api/v1/cache/stats",
+                timeout=5.0
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception:
+            return None
+
+    def _format_relative_time(self, timestamp: int | None) -> str:
+        """Format a timestamp as relative time."""
+        if timestamp is None:
+            return "never"
+        import time
+        age = time.time() - timestamp
+        if age < 60:
+            return "just now"
+        elif age < 3600:
+            return f"{int(age / 60)}m ago"
+        elif age < 86400:
+            return f"{int(age / 3600)}h ago"
+        else:
+            return f"{int(age / 86400)}d ago"
+
+    def _update_api_status(self, stats: dict | None) -> None:
+        """Update the API status widget."""
+        try:
+            api_status = self.query_one("#api-status", Static)
+            if stats:
+                total = stats.get("total_cached", 0)
+                last_updated = stats.get("last_updated")
+                time_str = self._format_relative_time(last_updated)
+                # Extract hostname for display
+                from urllib.parse import urlparse
+                host = urlparse(self.api_url).netloc
+                api_status.update(
+                    f"[green]●[/] [dim]{host}[/] | "
+                    f"[cyan]{total}[/] stocks | "
+                    f"[dim]updated {time_str}[/]"
+                )
+            else:
+                api_status.update("[red]●[/] [dim]API disconnected[/]")
+        except Exception:
+            pass
 
     def _populate_universes(self) -> None:
         """Populate the universe selection list."""
@@ -1316,7 +1393,7 @@ class ScreenerApp(App):
                 len(stocks), progress, 0, False
             )
 
-            stock = fetch_stock(ticker)
+            stock = self._get_stock(ticker)
             if stock:
                 stocks.append(stock)
 
@@ -1372,7 +1449,7 @@ class ScreenerApp(App):
                 len(passing_stocks), progress, cache_hits, is_cached
             )
 
-            stock = fetch_stock(ticker)
+            stock = self._get_stock(ticker)
             if stock:
                 if is_cached:
                     cache_hits += 1
@@ -1416,8 +1493,13 @@ class ScreenerApp(App):
 
     def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
         if event.state.name == "SUCCESS":
-            self.stocks = event.worker.result or []
-            self._populate_table()
+            # Check if this is the API status worker
+            if event.worker.name == "_fetch_api_status":
+                self._update_api_status(event.worker.result)
+            else:
+                # Stock fetch worker
+                self.stocks = event.worker.result or []
+                self._populate_table()
 
     def _populate_table(self) -> None:
         loading = self.query_one("#loading", Container)
@@ -1705,13 +1787,18 @@ class ScreenerApp(App):
 
     def _fetch_single_stock(self, ticker: str) -> list[Stock]:
         """Fetch a single stock by ticker."""
-        stock = fetch_stock(ticker)
+        stock = self._get_stock(ticker)
         if stock:
             return [stock]
         return []
 
 
-def run_tui() -> None:
-    """Run the interactive TUI."""
-    app = ScreenerApp()
+def run_tui(api_url: str) -> None:
+    """Run the interactive TUI.
+
+    Args:
+        api_url: Remote API URL (required). All data is fetched from the
+                 remote server - no local yfinance fetching.
+    """
+    app = ScreenerApp(api_url=api_url)
     app.run()
