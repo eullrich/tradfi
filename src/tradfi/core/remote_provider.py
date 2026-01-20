@@ -159,3 +159,255 @@ class RemoteDataProvider:
             shares_outstanding=data.get("shares_outstanding"),
             shares_outstanding_prior=data.get("shares_outstanding_prior"),
         )
+
+    # ==================== Lists ====================
+
+    def get_lists(self) -> list[str]:
+        """Get all saved list names."""
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.get(f"{self.api_url}/api/v1/lists")
+            if response.status_code == 200:
+                return response.json()
+            return []
+        except httpx.RequestError:
+            return []
+
+    def get_list(self, name: str) -> dict | None:
+        """Get a saved list by name with all items and notes."""
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.get(f"{self.api_url}/api/v1/lists/{name}")
+            if response.status_code == 200:
+                return response.json()
+            return None
+        except httpx.RequestError:
+            return None
+
+    def create_list(self, name: str, tickers: list[str]) -> bool:
+        """Create a new stock list."""
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.post(
+                    f"{self.api_url}/api/v1/lists",
+                    json={"name": name, "tickers": tickers}
+                )
+            return response.status_code == 200
+        except httpx.RequestError:
+            return False
+
+    def delete_list(self, name: str) -> bool:
+        """Delete a saved list."""
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.delete(f"{self.api_url}/api/v1/lists/{name}")
+            return response.status_code == 200
+        except httpx.RequestError:
+            return False
+
+    def add_to_list(self, name: str, ticker: str) -> bool:
+        """Add a ticker to a list."""
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.post(
+                    f"{self.api_url}/api/v1/lists/{name}/items",
+                    json={"ticker": ticker.upper()}
+                )
+            return response.status_code == 200
+        except httpx.RequestError:
+            return False
+
+    def remove_from_list(self, name: str, ticker: str) -> bool:
+        """Remove a ticker from a list."""
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.delete(
+                    f"{self.api_url}/api/v1/lists/{name}/items/{ticker.upper()}"
+                )
+            return response.status_code == 200
+        except httpx.RequestError:
+            return False
+
+    def set_item_note(
+        self,
+        name: str,
+        ticker: str,
+        notes: str | None = None,
+        thesis: str | None = None,
+        entry_price: float | None = None,
+        target_price: float | None = None,
+    ) -> bool:
+        """Update notes for a list item."""
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.put(
+                    f"{self.api_url}/api/v1/lists/{name}/items/{ticker.upper()}/notes",
+                    json={
+                        "notes": notes,
+                        "thesis": thesis,
+                        "entry_price": entry_price,
+                        "target_price": target_price,
+                    }
+                )
+            return response.status_code == 200
+        except httpx.RequestError:
+            return False
+
+    # ==================== Watchlist ====================
+
+    def get_watchlist(self) -> list[dict]:
+        """Get all watchlist items."""
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.get(f"{self.api_url}/api/v1/watchlist")
+            if response.status_code == 200:
+                return response.json()
+            return []
+        except httpx.RequestError:
+            return []
+
+    def add_to_watchlist(self, ticker: str, notes: str | None = None) -> bool:
+        """Add a ticker to the watchlist."""
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.post(
+                    f"{self.api_url}/api/v1/watchlist",
+                    json={"ticker": ticker.upper()}
+                )
+            return response.status_code == 200
+        except httpx.RequestError:
+            return False
+
+    def remove_from_watchlist(self, ticker: str) -> bool:
+        """Remove a ticker from the watchlist."""
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.delete(
+                    f"{self.api_url}/api/v1/watchlist/{ticker.upper()}"
+                )
+            return response.status_code == 200
+        except httpx.RequestError:
+            return False
+
+    def update_watchlist_notes(self, ticker: str, notes: str) -> bool:
+        """Update notes for a watchlist item."""
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.put(
+                    f"{self.api_url}/api/v1/watchlist/{ticker.upper()}/notes",
+                    json={"notes": notes}
+                )
+            return response.status_code == 200
+        except httpx.RequestError:
+            return False
+
+    # ==================== Categories ====================
+
+    def get_categories(self) -> list[dict]:
+        """Get all categories."""
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.get(f"{self.api_url}/api/v1/lists/categories")
+            if response.status_code == 200:
+                return response.json()
+            return []
+        except httpx.RequestError:
+            return []
+
+    def create_category(self, name: str, icon: str | None = None) -> bool:
+        """Create a new category."""
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.post(
+                    f"{self.api_url}/api/v1/lists/categories",
+                    json={"name": name, "icon": icon}
+                )
+            return response.status_code == 200
+        except httpx.RequestError:
+            return False
+
+    def delete_category(self, category_id: int) -> bool:
+        """Delete a category."""
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.delete(
+                    f"{self.api_url}/api/v1/lists/categories/{category_id}"
+                )
+            return response.status_code == 200
+        except httpx.RequestError:
+            return False
+
+    def add_list_to_category(self, list_name: str, category_id: int) -> bool:
+        """Add a list to a category."""
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.post(
+                    f"{self.api_url}/api/v1/lists/categories/{category_id}/lists/{list_name}"
+                )
+            return response.status_code == 200
+        except httpx.RequestError:
+            return False
+
+    def remove_list_from_category(self, list_name: str, category_id: int) -> bool:
+        """Remove a list from a category."""
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.delete(
+                    f"{self.api_url}/api/v1/lists/categories/{category_id}/lists/{list_name}"
+                )
+            return response.status_code == 200
+        except httpx.RequestError:
+            return False
+
+    # ==================== Cache ====================
+
+    def get_cache_stats(self) -> dict:
+        """Get cache statistics."""
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.get(f"{self.api_url}/api/v1/cache/stats")
+            if response.status_code == 200:
+                return response.json()
+            return {}
+        except httpx.RequestError:
+            return {}
+
+    def get_industries(self) -> list[tuple[str, int]]:
+        """Get all industries with their stock counts from cache."""
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.get(f"{self.api_url}/api/v1/cache/industries")
+            if response.status_code == 200:
+                data = response.json()
+                return [(item["industry"], item["count"]) for item in data]
+            return []
+        except httpx.RequestError:
+            return []
+
+    def clear_cache(self) -> int:
+        """Clear all cached stock data. Returns count of cleared entries."""
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.post(f"{self.api_url}/api/v1/cache/clear")
+            if response.status_code == 200:
+                data = response.json()
+                # Extract count from message like "Cleared 500 cached entries"
+                msg = data.get("message", "")
+                try:
+                    return int(msg.split()[1])
+                except (IndexError, ValueError):
+                    return 0
+            return 0
+        except httpx.RequestError:
+            return 0
+
+    def trigger_refresh(self, universe: str) -> dict:
+        """Trigger a refresh for a universe. Returns status dict."""
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.post(f"{self.api_url}/api/v1/refresh/{universe}")
+            if response.status_code == 200:
+                return response.json()
+            return {"error": f"Status {response.status_code}"}
+        except httpx.RequestError as e:
+            return {"error": str(e)}
