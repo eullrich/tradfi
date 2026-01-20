@@ -49,6 +49,8 @@ ACTION_MENU_ITEMS = {
     "Actions": [
         ("refresh", "r", "Refresh / Run screen"),
         ("save", "s", "Save current list"),
+        ("clear_cache", "C", "Clear cache"),
+        ("resync", "R", "Resync all universes"),
     ],
     "View": [
         ("help", "?", "Show all shortcuts"),
@@ -137,7 +139,7 @@ class ActionMenuScreen(ModalScreen):
                     self.dismiss(action_id)
                     return
 
-from tradfi.core.data import fetch_stock
+from tradfi.core.data import fetch_stock, fetch_stock_from_api
 from tradfi.core.screener import (
     AVAILABLE_UNIVERSES,
     PRESET_SCREENS,
@@ -150,6 +152,7 @@ from tradfi.core.screener import (
 from tradfi.models.stock import Stock
 from tradfi.utils.cache import (
     add_to_saved_list,
+    clear_cache,
     get_all_cached_industries,
     get_cache_stats,
     get_cached_stock_data,
@@ -1496,6 +1499,17 @@ class ScreenerApp(App):
             # Check if this is the API status worker
             if event.worker.name == "_fetch_api_status":
                 self._update_api_status(event.worker.result)
+            elif event.worker.name == "_resync_all_universes":
+                # Resync completed
+                result = event.worker.result or {"total": 0, "fetched": 0, "failed": 0}
+                self.notify(
+                    f"Resync complete: {result['fetched']}/{result['total']} stocks "
+                    f"({result['failed']} failed)",
+                    title="Resync Complete",
+                    timeout=10,
+                )
+                # Refresh the screen to show updated data
+                self._run_screen()
             else:
                 # Stock fetch worker
                 self.stocks = event.worker.result or []
@@ -1607,6 +1621,8 @@ class ScreenerApp(App):
                 "clear": self.action_clear_filters,
                 "refresh": self.action_refresh,
                 "save": self.action_save_list,
+                "clear_cache": self.action_clear_cache,
+                "resync": self.action_resync_universes,
                 "help": self.action_help,
                 "sort_pe": self.action_sort_pe,
                 "sort_mos": self.action_sort_mos,
@@ -1639,6 +1655,56 @@ class ScreenerApp(App):
             title="Help",
             timeout=10,
         )
+
+    def action_clear_cache(self) -> None:
+        """Clear all cached stock data."""
+        count = clear_cache()
+        self.notify(f"Cleared {count} cached entries", title="Cache Cleared")
+
+    def action_resync_universes(self) -> None:
+        """Resync all universes by fetching fresh data."""
+        self.notify("Starting resync of all universes...", title="Resync")
+        self.run_worker(self._resync_all_universes, exclusive=True, thread=True)
+
+    def _resync_all_universes(self) -> dict:
+        """Worker to resync all universes."""
+        import time
+
+        all_tickers: set[str] = set()
+        for name in AVAILABLE_UNIVERSES.keys():
+            try:
+                tickers = load_tickers(name)
+                all_tickers.update(tickers)
+            except Exception:
+                pass
+
+        tickers_list = sorted(all_tickers)
+        total = len(tickers_list)
+        fetched = 0
+        failed = 0
+
+        for i, ticker in enumerate(tickers_list):
+            try:
+                stock = fetch_stock_from_api(ticker)
+                if stock:
+                    fetched += 1
+                else:
+                    failed += 1
+            except Exception:
+                failed += 1
+
+            # Update progress every 10 stocks
+            if (i + 1) % 10 == 0:
+                self.call_from_thread(
+                    self.notify,
+                    f"Progress: {i + 1}/{total} ({fetched} ok, {failed} failed)",
+                    title="Resyncing...",
+                )
+
+            # Rate limit delay
+            time.sleep(2.0)
+
+        return {"total": total, "fetched": fetched, "failed": failed}
 
     def _sort_by(self, sort_key: str) -> None:
         """Sort table by the given key, toggling direction if same key."""
