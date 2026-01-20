@@ -52,8 +52,33 @@ tradfi/
     ├── dow30.txt            # Dow 30 tickers
     ├── nasdaq100.txt        # NASDAQ 100 tickers
     ├── russell2000.txt      # Russell 2000 tickers
-    └── [other lists].txt    # Sector/thematic lists
+    ├── sweetspot.txt        # $2-12B market cap stocks
+    ├── etf.txt              # ETFs with category headers (REITs, Commodities, Sectors, International)
+    ├── dividends.txt        # Dividend stocks
+    └── value.txt            # Value-focused stocks
 ```
+
+## Available Universes
+
+The following universes are available for screening:
+- **sp500** - S&P 500 (~500 large-cap US stocks)
+- **dow30** - Dow Jones Industrial Average (30 stocks)
+- **nasdaq100** - NASDAQ-100 (100 largest NASDAQ stocks)
+- **russell2000** - Russell 2000 sample (~200 small-cap stocks)
+- **sweetspot** - $2-12B market cap sweet spot (under-followed + fallen angels)
+- **etf** - ETFs with categories: REITs, Commodities, Sectors, International
+- **dividends** - Dividend Aristocrats & high-yield stocks
+- **value** - Value-focused stocks and ETFs
+
+### ETF Categories
+
+The `etf` universe supports category filtering. Categories are defined in `data/etf.txt` using `## Category` headers:
+- **REITs** - Real Estate Investment Trusts
+- **Commodities** - Gold, silver, oil, agriculture ETFs
+- **Sectors** - Technology, healthcare, financials sector ETFs
+- **International** - Country ETFs and ADRs
+
+In the TUI, when you select the `etf` universe, a category filter appears allowing you to filter by specific ETF types.
 
 ## Key Commands
 
@@ -222,6 +247,9 @@ The TUI has been simplified for easier navigation:
 - **Sort By**: P/E, Price, RSI, Margin of Safety, etc.
 - **Actions**: Refresh, Save list
 - **View**: Help, Stock detail, Quarterly trends
+
+### Category Filtering
+When selecting a single universe that has categories (like `etf`), a category filter appears in the sidebar. Select one or more categories to filter the results.
 
 ### Simplified Data Table
 Default columns: `Ticker | Price | P/E | ROE | RSI | MoS% | Div | Signal`
