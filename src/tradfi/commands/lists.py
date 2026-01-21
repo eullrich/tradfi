@@ -653,17 +653,23 @@ def _display_portfolio_table(portfolio: dict, list_name: str) -> None:
         pnl = item.get("gain_loss")
         pnl_pct = item.get("gain_loss_pct")
         pnl_color = "green" if pnl and pnl >= 0 else "red"
+        shares = item.get("shares")
+        entry_price = item.get("entry_price")
+        current_price = item.get("current_price")
+        cost_basis = item.get("cost_basis")
+        current_value = item.get("current_value")
+        allocation_pct = item.get("allocation_pct")
 
         table.add_row(
             item.get("ticker", "-"),
-            f"{item['shares']:.0f}" if item.get("shares") else "-",
-            f"${item['entry_price']:.2f}" if item.get("entry_price") else "-",
-            f"${item['current_price']:.2f}" if item.get("current_price") else "-",
-            f"${item['cost_basis']:,.0f}" if item.get("cost_basis") else "-",
-            f"${item['current_value']:,.0f}" if item.get("current_value") else "-",
+            f"{shares:.0f}" if shares is not None else "-",
+            f"${entry_price:.2f}" if entry_price is not None else "-",
+            f"${current_price:.2f}" if current_price is not None else "-",
+            f"${cost_basis:,.0f}" if cost_basis is not None else "-",
+            f"${current_value:,.0f}" if current_value is not None else "-",
             f"[{pnl_color}]${pnl:+,.0f}[/]" if pnl is not None else "-",
             f"[{pnl_color}]{pnl_pct:+.1f}%[/]" if pnl_pct is not None else "-",
-            f"{item['allocation_pct']:.1f}%" if item.get("allocation_pct") else "-",
+            f"{allocation_pct:.1f}%" if allocation_pct is not None else "-",
         )
 
     console.print(table)
@@ -690,15 +696,23 @@ def _export_portfolio_csv(portfolio: dict, list_name: str) -> None:
     console.print("Ticker,Shares,Entry,Price,Cost,Value,P&L $,P&L %,Allocation %")
 
     for item in portfolio.get("items", []):
+        shares = item.get("shares")
+        entry_price = item.get("entry_price")
+        current_price = item.get("current_price")
+        cost_basis = item.get("cost_basis")
+        current_value = item.get("current_value")
+        gain_loss = item.get("gain_loss")
+        gain_loss_pct = item.get("gain_loss_pct")
+        allocation_pct = item.get("allocation_pct")
         row = [
             item.get("ticker", ""),
-            f"{item['shares']:.2f}" if item.get("shares") else "",
-            f"{item['entry_price']:.2f}" if item.get("entry_price") else "",
-            f"{item['current_price']:.2f}" if item.get("current_price") else "",
-            f"{item['cost_basis']:.2f}" if item.get("cost_basis") else "",
-            f"{item['current_value']:.2f}" if item.get("current_value") else "",
-            f"{item['gain_loss']:.2f}" if item.get("gain_loss") is not None else "",
-            f"{item['gain_loss_pct']:.2f}" if item.get("gain_loss_pct") is not None else "",
-            f"{item['allocation_pct']:.2f}" if item.get("allocation_pct") else "",
+            f"{shares:.2f}" if shares is not None else "",
+            f"{entry_price:.2f}" if entry_price is not None else "",
+            f"{current_price:.2f}" if current_price is not None else "",
+            f"{cost_basis:.2f}" if cost_basis is not None else "",
+            f"{current_value:.2f}" if current_value is not None else "",
+            f"{gain_loss:.2f}" if gain_loss is not None else "",
+            f"{gain_loss_pct:.2f}" if gain_loss_pct is not None else "",
+            f"{allocation_pct:.2f}" if allocation_pct is not None else "",
         ]
         console.print(",".join(row))

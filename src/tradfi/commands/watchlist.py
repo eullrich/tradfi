@@ -88,7 +88,9 @@ def watchlist_show(
         table.add_column("Notes", max_width=20)
 
         for item in watchlist:
-            ticker = item["ticker"]
+            ticker = item.get("ticker", "")
+            if not ticker:
+                continue
             notes = item.get("notes") or ""
 
             with console.status(f"[dim]Fetching {ticker}...[/]"):
@@ -127,8 +129,11 @@ def watchlist_show(
         table.add_column("Notes")
 
         for item in watchlist:
+            ticker = item.get("ticker", "")
+            if not ticker:
+                continue
             notes = item.get("notes") or ""
-            table.add_row(item["ticker"], notes)
+            table.add_row(ticker, notes)
 
         console.print(table)
 
