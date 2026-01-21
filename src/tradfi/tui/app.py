@@ -2292,10 +2292,15 @@ class ScreenerApp(App):
         items = portfolio.get("items", [])
         for item in items:
             ticker = item.get("ticker", "-")
-            shares = f"{item['shares']:.0f}" if item.get("shares") else "-"
-            entry = f"${item['entry_price']:.2f}" if item.get("entry_price") else "-"
-            price = f"${item['current_price']:.2f}" if item.get("current_price") else "-"
-            value = f"${item['current_value']:,.0f}" if item.get("current_value") else "-"
+            shares_val = item.get("shares")
+            entry_val = item.get("entry_price")
+            price_val = item.get("current_price")
+            value_val = item.get("current_value")
+
+            shares = f"{shares_val:.0f}" if shares_val is not None else "-"
+            entry = f"${entry_val:.2f}" if entry_val is not None else "-"
+            price = f"${price_val:.2f}" if price_val is not None else "-"
+            value = f"${value_val:,.0f}" if value_val is not None else "-"
 
             pnl = item.get("gain_loss")
             pnl_pct = item.get("gain_loss_pct")
@@ -2314,7 +2319,7 @@ class ScreenerApp(App):
             else:
                 pnl_pct_str = "-"
 
-            alloc_str = f"{alloc:.1f}%" if alloc else "-"
+            alloc_str = f"{alloc:.1f}%" if alloc is not None else "-"
 
             table.add_row(ticker, shares, entry, price, value, pnl_str, pnl_pct_str, alloc_str, key=ticker)
 
@@ -2503,7 +2508,7 @@ class ScreenerApp(App):
         table.display = True
 
         # If we were in portfolio mode, restore normal columns
-        if self._portfolio_mode or table.column_count != 8:
+        if self._portfolio_mode or len(table.columns) != 8:
             table.clear(columns=True)
             table.add_columns("Ticker", "Price", "P/E", "ROE", "RSI", "MoS%", "Div", "Signal")
             self._portfolio_mode = False

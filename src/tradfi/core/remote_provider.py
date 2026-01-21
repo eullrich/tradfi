@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Optional
 
 import httpx
@@ -56,7 +57,7 @@ class RemoteDataProvider:
                 return None
             else:
                 return None
-        except httpx.RequestError:
+        except (httpx.RequestError, json.JSONDecodeError):
             return None
 
     def fetch_all_stocks(self) -> dict[str, Stock]:
@@ -73,10 +74,11 @@ class RemoteDataProvider:
 
             if response.status_code == 200:
                 data = response.json()
-                return {ticker: self._schema_to_stock(stock_data)
-                        for ticker, stock_data in data.items()}
+                if isinstance(data, dict):
+                    return {ticker: self._schema_to_stock(stock_data)
+                            for ticker, stock_data in data.items()}
             return {}
-        except httpx.RequestError:
+        except (httpx.RequestError, json.JSONDecodeError):
             return {}
 
     def fetch_stocks_batch(self, tickers: list[str]) -> dict[str, Stock]:
@@ -99,10 +101,11 @@ class RemoteDataProvider:
 
             if response.status_code == 200:
                 data = response.json()
-                return {ticker: self._schema_to_stock(stock_data)
-                        for ticker, stock_data in data.items()}
+                if isinstance(data, dict):
+                    return {ticker: self._schema_to_stock(stock_data)
+                            for ticker, stock_data in data.items()}
             return {}
-        except httpx.RequestError:
+        except (httpx.RequestError, json.JSONDecodeError):
             return {}
 
     def _schema_to_stock(self, data: dict) -> Stock:
@@ -216,7 +219,7 @@ class RemoteDataProvider:
             if response.status_code == 200:
                 return response.json()
             return []
-        except httpx.RequestError:
+        except (httpx.RequestError, json.JSONDecodeError):
             return []
 
     def get_list(self, name: str) -> dict | None:
@@ -227,7 +230,7 @@ class RemoteDataProvider:
             if response.status_code == 200:
                 return response.json()
             return None
-        except httpx.RequestError:
+        except (httpx.RequestError, json.JSONDecodeError):
             return None
 
     def create_list(self, name: str, tickers: list[str]) -> bool:
@@ -239,7 +242,7 @@ class RemoteDataProvider:
                     json={"name": name, "tickers": tickers}
                 )
             return response.status_code == 200
-        except httpx.RequestError:
+        except (httpx.RequestError, json.JSONDecodeError):
             return False
 
     def delete_list(self, name: str) -> bool:
@@ -248,7 +251,7 @@ class RemoteDataProvider:
             with httpx.Client(timeout=self.timeout) as client:
                 response = client.delete(f"{self.api_url}/api/v1/lists/{name}")
             return response.status_code == 200
-        except httpx.RequestError:
+        except (httpx.RequestError, json.JSONDecodeError):
             return False
 
     def add_to_list(self, name: str, ticker: str) -> bool:
@@ -260,7 +263,7 @@ class RemoteDataProvider:
                     json={"ticker": ticker.upper()}
                 )
             return response.status_code == 200
-        except httpx.RequestError:
+        except (httpx.RequestError, json.JSONDecodeError):
             return False
 
     def remove_from_list(self, name: str, ticker: str) -> bool:
@@ -271,7 +274,7 @@ class RemoteDataProvider:
                     f"{self.api_url}/api/v1/lists/{name}/items/{ticker.upper()}"
                 )
             return response.status_code == 200
-        except httpx.RequestError:
+        except (httpx.RequestError, json.JSONDecodeError):
             return False
 
     def set_item_note(
@@ -296,7 +299,7 @@ class RemoteDataProvider:
                     }
                 )
             return response.status_code == 200
-        except httpx.RequestError:
+        except (httpx.RequestError, json.JSONDecodeError):
             return False
 
     # ==================== Position/Portfolio ====================
@@ -335,7 +338,7 @@ class RemoteDataProvider:
                     }
                 )
             return response.status_code == 200
-        except httpx.RequestError:
+        except (httpx.RequestError, json.JSONDecodeError):
             return False
 
     def get_position(self, list_name: str, ticker: str) -> dict | None:
@@ -356,7 +359,7 @@ class RemoteDataProvider:
             if response.status_code == 200:
                 return response.json()
             return None
-        except httpx.RequestError:
+        except (httpx.RequestError, json.JSONDecodeError):
             return None
 
     def clear_position(self, list_name: str, ticker: str) -> bool:
@@ -375,7 +378,7 @@ class RemoteDataProvider:
                     f"{self.api_url}/api/lists/{list_name}/items/{ticker.upper()}/position"
                 )
             return response.status_code == 200
-        except httpx.RequestError:
+        except (httpx.RequestError, json.JSONDecodeError):
             return False
 
     def get_portfolio(self, list_name: str) -> dict | None:
@@ -395,7 +398,7 @@ class RemoteDataProvider:
             if response.status_code == 200:
                 return response.json()
             return None
-        except httpx.RequestError:
+        except (httpx.RequestError, json.JSONDecodeError):
             return None
 
     def has_positions(self, list_name: str) -> bool:
@@ -416,7 +419,7 @@ class RemoteDataProvider:
                 data = response.json()
                 return data.get("has_positions", False)
             return False
-        except httpx.RequestError:
+        except (httpx.RequestError, json.JSONDecodeError):
             return False
 
     # ==================== Watchlist ====================
@@ -429,7 +432,7 @@ class RemoteDataProvider:
             if response.status_code == 200:
                 return response.json()
             return []
-        except httpx.RequestError:
+        except (httpx.RequestError, json.JSONDecodeError):
             return []
 
     def add_to_watchlist(self, ticker: str, notes: str | None = None) -> bool:
@@ -441,7 +444,7 @@ class RemoteDataProvider:
                     json={"ticker": ticker.upper()}
                 )
             return response.status_code == 200
-        except httpx.RequestError:
+        except (httpx.RequestError, json.JSONDecodeError):
             return False
 
     def remove_from_watchlist(self, ticker: str) -> bool:
@@ -452,7 +455,7 @@ class RemoteDataProvider:
                     f"{self.api_url}/api/v1/watchlist/{ticker.upper()}"
                 )
             return response.status_code == 200
-        except httpx.RequestError:
+        except (httpx.RequestError, json.JSONDecodeError):
             return False
 
     def update_watchlist_notes(self, ticker: str, notes: str) -> bool:
@@ -464,7 +467,7 @@ class RemoteDataProvider:
                     json={"notes": notes}
                 )
             return response.status_code == 200
-        except httpx.RequestError:
+        except (httpx.RequestError, json.JSONDecodeError):
             return False
 
     # ==================== Categories ====================
@@ -477,7 +480,7 @@ class RemoteDataProvider:
             if response.status_code == 200:
                 return response.json()
             return []
-        except httpx.RequestError:
+        except (httpx.RequestError, json.JSONDecodeError):
             return []
 
     def create_category(self, name: str, icon: str | None = None) -> bool:
@@ -489,7 +492,7 @@ class RemoteDataProvider:
                     json={"name": name, "icon": icon}
                 )
             return response.status_code == 200
-        except httpx.RequestError:
+        except (httpx.RequestError, json.JSONDecodeError):
             return False
 
     def delete_category(self, category_id: int) -> bool:
@@ -500,7 +503,7 @@ class RemoteDataProvider:
                     f"{self.api_url}/api/v1/lists/categories/{category_id}"
                 )
             return response.status_code == 200
-        except httpx.RequestError:
+        except (httpx.RequestError, json.JSONDecodeError):
             return False
 
     def add_list_to_category(self, list_name: str, category_id: int) -> bool:
@@ -511,7 +514,7 @@ class RemoteDataProvider:
                     f"{self.api_url}/api/v1/lists/categories/{category_id}/lists/{list_name}"
                 )
             return response.status_code == 200
-        except httpx.RequestError:
+        except (httpx.RequestError, json.JSONDecodeError):
             return False
 
     def remove_list_from_category(self, list_name: str, category_id: int) -> bool:
@@ -522,7 +525,7 @@ class RemoteDataProvider:
                     f"{self.api_url}/api/v1/lists/categories/{category_id}/lists/{list_name}"
                 )
             return response.status_code == 200
-        except httpx.RequestError:
+        except (httpx.RequestError, json.JSONDecodeError):
             return False
 
     # ==================== Cache ====================
@@ -535,7 +538,7 @@ class RemoteDataProvider:
             if response.status_code == 200:
                 return response.json()
             return {}
-        except httpx.RequestError:
+        except (httpx.RequestError, json.JSONDecodeError):
             return {}
 
     def get_industries(self) -> list[tuple[str, int]]:
@@ -545,9 +548,14 @@ class RemoteDataProvider:
                 response = client.get(f"{self.api_url}/api/v1/cache/industries")
             if response.status_code == 200:
                 data = response.json()
-                return [(item["industry"], item["count"]) for item in data]
+                if isinstance(data, list):
+                    return [
+                        (item.get("industry", "Unknown"), item.get("count", 0))
+                        for item in data
+                        if isinstance(item, dict)
+                    ]
             return []
-        except httpx.RequestError:
+        except (httpx.RequestError, json.JSONDecodeError):
             return []
 
     def clear_cache(self) -> int:
@@ -557,14 +565,15 @@ class RemoteDataProvider:
                 response = client.post(f"{self.api_url}/api/v1/cache/clear")
             if response.status_code == 200:
                 data = response.json()
-                # Extract count from message like "Cleared 500 cached entries"
-                msg = data.get("message", "")
-                try:
-                    return int(msg.split()[1])
-                except (IndexError, ValueError):
-                    return 0
+                if isinstance(data, dict):
+                    # Extract count from message like "Cleared 500 cached entries"
+                    msg = data.get("message", "")
+                    try:
+                        return int(msg.split()[1])
+                    except (IndexError, ValueError):
+                        return 0
             return 0
-        except httpx.RequestError:
+        except (httpx.RequestError, json.JSONDecodeError):
             return 0
 
     def trigger_refresh(self, universe: str) -> dict:
