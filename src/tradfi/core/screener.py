@@ -190,6 +190,31 @@ PRESET_INFO: dict[str, dict[str, str]] = {
         "description": "Overvalued, weak stocks",
         "criteria": "P/E>40, ROE<10%, RSI>60",
     },
+    "fallen-angels": {
+        "name": "Fallen Angels",
+        "description": "Quality stocks down 30%+",
+        "criteria": "ROE>15%, Margin>10%, down 30%+",
+    },
+    "dividend-growers": {
+        "name": "Dividend Growers",
+        "description": "Sustainable dividend payers",
+        "criteria": "Yield>2.5%, ROE>12%, D/E<80%",
+    },
+    "turnaround": {
+        "name": "Turnaround",
+        "description": "Beaten down, recovery potential",
+        "criteria": "P/E<12, down 25%+, RSI<40",
+    },
+    "hidden-gems": {
+        "name": "Hidden Gems",
+        "description": "Small/mid cap quality",
+        "criteria": "$500M-$15B, P/E<18, ROE>12%",
+    },
+    "momentum-value": {
+        "name": "Momentum Value",
+        "description": "Value with positive momentum",
+        "criteria": "P/E<20, P/B<2.5, RSI 45-65",
+    },
 }
 
 
