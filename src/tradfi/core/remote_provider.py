@@ -541,11 +541,20 @@ class RemoteDataProvider:
         except (httpx.RequestError, json.JSONDecodeError):
             return {}
 
-    def get_industries(self) -> list[tuple[str, int]]:
-        """Get all industries with their stock counts from cache."""
+    def get_industries(self, tickers: list[str] | None = None) -> list[tuple[str, int]]:
+        """Get industries with their stock counts from cache.
+
+        Args:
+            tickers: Optional list of tickers to filter by. If not provided,
+                     returns all industries from cache.
+        """
         try:
             with httpx.Client(timeout=self.timeout) as client:
-                response = client.get(f"{self.api_url}/api/v1/cache/industries")
+                params = {"tickers": tickers} if tickers else None
+                response = client.get(
+                    f"{self.api_url}/api/v1/cache/industries",
+                    params=params,
+                )
             if response.status_code == 200:
                 data = response.json()
                 if isinstance(data, list):

@@ -370,6 +370,42 @@ def get_all_cached_industries() -> list[tuple[str, int]]:
         conn.close()
 
 
+def get_industries_for_tickers(tickers: list[str]) -> list[tuple[str, int]]:
+    """Get unique industries from cached stocks for specific tickers.
+
+    Args:
+        tickers: List of ticker symbols to filter by.
+
+    Returns:
+        List of (industry_name, count) tuples sorted by count descending.
+    """
+    from collections import Counter
+
+    if not tickers:
+        return get_all_cached_industries()
+
+    conn = get_db_connection()
+    try:
+        # Use parameterized query for the ticker list
+        placeholders = ",".join("?" * len(tickers))
+        query = f"SELECT data FROM stock_cache WHERE ticker IN ({placeholders})"
+        rows = conn.execute(query, tickers).fetchall()
+
+        industry_counts: Counter = Counter()
+        for row in rows:
+            try:
+                data = json.loads(row["data"])
+                industry = data.get("industry")
+                if industry:
+                    industry_counts[industry] += 1
+            except (json.JSONDecodeError, KeyError):
+                pass
+
+        return industry_counts.most_common()
+    finally:
+        conn.close()
+
+
 def get_cache_stats() -> dict:
     """Get cache statistics."""
     config = get_config()
