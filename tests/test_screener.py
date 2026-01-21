@@ -432,6 +432,8 @@ class TestPresetScreens:
             "turnaround",
             "hidden-gems",
             "momentum-value",
+            "sweetspot",
+            "income",
         ]
         for preset in expected_presets:
             assert preset in PRESET_SCREENS, f"Preset '{preset}' not found"
