@@ -1,0 +1,21 @@
+# Austria - Vienna Stock Exchange (EUR)
+# ATX constituents
+# Use .VI suffix for yfinance
+
+## ATX
+ANDR.VI
+BG.VI
+EBS.VI
+EVN.VI
+IIA.VI
+LNZ.VI
+OMV.VI
+POST.VI
+RBI.VI
+SBO.VI
+TKA.VI
+UQA.VI
+VER.VI
+VIG.VI
+VOE.VI
+WIE.VI

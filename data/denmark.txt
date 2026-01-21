@@ -1,0 +1,30 @@
+# Denmark - Nasdaq Copenhagen (DKK)
+# OMX Copenhagen 25 constituents
+# Use .CO suffix for yfinance
+
+## OMXC25
+AMBU-B.CO
+CARL-B.CO
+CHR.CO
+COLO-B.CO
+DANSKE.CO
+DEMANT.CO
+DSV.CO
+FLS.CO
+GMAB.CO
+GN.CO
+ISS.CO
+JYSK.CO
+MAERSK-A.CO
+MAERSK-B.CO
+NETC.CO
+NOVO-B.CO
+NZYM-B.CO
+ORSTED.CO
+PNDORA.CO
+RBREW.CO
+ROCK-B.CO
+SIM.CO
+TRYG.CO
+VWS.CO
+WDH.CO

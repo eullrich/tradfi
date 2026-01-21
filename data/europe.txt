@@ -1,0 +1,85 @@
+# Europe - Major European Markets Combined (Mixed currencies)
+# STOXX Europe 600 major constituents
+# Includes UK, Germany, France, Switzerland, Netherlands, Spain, Italy, Sweden, Norway
+
+## UK (GBP)
+SHEL.L
+BP.L
+HSBA.L
+AZN.L
+GSK.L
+RIO.L
+ULVR.L
+DGE.L
+LLOY.L
+BARC.L
+VOD.L
+
+## Germany (EUR)
+SAP.DE
+SIE.DE
+ALV.DE
+DTE.DE
+BAS.DE
+BAYN.DE
+BMW.DE
+MBG.DE
+MUV2.DE
+DBK.DE
+
+## France (EUR)
+MC.PA
+TTE.PA
+SAN.PA
+OR.PA
+AIR.PA
+BNP.PA
+AXA.PA
+SU.PA
+ENGI.PA
+CS.PA
+
+## Switzerland (CHF)
+NESN.SW
+ROG.SW
+NOVN.SW
+UBSG.SW
+ABBN.SW
+SIKA.SW
+ZURN.SW
+
+## Netherlands (EUR)
+ASML.AS
+SHELL.AS
+UNA.AS
+PRX.AS
+INGA.AS
+ADYEN.AS
+PHIA.AS
+
+## Spain (EUR)
+SAN.MC
+IBE.MC
+ITX.MC
+BBVA.MC
+TEF.MC
+
+## Italy (EUR)
+ENEL.MI
+ENI.MI
+ISP.MI
+UCG.MI
+STM.MI
+
+## Sweden (SEK)
+VOLV-B.ST
+ERIC-B.ST
+SAND.ST
+AZN.ST
+ABB.ST
+
+## Norway (NOK)
+EQNR.OL
+DNB.OL
+MOWI.OL
+TEL.OL
