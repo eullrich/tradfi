@@ -246,6 +246,35 @@ def _init_db(conn: sqlite3.Connection) -> None:
     """)
     conn.commit()
 
+    # Schema migrations - add columns that may not exist in older databases
+    _run_migrations(conn)
+
+
+def _run_migrations(conn: sqlite3.Connection) -> None:
+    """Run schema migrations to add new columns."""
+    # Check and add 'shares' column to list_item_notes
+    cursor = conn.execute("PRAGMA table_info(list_item_notes)")
+    columns = {row[1] for row in cursor.fetchall()}
+    if "shares" not in columns:
+        conn.execute("ALTER TABLE list_item_notes ADD COLUMN shares REAL")
+        conn.commit()
+
+    # Check and add position columns to user_saved_list_items
+    cursor = conn.execute("PRAGMA table_info(user_saved_list_items)")
+    columns = {row[1] for row in cursor.fetchall()}
+    if "shares" not in columns:
+        conn.execute("ALTER TABLE user_saved_list_items ADD COLUMN shares REAL")
+        conn.commit()
+    if "entry_price" not in columns:
+        conn.execute("ALTER TABLE user_saved_list_items ADD COLUMN entry_price REAL")
+        conn.commit()
+    if "target_price" not in columns:
+        conn.execute("ALTER TABLE user_saved_list_items ADD COLUMN target_price REAL")
+        conn.commit()
+    if "thesis" not in columns:
+        conn.execute("ALTER TABLE user_saved_list_items ADD COLUMN thesis TEXT")
+        conn.commit()
+
 
 def cache_stock_data(ticker: str, data: dict) -> None:
     """Cache stock data for a ticker."""
@@ -862,6 +891,7 @@ def set_item_note(
     thesis: str | None = None,
     entry_price: float | None = None,
     target_price: float | None = None,
+    shares: float | None = None,
 ) -> bool:
     """
     Set or update notes for a list item.
@@ -871,8 +901,9 @@ def set_item_note(
         ticker: Stock ticker
         notes: General notes
         thesis: Investment thesis
-        entry_price: Price at entry
+        entry_price: Entry price per share
         target_price: Target price
+        shares: Number of shares held
 
     Returns:
         True if successful
@@ -905,6 +936,9 @@ def set_item_note(
             if target_price is not None:
                 updates.append("target_price = ?")
                 params.append(target_price)
+            if shares is not None:
+                updates.append("shares = ?")
+                params.append(shares)
 
             if updates:
                 updates.append("updated_at = ?")
@@ -918,9 +952,9 @@ def set_item_note(
             # Insert new
             conn.execute(
                 """INSERT INTO list_item_notes
-                   (list_name, ticker, notes, thesis, entry_price, target_price, added_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (list_name, ticker, notes, thesis, entry_price, target_price, now, now)
+                   (list_name, ticker, notes, thesis, entry_price, target_price, shares, added_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (list_name, ticker, notes, thesis, entry_price, target_price, shares, now, now)
             )
 
         conn.commit()
@@ -973,6 +1007,133 @@ def delete_item_note(list_name: str, ticker: str) -> bool:
         )
         conn.commit()
         return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
+# ============================================================================
+# POSITION TRACKING (Portfolio)
+# ============================================================================
+
+
+def set_position(
+    list_name: str,
+    ticker: str,
+    shares: float | None = None,
+    entry_price: float | None = None,
+) -> bool:
+    """
+    Set position data for a list item (shares and entry price).
+
+    This is a convenience wrapper around set_item_note for portfolio tracking.
+
+    Args:
+        list_name: Name of the list
+        ticker: Stock ticker
+        shares: Number of shares held
+        entry_price: Entry price per share
+
+    Returns:
+        True if successful
+    """
+    return set_item_note(
+        list_name=list_name,
+        ticker=ticker,
+        shares=shares,
+        entry_price=entry_price,
+    )
+
+
+def get_position(list_name: str, ticker: str) -> dict | None:
+    """
+    Get position data for a list item.
+
+    Args:
+        list_name: Name of the list
+        ticker: Stock ticker
+
+    Returns:
+        Dict with shares, entry_price, target_price, notes, thesis, or None
+    """
+    return get_item_note(list_name, ticker)
+
+
+def get_all_positions(list_name: str) -> list[dict]:
+    """
+    Get all items in a list that have position data (shares or entry_price set).
+
+    Args:
+        list_name: Name of the list
+
+    Returns:
+        List of dicts with ticker, shares, entry_price, etc.
+    """
+    list_name = list_name.lower().replace(" ", "-")
+
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            """SELECT * FROM list_item_notes
+               WHERE list_name = ? AND (shares IS NOT NULL OR entry_price IS NOT NULL)
+               ORDER BY ticker""",
+            (list_name,)
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def clear_position(list_name: str, ticker: str) -> bool:
+    """
+    Clear position data for a list item (set shares and entry_price to NULL).
+
+    The note/thesis are preserved. To fully delete, use delete_item_note.
+
+    Args:
+        list_name: Name of the list
+        ticker: Stock ticker
+
+    Returns:
+        True if successful
+    """
+    list_name = list_name.lower().replace(" ", "-")
+    ticker = ticker.upper()
+    now = int(time.time())
+
+    conn = get_db_connection()
+    try:
+        cursor = conn.execute(
+            """UPDATE list_item_notes
+               SET shares = NULL, entry_price = NULL, updated_at = ?
+               WHERE list_name = ? AND ticker = ?""",
+            (now, list_name, ticker)
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
+def has_positions(list_name: str) -> bool:
+    """
+    Check if a list has any position data.
+
+    Args:
+        list_name: Name of the list
+
+    Returns:
+        True if at least one item has shares or entry_price set
+    """
+    list_name = list_name.lower().replace(" ", "-")
+
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            """SELECT COUNT(*) FROM list_item_notes
+               WHERE list_name = ? AND (shares IS NOT NULL OR entry_price IS NOT NULL)""",
+            (list_name,)
+        ).fetchone()
+        return row[0] > 0 if row else False
     finally:
         conn.close()
 
@@ -1640,5 +1801,258 @@ def user_update_list_item_notes(
         )
         conn.commit()
         return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
+# ============================================================================
+# USER-SCOPED POSITION TRACKING (Portfolio)
+# ============================================================================
+
+
+def user_set_position(
+    user_id: int,
+    list_name: str,
+    ticker: str,
+    shares: float | None = None,
+    entry_price: float | None = None,
+    target_price: float | None = None,
+    thesis: str | None = None,
+) -> bool:
+    """
+    Set position data for an item in a user's saved list.
+
+    Args:
+        user_id: User ID
+        list_name: Name of the list
+        ticker: Stock ticker
+        shares: Number of shares held
+        entry_price: Entry price per share
+        target_price: Target price
+        thesis: Investment thesis
+
+    Returns:
+        True if successful, False if list or item not found
+    """
+    list_name = list_name.lower().replace(" ", "-")
+    ticker = ticker.upper()
+
+    conn = get_db_connection()
+    try:
+        # Get the list
+        list_row = conn.execute(
+            "SELECT id FROM user_saved_lists WHERE user_id = ? AND name = ?",
+            (user_id, list_name)
+        ).fetchone()
+
+        if not list_row:
+            return False
+
+        # Build dynamic update query
+        updates = []
+        params = []
+        if shares is not None:
+            updates.append("shares = ?")
+            params.append(shares)
+        if entry_price is not None:
+            updates.append("entry_price = ?")
+            params.append(entry_price)
+        if target_price is not None:
+            updates.append("target_price = ?")
+            params.append(target_price)
+        if thesis is not None:
+            updates.append("thesis = ?")
+            params.append(thesis)
+
+        if not updates:
+            return False
+
+        params.extend([list_row["id"], ticker])
+        cursor = conn.execute(
+            f"UPDATE user_saved_list_items SET {', '.join(updates)} WHERE list_id = ? AND ticker = ?",
+            params
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
+def user_get_position(user_id: int, list_name: str, ticker: str) -> dict | None:
+    """
+    Get position data for an item in a user's saved list.
+
+    Args:
+        user_id: User ID
+        list_name: Name of the list
+        ticker: Stock ticker
+
+    Returns:
+        Dict with ticker, shares, entry_price, target_price, thesis, notes, or None
+    """
+    list_name = list_name.lower().replace(" ", "-")
+    ticker = ticker.upper()
+
+    conn = get_db_connection()
+    try:
+        # Get the list
+        list_row = conn.execute(
+            "SELECT id FROM user_saved_lists WHERE user_id = ? AND name = ?",
+            (user_id, list_name)
+        ).fetchone()
+
+        if not list_row:
+            return None
+
+        row = conn.execute(
+            """SELECT ticker, added_at, notes, shares, entry_price, target_price, thesis
+               FROM user_saved_list_items WHERE list_id = ? AND ticker = ?""",
+            (list_row["id"], ticker)
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def user_get_all_positions(user_id: int, list_name: str) -> list[dict] | None:
+    """
+    Get all items with position data in a user's saved list.
+
+    Args:
+        user_id: User ID
+        list_name: Name of the list
+
+    Returns:
+        List of dicts with position data, or None if list not found
+    """
+    list_name = list_name.lower().replace(" ", "-")
+
+    conn = get_db_connection()
+    try:
+        # Get the list
+        list_row = conn.execute(
+            "SELECT id FROM user_saved_lists WHERE user_id = ? AND name = ?",
+            (user_id, list_name)
+        ).fetchone()
+
+        if not list_row:
+            return None
+
+        rows = conn.execute(
+            """SELECT ticker, added_at, notes, shares, entry_price, target_price, thesis
+               FROM user_saved_list_items
+               WHERE list_id = ? AND (shares IS NOT NULL OR entry_price IS NOT NULL)
+               ORDER BY ticker""",
+            (list_row["id"],)
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def user_get_list_items_with_positions(user_id: int, list_name: str) -> list[dict] | None:
+    """
+    Get all items in a user's saved list, including position data.
+
+    Args:
+        user_id: User ID
+        list_name: Name of the list
+
+    Returns:
+        List of item dicts with all fields, or None if list not found
+    """
+    list_name = list_name.lower().replace(" ", "-")
+
+    conn = get_db_connection()
+    try:
+        # Get the list
+        list_row = conn.execute(
+            "SELECT id FROM user_saved_lists WHERE user_id = ? AND name = ?",
+            (user_id, list_name)
+        ).fetchone()
+
+        if not list_row:
+            return None
+
+        rows = conn.execute(
+            """SELECT ticker, added_at, notes, shares, entry_price, target_price, thesis
+               FROM user_saved_list_items WHERE list_id = ? ORDER BY added_at DESC""",
+            (list_row["id"],)
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def user_clear_position(user_id: int, list_name: str, ticker: str) -> bool:
+    """
+    Clear position data for an item (set shares/entry_price to NULL).
+
+    The item remains in the list with notes preserved.
+
+    Args:
+        user_id: User ID
+        list_name: Name of the list
+        ticker: Stock ticker
+
+    Returns:
+        True if successful
+    """
+    list_name = list_name.lower().replace(" ", "-")
+    ticker = ticker.upper()
+
+    conn = get_db_connection()
+    try:
+        # Get the list
+        list_row = conn.execute(
+            "SELECT id FROM user_saved_lists WHERE user_id = ? AND name = ?",
+            (user_id, list_name)
+        ).fetchone()
+
+        if not list_row:
+            return False
+
+        cursor = conn.execute(
+            """UPDATE user_saved_list_items
+               SET shares = NULL, entry_price = NULL
+               WHERE list_id = ? AND ticker = ?""",
+            (list_row["id"], ticker)
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
+def user_has_positions(user_id: int, list_name: str) -> bool:
+    """
+    Check if a user's list has any position data.
+
+    Args:
+        user_id: User ID
+        list_name: Name of the list
+
+    Returns:
+        True if at least one item has shares or entry_price set
+    """
+    list_name = list_name.lower().replace(" ", "-")
+
+    conn = get_db_connection()
+    try:
+        # Get the list
+        list_row = conn.execute(
+            "SELECT id FROM user_saved_lists WHERE user_id = ? AND name = ?",
+            (user_id, list_name)
+        ).fetchone()
+
+        if not list_row:
+            return False
+
+        row = conn.execute(
+            """SELECT COUNT(*) FROM user_saved_list_items
+               WHERE list_id = ? AND (shares IS NOT NULL OR entry_price IS NOT NULL)""",
+            (list_row["id"],)
+        ).fetchone()
+        return row[0] > 0 if row else False
     finally:
         conn.close()

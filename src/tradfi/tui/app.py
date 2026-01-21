@@ -972,7 +972,9 @@ class ScreenerApp(App):
         self.sectors: dict[str, list[Stock]] = {}
         self.current_sort = "pe"  # Default sort
         self.sort_reverse = False  # Toggle for ascending/descending
-        self._viewing_list: str | None = None  # Track if viewing a position list
+        self._viewing_list: str | None = None  # Track if viewing a position list (display name)
+        self._viewing_list_name: str | None = None  # Track actual list name (e.g., "_long")
+        self._portfolio_mode: bool = False  # Track if viewing portfolio P&L mode
         self.selected_industries: set[str] = set()  # Selected industries (include)
         self.selected_universes: set[str] = set()  # Selected universes
         self.selected_categories: set[str] = set()  # Selected categories (for ETF universe)
@@ -1313,8 +1315,10 @@ class ScreenerApp(App):
                 self._load_position_list("_short", "Short List")
 
     def _run_screen(self) -> None:
-        # Clear position list view flag - we're now screening
+        # Clear position list view flags - we're now screening
         self._viewing_list = None
+        self._viewing_list_name = None
+        self._portfolio_mode = False
 
         loading = self.query_one("#loading", Container)
         table = self.query_one("#results-table", DataTable)
@@ -1344,7 +1348,11 @@ class ScreenerApp(App):
         self.run_worker(self._fetch_stocks, exclusive=True, thread=True)
 
     def _load_position_list(self, list_name: str, display_name: str) -> None:
-        """Load and display a position list (long or short)."""
+        """Load and display a position list (long or short).
+
+        If the list has position data (shares/entry prices), shows portfolio view with P&L.
+        Otherwise shows standard stock view.
+        """
         list_data = self.remote_provider.get_list(list_name)
         tickers = list_data.get("tickers", []) if list_data else []
 
@@ -1353,13 +1361,19 @@ class ScreenerApp(App):
                        title=display_name, severity="warning", timeout=5)
             return
 
+        # Check if list has portfolio data
+        has_positions = self.remote_provider.has_positions(list_name)
+
         loading = self.query_one("#loading", Container)
         table = self.query_one("#results-table", DataTable)
         loading.display = True
         table.display = False
 
         loading_text = self.query_one("#loading-text", Static)
-        loading_text.update(f"[cyan]LOADING {display_name.upper()}[/]")
+        if has_positions:
+            loading_text.update(f"[cyan]LOADING PORTFOLIO: {display_name.upper()}[/]")
+        else:
+            loading_text.update(f"[cyan]LOADING {display_name.upper()}[/]")
 
         loading_detail = self.query_one("#loading-detail", Static)
         loading_detail.update("[dim]Initializing...[/]")
@@ -1369,11 +1383,85 @@ class ScreenerApp(App):
 
         # Store which list we're viewing for status bar
         self._viewing_list = display_name
+        self._viewing_list_name = list_name
+        self._portfolio_mode = has_positions
 
-        self.run_worker(
-            lambda: self._fetch_position_stocks(tickers),
-            exclusive=True,
-            thread=True
+        if has_positions:
+            # Fetch portfolio data with P&L calculations
+            self.run_worker(
+                lambda: self._fetch_portfolio(list_name),
+                exclusive=True,
+                thread=True,
+                name="_fetch_portfolio"
+            )
+        else:
+            # Standard stock list view
+            self.run_worker(
+                lambda: self._fetch_position_stocks(tickers),
+                exclusive=True,
+                thread=True
+            )
+
+    def _fetch_portfolio(self, list_name: str) -> dict | None:
+        """Fetch portfolio data with P&L calculations."""
+        return self.remote_provider.get_portfolio(list_name)
+
+    def _populate_portfolio_table(self, portfolio: dict) -> None:
+        """Populate table with portfolio P&L view."""
+        loading = self.query_one("#loading", Container)
+        table = self.query_one("#results-table", DataTable)
+
+        loading.display = False
+        table.display = True
+
+        # Clear and reconfigure columns for portfolio view
+        table.clear(columns=True)
+        table.add_columns("Ticker", "Shares", "Entry", "Price", "Value", "P&L", "P&L%", "Alloc%")
+
+        items = portfolio.get("items", [])
+        for item in items:
+            ticker = item.get("ticker", "-")
+            shares = f"{item['shares']:.0f}" if item.get("shares") else "-"
+            entry = f"${item['entry_price']:.2f}" if item.get("entry_price") else "-"
+            price = f"${item['current_price']:.2f}" if item.get("current_price") else "-"
+            value = f"${item['current_value']:,.0f}" if item.get("current_value") else "-"
+
+            pnl = item.get("gain_loss")
+            pnl_pct = item.get("gain_loss_pct")
+            alloc = item.get("allocation_pct")
+
+            # Color P&L based on gain/loss
+            if pnl is not None:
+                pnl_color = "green" if pnl >= 0 else "red"
+                pnl_str = f"[{pnl_color}]${pnl:+,.0f}[/]"
+            else:
+                pnl_str = "-"
+
+            if pnl_pct is not None:
+                pnl_pct_color = "green" if pnl_pct >= 0 else "red"
+                pnl_pct_str = f"[{pnl_pct_color}]{pnl_pct:+.1f}%[/]"
+            else:
+                pnl_pct_str = "-"
+
+            alloc_str = f"{alloc:.1f}%" if alloc else "-"
+
+            table.add_row(ticker, shares, entry, price, value, pnl_str, pnl_pct_str, alloc_str, key=ticker)
+
+        # Update status bar with portfolio summary
+        total_cost = portfolio.get("total_cost_basis", 0)
+        total_value = portfolio.get("total_current_value", 0)
+        total_pnl = portfolio.get("total_gain_loss", 0)
+        total_pnl_pct = portfolio.get("total_gain_loss_pct")
+        position_count = portfolio.get("position_count", 0)
+
+        pnl_color = "green" if total_pnl >= 0 else "red"
+        pnl_pct_display = f" ({total_pnl_pct:+.1f}%)" if total_pnl_pct is not None else ""
+
+        self._update_status(
+            f"{self._viewing_list}: {position_count} positions. "
+            f"Cost: ${total_cost:,.0f} | Value: ${total_value:,.0f} | "
+            f"P&L: [{pnl_color}]${total_pnl:+,.0f}{pnl_pct_display}[/]. "
+            f"Enter=details"
         )
 
     def _fetch_position_stocks(self, tickers: list[str]) -> list[Stock]:
@@ -1521,6 +1609,16 @@ class ScreenerApp(App):
                 )
                 # Refresh the screen to show updated data
                 self._run_screen()
+            elif event.worker.name == "_fetch_portfolio":
+                # Portfolio fetch completed - display P&L view
+                portfolio = event.worker.result
+                if portfolio:
+                    self._populate_portfolio_table(portfolio)
+                else:
+                    self.notify("Failed to load portfolio data", severity="error")
+                    # Fall back to regular table
+                    loading = self.query_one("#loading", Container)
+                    loading.display = False
             else:
                 # Stock fetch worker
                 self.stocks = event.worker.result or []
@@ -1532,7 +1630,14 @@ class ScreenerApp(App):
 
         loading.display = False
         table.display = True
-        table.clear()
+
+        # If we were in portfolio mode, restore normal columns
+        if self._portfolio_mode or table.column_count != 8:
+            table.clear(columns=True)
+            table.add_columns("Ticker", "Price", "P/E", "ROE", "RSI", "MoS%", "Div", "Signal")
+            self._portfolio_mode = False
+        else:
+            table.clear()
 
         # Sort stocks according to current sort setting
         sort_key, default_reverse, sort_name = self.SORT_OPTIONS[self.current_sort]

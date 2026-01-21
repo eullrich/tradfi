@@ -299,6 +299,126 @@ class RemoteDataProvider:
         except httpx.RequestError:
             return False
 
+    # ==================== Position/Portfolio ====================
+
+    def set_position(
+        self,
+        list_name: str,
+        ticker: str,
+        shares: float | None = None,
+        entry_price: float | None = None,
+        target_price: float | None = None,
+        thesis: str | None = None,
+    ) -> bool:
+        """Set position data for a list item.
+
+        Args:
+            list_name: Name of the list
+            ticker: Stock ticker symbol
+            shares: Number of shares held
+            entry_price: Entry price per share
+            target_price: Target price
+            thesis: Investment thesis
+
+        Returns:
+            True if successful
+        """
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.put(
+                    f"{self.api_url}/api/lists/{list_name}/items/{ticker.upper()}/position",
+                    json={
+                        "shares": shares,
+                        "entry_price": entry_price,
+                        "target_price": target_price,
+                        "thesis": thesis,
+                    }
+                )
+            return response.status_code == 200
+        except httpx.RequestError:
+            return False
+
+    def get_position(self, list_name: str, ticker: str) -> dict | None:
+        """Get position data for a list item.
+
+        Args:
+            list_name: Name of the list
+            ticker: Stock ticker symbol
+
+        Returns:
+            Position data dict or None
+        """
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.get(
+                    f"{self.api_url}/api/lists/{list_name}/items/{ticker.upper()}/position"
+                )
+            if response.status_code == 200:
+                return response.json()
+            return None
+        except httpx.RequestError:
+            return None
+
+    def clear_position(self, list_name: str, ticker: str) -> bool:
+        """Clear position data for a list item.
+
+        Args:
+            list_name: Name of the list
+            ticker: Stock ticker symbol
+
+        Returns:
+            True if successful
+        """
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.delete(
+                    f"{self.api_url}/api/lists/{list_name}/items/{ticker.upper()}/position"
+                )
+            return response.status_code == 200
+        except httpx.RequestError:
+            return False
+
+    def get_portfolio(self, list_name: str) -> dict | None:
+        """Get full portfolio view with P&L calculations.
+
+        Args:
+            list_name: Name of the list
+
+        Returns:
+            Portfolio data dict with items and totals, or None
+        """
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.get(
+                    f"{self.api_url}/api/lists/{list_name}/portfolio"
+                )
+            if response.status_code == 200:
+                return response.json()
+            return None
+        except httpx.RequestError:
+            return None
+
+    def has_positions(self, list_name: str) -> bool:
+        """Check if a list has any position data.
+
+        Args:
+            list_name: Name of the list
+
+        Returns:
+            True if list has positions
+        """
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.get(
+                    f"{self.api_url}/api/lists/{list_name}/has-positions"
+                )
+            if response.status_code == 200:
+                data = response.json()
+                return data.get("has_positions", False)
+            return False
+        except httpx.RequestError:
+            return False
+
     # ==================== Watchlist ====================
 
     def get_watchlist(self) -> list[dict]:
