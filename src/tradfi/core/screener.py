@@ -145,6 +145,23 @@ PRESET_SCREENS: dict[str, ScreenCriteria] = {
         rsi_min=45,  # Not oversold - showing strength
         rsi_max=65,  # Not overbought yet
     ),
+    # === Size-Based Screens ===
+    "sweetspot": ScreenCriteria(
+        # $2-12B mid-cap "sweet spot" - under-followed quality at reasonable prices
+        market_cap_min=2_000_000_000,  # At least $2B
+        market_cap_max=12_000_000_000,  # Under $12B (less analyst coverage)
+        pe_max=22,  # Reasonable valuation
+        roe_min=10,  # Quality business
+        debt_equity_max=100,  # Not overleveraged
+    ),
+    # === Income Screens ===
+    "income": ScreenCriteria(
+        # Dividend aristocrats-style: sustainable high-quality income
+        dividend_yield_min=2.0,  # Meaningful yield
+        roe_min=12,  # Strong profitability to sustain dividends
+        debt_equity_max=75,  # Conservative leverage for safety
+        margin_min=8,  # Decent margins
+    ),
 }
 
 
@@ -215,6 +232,16 @@ PRESET_INFO: dict[str, dict[str, str]] = {
         "description": "Value with positive momentum",
         "criteria": "P/E<20, P/B<2.5, RSI 45-65",
     },
+    "sweetspot": {
+        "name": "Sweet Spot",
+        "description": "$2-12B mid-cap quality at fair prices",
+        "criteria": "$2-12B cap, P/E<22, ROE>10%",
+    },
+    "income": {
+        "name": "Income",
+        "description": "Dividend aristocrats-style sustainable income",
+        "criteria": "Yield>2%, ROE>12%, Margin>8%",
+    },
 }
 
 
@@ -224,10 +251,7 @@ AVAILABLE_UNIVERSES: dict[str, str] = {
     "dow30": "Dow Jones Industrial Average (30 stocks)",
     "nasdaq100": "NASDAQ-100 (100 largest NASDAQ stocks)",
     "russell2000": "Russell 2000 sample (~200 small-cap stocks)",
-    "sweetspot": "$2-12B market cap sweet spot (under-followed + fallen angels)",
     "etf": "ETFs (REITs, Commodities, Sectors, International)",
-    "dividends": "Dividend Aristocrats & high-yield stocks",
-    "value": "Value-focused stocks and ETFs",
 }
 
 
@@ -261,8 +285,7 @@ def load_tickers(universe: str = "sp500") -> list[str]:
     Load ticker list for a given universe.
 
     Args:
-        universe: Name of the universe (sp500, dow30, nasdaq100, russell2000,
-                  sweetspot, etf, dividends, value)
+        universe: Name of the universe (sp500, dow30, nasdaq100, russell2000, etf)
 
     Returns:
         List of ticker symbols
@@ -598,6 +621,8 @@ PRESET_DESCRIPTIONS: dict[str, str] = {
     "turnaround": "Beaten down, recovery potential",
     "hidden-gems": "Small/mid cap quality",
     "momentum-value": "Value with positive momentum",
+    "sweetspot": "$2-12B mid-cap quality",
+    "income": "Dividend aristocrats-style income",
 }
 
 
