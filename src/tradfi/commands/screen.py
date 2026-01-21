@@ -107,25 +107,16 @@ def screen(
     ),
     # Sector filter
     sector: Optional[str] = typer.Option(
-        None, "--sector",
-        help="Filter by sector (e.g., 'Technology', 'Healthcare', 'Financial')",
+        None, "--sector", "-i",
+        help="Filter by sector (e.g., 'Technology', 'Healthcare', 'Financial'). Partial match. Comma-separated for multiple.",
+    ),
+    exclude_sector: Optional[str] = typer.Option(
+        None, "--exclude-sector", "-xi",
+        help="Exclude sectors. Comma-separated (e.g., --exclude-sector Technology,Energy)",
     ),
     list_sectors: bool = typer.Option(
         False, "--list-sectors", "--sectors",
         help="List all available sectors",
-    ),
-    # Industry filter
-    industry: Optional[str] = typer.Option(
-        None, "--industry", "-i",
-        help="Filter by industry (e.g., 'REIT', 'Banks', 'Pharma'). Partial match. Comma-separated for multiple.",
-    ),
-    exclude_industry: Optional[str] = typer.Option(
-        None, "--exclude-industry", "-xi",
-        help="Exclude industries. Comma-separated (e.g., --exclude-industry REIT,Banks)",
-    ),
-    list_industries: bool = typer.Option(
-        False, "--list-industries", "--industries",
-        help="List all industries in the selected universe",
     ),
     # Output options
     limit: int = typer.Option(
@@ -135,7 +126,7 @@ def screen(
     sort_by: str = typer.Option(
         "pe",
         "--sort", "-s",
-        help="Sort by: pe, pb, roe, rsi, div, margin-of-safety (mos), sector, industry",
+        help="Sort by: pe, pb, roe, rsi, div, margin-of-safety (mos), sector",
     ),
     group_by_sector: bool = typer.Option(
         False, "--group-by-sector", "-g",
@@ -153,16 +144,13 @@ def screen(
     Examples:
         tradfi screen --list-universes
         tradfi screen --list-sectors
-        tradfi screen --list-industries --universe reits
         tradfi screen --preset graham
         tradfi screen --universe nasdaq100 --pe-max 25
         tradfi screen --universe sp500,nasdaq100 --pe-max 20
         tradfi screen --sector Technology --pe-max 25
-        tradfi screen --industry Banks --all
-        tradfi screen --industry REIT,Mortgage --all
-        tradfi screen --industry REIT --all --exclude russell2000
-        tradfi screen --universe sp500 --exclude-industry REIT,Banks
-        tradfi screen --universe reits --industry Mortgage
+        tradfi screen --sector Technology,Healthcare --all
+        tradfi screen --sector Technology --all --exclude russell2000
+        tradfi screen --universe sp500 --exclude-sector Energy,Utilities
         tradfi screen --universe sp500 --group-by-sector
         tradfi screen --pe-max 15 --roe-min 15 --rsi-max 30
         tradfi screen -t AAPL,MSFT,GOOGL,AMZN --pe-max 30
@@ -175,11 +163,6 @@ def screen(
     # Handle --list-sectors flag
     if list_sectors:
         _display_sectors()
-        return
-
-    # Handle --list-industries flag
-    if list_industries:
-        _display_industries(universe, tickers)
         return
 
     # Build criteria
@@ -301,25 +284,19 @@ def screen(
             if stock is None:
                 failed_tickers.append(ticker)
             elif screen_stock(stock, criteria):
-                # Apply sector filter if specified
+                # Apply sector filter if specified (inclusion)
                 if sector:
                     stock_sector = stock.sector or ""
-                    if sector.lower() not in stock_sector.lower():
+                    # Support comma-separated sectors (match any)
+                    sector_filters = [s.strip().lower() for s in sector.split(",")]
+                    if not any(f in stock_sector.lower() for f in sector_filters):
                         progress.advance(task)
                         continue
-                # Apply industry filter if specified (inclusion)
-                if industry:
-                    stock_industry = stock.industry or ""
-                    # Support comma-separated industries (match any)
-                    industry_filters = [i.strip().lower() for i in industry.split(",")]
-                    if not any(f in stock_industry.lower() for f in industry_filters):
-                        progress.advance(task)
-                        continue
-                # Apply industry exclusion filter
-                if exclude_industry:
-                    stock_industry = stock.industry or ""
-                    excluded_industries = [i.strip().lower() for i in exclude_industry.split(",")]
-                    if any(ex in stock_industry.lower() for ex in excluded_industries):
+                # Apply sector exclusion filter
+                if exclude_sector:
+                    stock_sector = stock.sector or ""
+                    excluded_sectors = [s.strip().lower() for s in exclude_sector.split(",")]
+                    if any(ex in stock_sector.lower() for ex in excluded_sectors):
                         progress.advance(task)
                         continue
                 passing_stocks.append(stock)
@@ -356,7 +333,7 @@ def screen(
     )
 
     table.add_column("Ticker", style="bold cyan")
-    table.add_column("Industry", max_width=20)
+    table.add_column("Sector", max_width=20)
     table.add_column("Price", justify="right")
     table.add_column("P/E", justify="right")
     table.add_column("P/B", justify="right")
@@ -380,8 +357,8 @@ def screen(
         rsi = format_number(stock.technical.rsi_14, 0)
         vs_low = format_pct(stock.technical.pct_from_52w_low)
 
-        # Format industry (compact)
-        industry_display = _simplify_industry(stock.industry) if stock.industry else "N/A"
+        # Format sector (compact)
+        sector_display = _truncate_sector(stock.sector) if stock.sector else "N/A"
 
         # Color RSI
         rsi_val = stock.technical.rsi_14
@@ -400,7 +377,7 @@ def screen(
 
         table.add_row(
             stock.ticker,
-            industry_display,
+            sector_display,
             price,
             pe,
             pb,
@@ -431,28 +408,18 @@ def screen(
         console.print(f"[dim]({len(failed_tickers)} tickers failed to fetch)[/]")
 
 
-def _simplify_industry(industry: str) -> str:
-    """Simplify industry name for compact display."""
-    ind = industry
-    # Remove common verbose patterns
-    ind = ind.replace("Manufacturers", "Mfr")
-    ind = ind.replace("Manufacturer", "Mfr")
-    ind = ind.replace(" - General", "")
-    ind = ind.replace(" - Diversified", "")
-    ind = ind.replace(" - Specialty", " Spec")
-    ind = ind.replace("Insurance - Property & Casualty", "P&C Insurance")
-    ind = ind.replace("Banks - Diversified", "Diversified Banks")
-    ind = ind.replace("Drug ", "Pharma ")
-    ind = ind.replace("Household & Personal Products", "Household Prod")
-    ind = ind.replace("Capital Markets", "Cap Markets")
-    ind = ind.replace("Telecom Services", "Telecom")
-    ind = ind.replace("Entertainment", "Entertain")
-    ind = ind.replace("Healthcare Plans", "Health Plans")
-    ind = ind.replace("Conglomerates", "Conglom")
+def _truncate_sector(sector: str) -> str:
+    """Truncate sector name for compact display."""
+    # Shorten common sector names
+    sec = sector
+    sec = sec.replace("Communication Services", "Comm Services")
+    sec = sec.replace("Consumer Cyclical", "Consumer Cyc")
+    sec = sec.replace("Consumer Defensive", "Consumer Def")
+    sec = sec.replace("Financial Services", "Financial")
     # Truncate if still too long
-    if len(ind) > 20:
-        ind = ind[:18] + ".."
-    return ind
+    if len(sec) > 20:
+        sec = sec[:18] + ".."
+    return sec
 
 
 def sort_stocks(stocks: list[Stock], sort_by: str) -> list[Stock]:
@@ -491,8 +458,6 @@ def sort_stocks(stocks: list[Stock], sort_by: str) -> list[Stock]:
         )
     elif sort_by == "sector":
         return sorted(stocks, key=lambda s: (s.sector or "ZZZ", s.valuation.pe_trailing or float("inf")))
-    elif sort_by == "industry":
-        return sorted(stocks, key=lambda s: (s.industry or "ZZZ", s.valuation.pe_trailing or float("inf")))
     else:
         return stocks
 
@@ -567,75 +532,6 @@ def _display_sectors() -> None:
     console.print()
 
 
-def _display_industries(universe: str, tickers: Optional[str]) -> None:
-    """Display all industries found in the selected universe(s)."""
-    from collections import Counter
-
-    # Build ticker list
-    if tickers:
-        ticker_list = [t.strip().upper() for t in tickers.split(",")]
-        source_name = f"{len(ticker_list)} tickers"
-    else:
-        universe_names = [u.strip() for u in universe.split(",")]
-        ticker_set: set[str] = set()
-        for name in universe_names:
-            try:
-                ticker_set.update(load_tickers(name))
-            except FileNotFoundError:
-                pass
-        ticker_list = sorted(ticker_set)
-        source_name = universe
-
-    if not ticker_list:
-        console.print("[red]No tickers found.[/]")
-        return
-
-    console.print(f"[dim]Scanning {len(ticker_list)} stocks for industries...[/]")
-
-    # Collect industries
-    industry_counts: Counter = Counter()
-    for ticker in ticker_list:
-        stock = fetch_stock(ticker)
-        if stock and stock.industry:
-            industry_counts[stock.industry] += 1
-
-    if not industry_counts:
-        console.print("[yellow]No industry data found.[/]")
-        return
-
-    console.print()
-
-    table = Table(
-        title=f"Industries in {source_name}",
-        box=box.ROUNDED,
-        show_header=True,
-        header_style="bold",
-    )
-
-    table.add_column("Industry", style="bold cyan")
-    table.add_column("Count", justify="right")
-    table.add_column("Filter Example")
-
-    # Sort by count descending
-    for industry, count in industry_counts.most_common():
-        # Create a filter keyword from the industry name
-        filter_key = industry.split()[0].lower()
-        if filter_key in ("reit", "banks", "insurance", "oil", "drug", "software"):
-            pass  # Good keywords
-        elif "-" in industry:
-            # Use part after dash for subtypes like "REIT - Mortgage"
-            filter_key = industry.split("-")[1].strip().split()[0].lower()
-
-        table.add_row(industry, str(count), f"--industry {filter_key}")
-
-    console.print(table)
-    console.print()
-    console.print("[dim]Note: Industry filter uses partial matching (case-insensitive)[/]")
-    console.print("[dim]Example: tradfi screen --industry REIT --all[/]")
-    console.print("[dim]Example: tradfi screen --industry Banks --all --exclude russell2000[/]")
-    console.print()
-
-
 def _display_grouped_by_sector(stocks: list[Stock], failed_tickers: list[str]) -> None:
     """Display stocks grouped by sector."""
     from collections import defaultdict
@@ -664,7 +560,6 @@ def _display_grouped_by_sector(stocks: list[Stock], failed_tickers: list[str]) -
         )
 
         table.add_column("Ticker", style="bold cyan")
-        table.add_column("Industry", max_width=18)
         table.add_column("Price", justify="right")
         table.add_column("P/E", justify="right")
         table.add_column("P/B", justify="right")
@@ -685,9 +580,6 @@ def _display_grouped_by_sector(stocks: list[Stock], failed_tickers: list[str]) -
             roe = format_pct(stock.profitability.roe)
             rsi = format_number(stock.technical.rsi_14, 0)
 
-            # Simplify industry
-            industry = _simplify_industry(stock.industry) if stock.industry else ""
-
             # Color RSI
             rsi_val = stock.technical.rsi_14
             if rsi_val is not None:
@@ -700,7 +592,6 @@ def _display_grouped_by_sector(stocks: list[Stock], failed_tickers: list[str]) -
 
             table.add_row(
                 stock.ticker,
-                industry,
                 price,
                 pe,
                 pb,

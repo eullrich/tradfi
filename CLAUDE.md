@@ -150,7 +150,7 @@ The API uses modular routers with 25+ endpoints:
 **Cache** (`/api/v1/cache`):
 - `GET /stats` - Cache statistics
 - `POST /clear` - Clear cache
-- `GET /industries` - Industry list
+- `GET /sectors` - Sector list
 
 **Refresh** (`/api/v1/refresh`):
 - `GET /status` - Refresh status
@@ -163,7 +163,7 @@ The API uses modular routers with 25+ endpoints:
 - **Space** - Open action menu
 - **/** - Search ticker
 - **u** - Filter by universe
-- **f** - Filter by industry
+- **f** - Filter by sector
 - **c** - Clear filters
 - **Enter** - Select item
 - **Escape** - Go back

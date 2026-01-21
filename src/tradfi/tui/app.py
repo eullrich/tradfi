@@ -27,7 +27,7 @@ from textual.worker import Worker
 # Filter pill types for color coding
 FILTER_PILL_COLORS = {
     "universe": "cyan",
-    "industry": "yellow",
+    "sector": "yellow",
     "preset": "green",
     "category": "magenta",
 }
@@ -142,7 +142,7 @@ class FilterPillsContainer(Horizontal):
     def update_pills(
         self,
         universes: set[str],
-        industries: set[str],
+        sectors: set[str],
         categories: set[str],
         preset: str | None,
     ) -> None:
@@ -150,7 +150,7 @@ class FilterPillsContainer(Horizontal):
         # Remove all existing children
         self.remove_children()
 
-        has_any = bool(universes or industries or categories or preset)
+        has_any = bool(universes or sectors or categories or preset)
 
         if not has_any:
             self.remove_class("has-pills")
@@ -174,13 +174,13 @@ class FilterPillsContainer(Horizontal):
                 display_name=category,
             ))
 
-        # Add industry pills
-        for industry in sorted(industries):
-            # Truncate industry names for display
-            display = industry if len(industry) <= 20 else industry[:18] + ".."
+        # Add sector pills
+        for sector in sorted(sectors):
+            # Truncate sector names for display
+            display = sector if len(sector) <= 20 else sector[:18] + ".."
             self.mount(FilterPill(
-                filter_type="industry",
-                filter_value=industry,
+                filter_type="sector",
+                filter_value=sector,
                 display_name=display,
             ))
 
@@ -193,7 +193,7 @@ class FilterPillsContainer(Horizontal):
             ))
 
         # Add Clear All button if we have multiple filters
-        total_filters = len(universes) + len(industries) + len(categories) + (1 if preset else 0)
+        total_filters = len(universes) + len(sectors) + len(categories) + (1 if preset else 0)
         if total_filters > 1:
             self.mount(ClearAllPill())
 
@@ -203,7 +203,7 @@ ACTION_MENU_ITEMS = {
     "Navigate": [
         ("search", "/", "Search ticker"),
         ("universe", "u", "Filter by universe"),
-        ("industry", "f", "Filter by industry"),
+        ("sector", "f", "Filter by sector"),
         ("clear", "c", "Clear all filters"),
     ],
     "Discovery": [
@@ -224,7 +224,7 @@ ACTION_MENU_ITEMS = {
         ("sort_6m", "4", "6-month return"),
         ("sort_1y", "5", "1-year return"),
         ("sort_ticker", "1", "Ticker"),
-        ("sort_industry", "i", "Industry"),
+        ("sort_sector", "i", "Sector"),
         ("sort_pb", "7", "P/B ratio"),
     ],
     "Actions": [
@@ -727,26 +727,16 @@ class ScatterPlotScreen(ModalScreen):
         self.notify(f"Y axis: {VISUALIZATION_METRICS[self.y_metric][0]}", timeout=2)
 
 
-def _simplify_industry(industry: str) -> str:
-    """Simplify industry name for compact display."""
-    ind = industry
-    ind = ind.replace("Manufacturers", "Mfr")
-    ind = ind.replace("Manufacturer", "Mfr")
-    ind = ind.replace(" - General", "")
-    ind = ind.replace(" - Diversified", "")
-    ind = ind.replace(" - Specialty", " Spec")
-    ind = ind.replace("Insurance - Property & Casualty", "P&C Insurance")
-    ind = ind.replace("Banks - Diversified", "Diversified Banks")
-    ind = ind.replace("Drug ", "Pharma ")
-    ind = ind.replace("Household & Personal Products", "Household Prod")
-    ind = ind.replace("Capital Markets", "Cap Markets")
-    ind = ind.replace("Telecom Services", "Telecom")
-    ind = ind.replace("Entertainment", "Entertain")
-    ind = ind.replace("Healthcare Plans", "Health Plans")
-    ind = ind.replace("Conglomerates", "Conglom")
-    if len(ind) > 16:
-        ind = ind[:14] + ".."
-    return ind
+def _truncate_sector(sector: str) -> str:
+    """Truncate sector name for compact display."""
+    sec = sector
+    sec = sec.replace("Communication Services", "Comm Services")
+    sec = sec.replace("Consumer Cyclical", "Consumer Cyc")
+    sec = sec.replace("Consumer Defensive", "Consumer Def")
+    sec = sec.replace("Financial Services", "Financial")
+    if len(sec) > 16:
+        sec = sec[:14] + ".."
+    return sec
 
 
 class StockDetailScreen(Screen):
@@ -1563,7 +1553,7 @@ class ScreenerApp(App):
         display: none;
     }
 
-    #industry-select {
+    #sector-select {
         height: auto;
         max-height: 12;
         margin-bottom: 1;
@@ -1605,7 +1595,7 @@ class ScreenerApp(App):
         border: double $success;
     }
 
-    #industry-search {
+    #sector-search {
         height: 1;
         min-height: 1;
         padding: 0 1;
@@ -1614,7 +1604,7 @@ class ScreenerApp(App):
         background: $surface-darken-1;
     }
 
-    #industry-search:focus {
+    #sector-search:focus {
         border: solid $accent;
     }
 
@@ -1637,10 +1627,10 @@ class ScreenerApp(App):
         # Keep sort keys for power users but hide from footer
         Binding("s", "save_list", "Save List", show=False),
         Binding("u", "focus_universe", "Filter Universe", show=False),
-        Binding("f", "focus_industry", "Filter Industry", show=False),
+        Binding("f", "focus_sector", "Filter Sector", show=False),
         Binding("c", "clear_filters", "Clear Filters", show=False),
         Binding("1", "sort_ticker", "Sort: Ticker", show=False),
-        Binding("i", "sort_industry", "Sort: Industry", show=False),
+        Binding("i", "sort_sector", "Sort: Sector", show=False),
         Binding("2", "sort_price", "Sort: Price", show=False),
         Binding("3", "sort_1m", "Sort: 1M", show=False),
         Binding("4", "sort_6m", "Sort: 6M", show=False),
@@ -1657,7 +1647,7 @@ class ScreenerApp(App):
     # reverse_default=True means higher values first by default
     SORT_OPTIONS = {
         "ticker": (lambda s: s.ticker, False, "Ticker"),
-        "industry": (lambda s: s.industry or "ZZZ", False, "Industry"),
+        "sector": (lambda s: s.sector or "ZZZ", False, "Sector"),
         "price": (lambda s: s.current_price or 0, True, "Price"),
         "1m": (lambda s: s.technical.return_1m if s.technical.return_1m is not None else float("-inf"), True, "1M"),
         "6m": (lambda s: s.technical.return_6m if s.technical.return_6m is not None else float("-inf"), True, "6M"),
@@ -1680,11 +1670,11 @@ class ScreenerApp(App):
         self._viewing_list: str | None = None  # Track if viewing a position list (display name)
         self._viewing_list_name: str | None = None  # Track actual list name (e.g., "_long")
         self._portfolio_mode: bool = False  # Track if viewing portfolio P&L mode
-        self.selected_industries: set[str] = set()  # Selected industries (include)
+        self.selected_sectors: set[str] = set()  # Selected sectors (include)
         self.selected_universes: set[str] = set()  # Selected universes
         self.selected_categories: set[str] = set()  # Selected categories (for ETF universe)
-        self._industries_loaded: bool = False  # Track if industries list is populated
-        self._all_industries: list[tuple[str, int]] = []  # Full list for filtering
+        self._sectors_loaded: bool = False  # Track if sectors list is populated
+        self._all_sectors: list[tuple[str, int]] = []  # Full list for filtering
 
         # Remote API provider (required - TUI always uses remote API)
         self.api_url = api_url
@@ -1705,9 +1695,9 @@ class ScreenerApp(App):
                 SelectionList[str](id="universe-select"),
                 Static("Categories", classes="section-title", id="category-title"),
                 SelectionList[str](id="category-select"),
-                Static("Industries [dim](toggle)[/]", classes="section-title", id="industry-title"),
-                Input(placeholder="Filter industries...", id="industry-search"),
-                SelectionList[str](id="industry-select"),
+                Static("Sectors [dim](toggle)[/]", classes="section-title", id="sector-title"),
+                Input(placeholder="Filter sectors...", id="sector-search"),
+                SelectionList[str](id="sector-select"),
                 Static("Presets", classes="section-title"),
                 OptionList(
                     "[dim]None (Custom)[/]",
@@ -1792,8 +1782,8 @@ class ScreenerApp(App):
         # Initialize categories (shows hint when no universe selected)
         self._update_categories_for_selection()
 
-        # Populate industry selection list
-        self._populate_industries()
+        # Populate sector selection list
+        self._populate_sectors()
 
         # Fetch API status in background
         self.run_worker(self._fetch_api_status, thread=True)
@@ -1873,40 +1863,40 @@ class ScreenerApp(App):
         except Exception:
             pass
 
-    def _populate_industries(self, tickers: list[str] | None = None) -> None:
-        """Populate the industry selection list from remote API.
+    def _populate_sectors(self, tickers: list[str] | None = None) -> None:
+        """Populate the sector selection list from remote API.
 
         Args:
-            tickers: Optional list of tickers to filter industries by.
-                     If not provided, shows all industries from cache.
+            tickers: Optional list of tickers to filter sectors by.
+                     If not provided, shows all sectors from cache.
         """
         try:
-            industry_select = self.query_one("#industry-select", SelectionList)
+            sector_select = self.query_one("#sector-select", SelectionList)
 
-            # Get industries from remote API (filtered by tickers if provided)
-            industries = self.remote_provider.get_industries(tickers)
+            # Get sectors from remote API (filtered by tickers if provided)
+            sectors = self.remote_provider.get_sectors(tickers)
 
-            if not industries:
-                industry_select.clear_options()
-                industry_select.add_option(("No cached data", "none", False))
+            if not sectors:
+                sector_select.clear_options()
+                sector_select.add_option(("No cached data", "none", False))
                 return
 
             # Store full list for filtering
-            self._all_industries = sorted(industries, key=lambda x: x[0].lower())
+            self._all_sectors = sorted(sectors, key=lambda x: x[0].lower())
 
-            # Clear any previously selected industries that are no longer available
-            available_industries = {ind for ind, _ in industries}
-            self.selected_industries = self.selected_industries & available_industries
+            # Clear any previously selected sectors that are no longer available
+            available_sectors = {sec for sec, _ in sectors}
+            self.selected_sectors = self.selected_sectors & available_sectors
 
-            # Display all industries
-            self._display_filtered_industries("")
+            # Display all sectors
+            self._display_filtered_sectors("")
 
-            self._industries_loaded = True
+            self._sectors_loaded = True
         except Exception:
             pass
 
-    def _update_industries_for_selection(self) -> None:
-        """Update the industry list based on selected universes."""
+    def _update_sectors_for_selection(self) -> None:
+        """Update the sector list based on selected universes."""
         # Get all tickers from selected universes
         tickers: list[str] = []
         universes_to_check = (
@@ -1923,45 +1913,45 @@ class ScreenerApp(App):
             except FileNotFoundError:
                 pass
 
-        # Update industries with the tickers from selected universes
-        self._populate_industries(tickers if tickers else None)
+        # Update sectors with the tickers from selected universes
+        self._populate_sectors(tickers if tickers else None)
 
-    def _display_filtered_industries(self, search_term: str) -> None:
-        """Display industries filtered by search term."""
+    def _display_filtered_sectors(self, search_term: str) -> None:
+        """Display sectors filtered by search term."""
         try:
-            industry_select = self.query_one("#industry-select", SelectionList)
+            sector_select = self.query_one("#sector-select", SelectionList)
 
             # Remember current selections
-            current_selections = set(industry_select.selected)
+            current_selections = set(sector_select.selected)
 
             # Clear and repopulate
-            industry_select.clear_options()
+            sector_select.clear_options()
 
-            # Filter industries by search term
+            # Filter sectors by search term
             search_lower = search_term.lower().strip()
             if search_lower:
                 filtered = [
-                    (ind, count) for ind, count in self._all_industries
-                    if search_lower in ind.lower()
+                    (sec, count) for sec, count in self._all_sectors
+                    if search_lower in sec.lower()
                 ]
             else:
-                filtered = self._all_industries
+                filtered = self._all_sectors
 
             if not filtered and search_term:
-                industry_select.add_option((f"No matches for '{search_term}'", "__none__", False))
+                sector_select.add_option((f"No matches for '{search_term}'", "__none__", False))
                 return
 
             # Add "ALL" option at the top
             total_stocks = sum(count for _, count in filtered)
-            industry_select.add_option((f"★ ALL ({total_stocks})", "__all__", False))
+            sector_select.add_option((f"★ ALL ({total_stocks})", "__all__", False))
 
-            # Add filtered industries
-            for industry, count in filtered:
-                display_name = _simplify_industry(industry)
+            # Add filtered sectors
+            for sector, count in filtered:
+                display_name = _truncate_sector(sector)
                 label = f"{display_name} ({count})"
                 # Restore selection if it was selected before
-                is_selected = industry in current_selections
-                industry_select.add_option((label, industry, is_selected))
+                is_selected = sector in current_selections
+                sector_select.add_option((label, sector, is_selected))
 
         except Exception:
             pass
@@ -2041,7 +2031,7 @@ class ScreenerApp(App):
         self._update_categories_for_selection()
 
     def on_selection_list_selected_changed(self, event: SelectionList.SelectedChanged) -> None:
-        """Handle selection changes for universes, categories, and industries."""
+        """Handle selection changes for universes, categories, and sectors."""
         if event.selection_list.id == "universe-select":
             # Update selected universes (filter out __all__ marker)
             selected = set(event.selection_list.selected)
@@ -2051,8 +2041,8 @@ class ScreenerApp(App):
                 self.selected_universes = selected
             # Always update categories based on current universe selection
             self._update_categories_for_selection()
-            # Update industries to show only those in selected universes
-            self._update_industries_for_selection()
+            # Update sectors to show only those in selected universes
+            self._update_sectors_for_selection()
             self._update_workflow_status()
             self._update_section_titles()
             self._update_filter_pills()
@@ -2063,18 +2053,18 @@ class ScreenerApp(App):
                 self.selected_categories = set()
             else:
                 self.selected_categories = selected
-            # Update industries based on category selection too
-            self._update_industries_for_selection()
+            # Update sectors based on category selection too
+            self._update_sectors_for_selection()
             self._update_workflow_status()
             self._update_section_titles()
             self._update_filter_pills()
-        elif event.selection_list.id == "industry-select":
-            # Update selected industries (filter out __all__ marker)
+        elif event.selection_list.id == "sector-select":
+            # Update selected sectors (filter out __all__ marker)
             selected = set(event.selection_list.selected)
             if "__all__" in selected:
-                self.selected_industries = set()
+                self.selected_sectors = set()
             else:
-                self.selected_industries = selected
+                self.selected_sectors = selected
             self._update_workflow_status()
             self._update_section_titles()
             self._update_filter_pills()
@@ -2114,15 +2104,15 @@ class ScreenerApp(App):
             else:
                 parts.append(f"[magenta]{len(self.selected_categories)} categories[/]")
 
-        # Industry names (show up to 2, then count)
-        if self.selected_industries:
-            if len(self.selected_industries) <= 2:
-                inds = sorted(self.selected_industries)
+        # Sector names (show up to 2, then count)
+        if self.selected_sectors:
+            if len(self.selected_sectors) <= 2:
+                secs = sorted(self.selected_sectors)
                 # Truncate long names
-                short_inds = [ind[:15] + ".." if len(ind) > 17 else ind for ind in inds]
-                parts.append(f"[yellow]{'+'.join(short_inds)}[/]")
+                short_secs = [sec[:15] + ".." if len(sec) > 17 else sec for sec in secs]
+                parts.append(f"[yellow]{'+'.join(short_secs)}[/]")
             else:
-                parts.append(f"[yellow]{len(self.selected_industries)} industries[/]")
+                parts.append(f"[yellow]{len(self.selected_sectors)} sectors[/]")
 
         filter_desc = " | ".join(parts)
 
@@ -2152,13 +2142,13 @@ class ScreenerApp(App):
             else:
                 universe_title.update("Universes [dim](toggle)[/]")
 
-            # Update industry title
-            industry_title = self.query_one("#industry-title", Static)
-            if self.selected_industries:
-                count = len(self.selected_industries)
-                industry_title.update(f"Industries [yellow]({count} selected)[/]")
+            # Update sector title
+            sector_title = self.query_one("#sector-title", Static)
+            if self.selected_sectors:
+                count = len(self.selected_sectors)
+                sector_title.update(f"Sectors [yellow]({count} selected)[/]")
             else:
-                industry_title.update("Industries [dim](toggle)[/]")
+                sector_title.update("Sectors [dim](toggle)[/]")
 
             # Category title - add count here too
             if self.selected_categories:
@@ -2174,7 +2164,7 @@ class ScreenerApp(App):
             pills_container = self.query_one("#filter-pills", FilterPillsContainer)
             pills_container.update_pills(
                 universes=self.selected_universes,
-                industries=self.selected_industries,
+                sectors=self.selected_sectors,
                 categories=self.selected_categories,
                 preset=self.current_preset,
             )
@@ -2193,11 +2183,11 @@ class ScreenerApp(App):
                 universe_select = self.query_one("#universe-select", SelectionList)
                 universe_select.deselect(filter_value)
                 self._update_categories_for_selection()
-            elif filter_type == "industry":
-                # Remove from selected industries and deselect in list
-                self.selected_industries.discard(filter_value)
-                industry_select = self.query_one("#industry-select", SelectionList)
-                industry_select.deselect(filter_value)
+            elif filter_type == "sector":
+                # Remove from selected sectors and deselect in list
+                self.selected_sectors.discard(filter_value)
+                sector_select = self.query_one("#sector-select", SelectionList)
+                sector_select.deselect(filter_value)
             elif filter_type == "category":
                 # Remove from selected categories and deselect in list
                 self.selected_categories.discard(filter_value)
@@ -2264,10 +2254,10 @@ class ScreenerApp(App):
             universe_desc = f"{len(self.selected_universes)} universes"
 
         preset_desc = f" [{self.current_preset}]" if self.current_preset else ""
-        industry_desc = f" ({len(self.selected_industries)} industries)" if self.selected_industries else ""
+        sector_desc = f" ({len(self.selected_sectors)} sectors)" if self.selected_sectors else ""
 
         loading_text = self.query_one("#loading-text", Static)
-        loading_text.update(f"[cyan]SCANNING {universe_desc.upper()}[/]{preset_desc}{industry_desc}")
+        loading_text.update(f"[cyan]SCANNING {universe_desc.upper()}[/]{preset_desc}{sector_desc}")
 
         loading_detail = self.query_one("#loading-detail", Static)
         loading_detail.update("[dim]Initializing...[/]")
@@ -2479,9 +2469,9 @@ class ScreenerApp(App):
                 if not screen_stock(stock, criteria):
                     continue
 
-                # Apply industry filter (if any industries are selected)
-                if self.selected_industries:
-                    if stock.industry not in self.selected_industries:
+                # Apply sector filter (if any sectors are selected)
+                if self.selected_sectors:
+                    if stock.sector not in self.selected_sectors:
                         continue
 
                 passing_stocks.append(stock)
@@ -2588,7 +2578,7 @@ class ScreenerApp(App):
         # Add rows - simplified 9 columns for cleaner view
         for stock in sorted_stocks:
             # Format key values
-            industry = _simplify_industry(stock.industry) if stock.industry else "-"
+            sector = _truncate_sector(stock.sector) if stock.sector else "-"
             price = f"${stock.current_price:.0f}" if stock.current_price else "-"
             pe = f"{stock.valuation.pe_trailing:.1f}" if stock.valuation.pe_trailing and isinstance(stock.valuation.pe_trailing, (int, float)) else "-"
             roe = f"{stock.profitability.roe:.0f}%" if stock.profitability.roe else "-"
@@ -2606,7 +2596,7 @@ class ScreenerApp(App):
 
             table.add_row(
                 stock.ticker,
-                industry,
+                sector,
                 price,
                 pe,
                 roe,
@@ -2631,9 +2621,9 @@ class ScreenerApp(App):
             if self.selected_universes:
                 count = len(self.selected_universes)
                 filter_parts.append(f"{count} univ")
-            if self.selected_industries:
-                count = len(self.selected_industries)
-                filter_parts.append(f"{count} ind")
+            if self.selected_sectors:
+                count = len(self.selected_sectors)
+                filter_parts.append(f"{count} sec")
 
             filter_info = f" [{', '.join(filter_parts)}]" if filter_parts else ""
             preset_info = f" ({self.current_preset})" if self.current_preset else ""
@@ -2664,14 +2654,14 @@ class ScreenerApp(App):
             issues.append(f"Preset '{preset_name}' ({preset_criteria}) filtered all stocks")
             suggestions.append("Try 'None (Custom)' preset")
 
-        # Check industry filter mismatch
-        if self.selected_industries and self.selected_universes:
+        # Check sector filter mismatch
+        if self.selected_sectors and self.selected_universes:
             universes = ", ".join(sorted(self.selected_universes))
-            industries = ", ".join(sorted(list(self.selected_industries)[:2]))
-            if len(self.selected_industries) > 2:
-                industries += f" +{len(self.selected_industries) - 2} more"
-            issues.append(f"Industries '{industries}' may not exist in '{universes}'")
-            suggestions.append("Clear industry filter or select different universe")
+            sectors = ", ".join(sorted(list(self.selected_sectors)[:2]))
+            if len(self.selected_sectors) > 2:
+                sectors += f" +{len(self.selected_sectors) - 2} more"
+            issues.append(f"Sectors '{sectors}' may not exist in '{universes}'")
+            suggestions.append("Clear sector filter or select different universe")
 
         # Check category filter
         if self.selected_categories and self.selected_universes:
@@ -2720,7 +2710,7 @@ class ScreenerApp(App):
             action_map = {
                 "search": self.action_focus_search,
                 "universe": self.action_focus_universe,
-                "industry": self.action_focus_industry,
+                "sector": self.action_focus_sector,
                 "clear": self.action_clear_filters,
                 "refresh": self.action_refresh,
                 "save": self.action_save_list,
@@ -2747,7 +2737,7 @@ class ScreenerApp(App):
                 "sort_6m": self.action_sort_6m,
                 "sort_1y": self.action_sort_1y,
                 "sort_ticker": self.action_sort_ticker,
-                "sort_industry": self.action_sort_industry,
+                "sort_sector": self.action_sort_sector,
                 "sort_pb": self.action_sort_pb,
             }
             if action_id in action_map:
@@ -2891,8 +2881,8 @@ class ScreenerApp(App):
     def action_sort_ticker(self) -> None:
         self._sort_by("ticker")
 
-    def action_sort_industry(self) -> None:
-        self._sort_by("industry")
+    def action_sort_sector(self) -> None:
+        self._sort_by("sector")
 
     def action_sort_price(self) -> None:
         self._sort_by("price")
@@ -2966,13 +2956,13 @@ class ScreenerApp(App):
         universe_select = self.query_one("#universe-select", SelectionList)
         universe_select.focus()
 
-    def action_focus_industry(self) -> None:
-        """Focus the industry selection list."""
-        industry_select = self.query_one("#industry-select", SelectionList)
-        industry_select.focus()
+    def action_focus_sector(self) -> None:
+        """Focus the sector selection list."""
+        sector_select = self.query_one("#sector-select", SelectionList)
+        sector_select.focus()
 
     def action_clear_filters(self) -> None:
-        """Clear all universe, category, and industry selections."""
+        """Clear all universe, category, and sector selections."""
         try:
             universe_select = self.query_one("#universe-select", SelectionList)
             universe_select.deselect_all()
@@ -2982,9 +2972,9 @@ class ScreenerApp(App):
             self._hide_categories()
             self.selected_categories = set()
 
-            industry_select = self.query_one("#industry-select", SelectionList)
-            industry_select.deselect_all()
-            self.selected_industries = set()
+            sector_select = self.query_one("#sector-select", SelectionList)
+            sector_select.deselect_all()
+            self.selected_sectors = set()
 
             # Clear preset
             self.current_preset = None
@@ -3002,8 +2992,8 @@ class ScreenerApp(App):
 
     def on_input_changed(self, event: Input.Changed) -> None:
         """Handle input changes for real-time filtering."""
-        if event.input.id == "industry-search":
-            self._display_filtered_industries(event.value)
+        if event.input.id == "sector-search":
+            self._display_filtered_sectors(event.value)
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         """Handle input submission."""
@@ -3012,7 +3002,7 @@ class ScreenerApp(App):
             if ticker:
                 self._search_ticker(ticker)
                 event.input.value = ""  # Clear the input
-        elif event.input.id == "industry-search":
+        elif event.input.id == "sector-search":
             # Just filter on submit as well (already handled by on_input_changed)
             pass
 
