@@ -1758,9 +1758,9 @@ class ScreenerApp(App):
         table = self.query_one("#results-table", DataTable)
         table.display = False
         table.cursor_type = "row"
-        # Simplified columns for cleaner view (8 instead of 14)
-        # Focus on key value metrics: Ticker, Price, P/E, ROE, RSI, MoS%, Div, Signal
-        table.add_columns("Ticker", "Price", "P/E", "ROE", "RSI", "MoS%", "Div", "Signal")
+        # Simplified columns for cleaner view (9 instead of 14)
+        # Focus on key value metrics: Ticker, Industry, Price, P/E, ROE, RSI, MoS%, Div, Signal
+        table.add_columns("Ticker", "Industry", "Price", "P/E", "ROE", "RSI", "MoS%", "Div", "Signal")
 
         # Populate universe selection list
         self._populate_universes()
@@ -2508,9 +2508,9 @@ class ScreenerApp(App):
         table.display = True
 
         # If we were in portfolio mode, restore normal columns
-        if self._portfolio_mode or len(table.columns) != 8:
+        if self._portfolio_mode or len(table.columns) != 9:
             table.clear(columns=True)
-            table.add_columns("Ticker", "Price", "P/E", "ROE", "RSI", "MoS%", "Div", "Signal")
+            table.add_columns("Ticker", "Industry", "Price", "P/E", "ROE", "RSI", "MoS%", "Div", "Signal")
             self._portfolio_mode = False
         else:
             table.clear()
@@ -2526,9 +2526,10 @@ class ScreenerApp(App):
         reverse = default_reverse != self.sort_reverse
         sorted_stocks = sorted(self.stocks, key=sort_key, reverse=reverse)
 
-        # Add rows - simplified 8 columns for cleaner view
+        # Add rows - simplified 9 columns for cleaner view
         for stock in sorted_stocks:
             # Format key values
+            industry = _simplify_industry(stock.industry) if stock.industry else "-"
             price = f"${stock.current_price:.0f}" if stock.current_price else "-"
             pe = f"{stock.valuation.pe_trailing:.1f}" if stock.valuation.pe_trailing and isinstance(stock.valuation.pe_trailing, (int, float)) else "-"
             roe = f"{stock.profitability.roe:.0f}%" if stock.profitability.roe else "-"
@@ -2546,6 +2547,7 @@ class ScreenerApp(App):
 
             table.add_row(
                 stock.ticker,
+                industry,
                 price,
                 pe,
                 roe,
