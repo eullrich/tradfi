@@ -108,6 +108,43 @@ PRESET_SCREENS: dict[str, ScreenCriteria] = {
         roe_max=10,  # Weak profitability for the price
         rsi_min=60,  # Overbought territory
     ),
+    # === Thematic Discovery Screens ===
+    "fallen-angels": ScreenCriteria(
+        # Quality stocks that have fallen hard - potential turnaround plays
+        roe_min=15,  # Still profitable (quality)
+        margin_min=10,  # Decent margins
+        pct_from_52w_high_max=-30,  # Down at least 30% from high
+        debt_equity_max=100,  # Not overleveraged
+    ),
+    "dividend-growers": ScreenCriteria(
+        # Sustainable dividends with room to grow
+        dividend_yield_min=2.5,  # Meaningful yield
+        roe_min=12,  # Profitable enough to sustain dividends
+        debt_equity_max=80,  # Conservative leverage
+    ),
+    "turnaround": ScreenCriteria(
+        # Beaten down stocks with recovery potential
+        pe_max=12,  # Cheap valuation
+        pct_from_52w_high_max=-25,  # Significant drawdown
+        rsi_max=40,  # Weak momentum (potential bottom)
+        current_ratio_min=1.5,  # Can survive
+    ),
+    "hidden-gems": ScreenCriteria(
+        # Small/mid caps with strong fundamentals
+        market_cap_min=500_000_000,  # At least $500M
+        market_cap_max=15_000_000_000,  # Under $15B (less covered)
+        pe_max=18,  # Reasonable valuation
+        roe_min=12,  # Quality business
+        debt_equity_max=75,  # Conservative
+    ),
+    "momentum-value": ScreenCriteria(
+        # Value stocks showing positive momentum
+        pe_max=20,
+        pb_max=2.5,
+        roe_min=10,
+        rsi_min=45,  # Not oversold - showing strength
+        rsi_max=65,  # Not overbought yet
+    ),
 }
 
 
@@ -474,3 +511,162 @@ def get_preset_screen(name: str) -> ScreenCriteria:
         raise ValueError(f"Unknown preset '{name}'. Available: {available}")
 
     return PRESET_SCREENS[name]
+
+
+# Preset descriptions for TUI display
+PRESET_DESCRIPTIONS: dict[str, str] = {
+    "graham": "Classic Ben Graham value criteria",
+    "buffett": "Quality companies at fair prices",
+    "deep-value": "Very cheap stocks (contrarian)",
+    "oversold-value": "Value + technical oversold",
+    "dividend": "Income-focused high yielders",
+    "quality": "High ROE, strong margins",
+    "buyback": "Buyback potential candidates",
+    "short-candidates": "Overvalued weakness",
+    "fallen-angels": "Quality stocks down 30%+",
+    "dividend-growers": "Sustainable dividend payers",
+    "turnaround": "Beaten down, recovery potential",
+    "hidden-gems": "Small/mid cap quality",
+    "momentum-value": "Value with positive momentum",
+}
+
+
+def calculate_similarity_score(target: Stock, candidate: Stock) -> tuple[float, list[str]]:
+    """
+    Calculate how similar a candidate stock is to a target stock.
+
+    Returns a score from 0-100 and a list of matching reasons.
+    Higher score = more similar.
+
+    Factors considered:
+    - Same industry (30 points)
+    - Same sector (10 points)
+    - Similar market cap range (15 points)
+    - Similar P/E range (15 points)
+    - Similar ROE (10 points)
+    - Similar dividend yield (10 points)
+    - Similar RSI/technical setup (10 points)
+
+    Args:
+        target: The stock to find similar stocks to
+        candidate: A potential similar stock
+
+    Returns:
+        Tuple of (similarity_score, list of matching reasons)
+    """
+    if target.ticker == candidate.ticker:
+        return 0, []  # Don't match self
+
+    score = 0.0
+    reasons = []
+
+    # Industry match (30 points) - highest weight
+    if target.industry and candidate.industry:
+        if target.industry == candidate.industry:
+            score += 30
+            reasons.append("Same industry")
+        elif target.sector and candidate.sector and target.sector == candidate.sector:
+            score += 10
+            reasons.append("Same sector")
+
+    # Market cap similarity (15 points)
+    target_mc = target.valuation.market_cap
+    candidate_mc = candidate.valuation.market_cap
+    if target_mc and candidate_mc and target_mc > 0:
+        ratio = candidate_mc / target_mc
+        if 0.5 <= ratio <= 2.0:  # Within 50-200% of target
+            score += 15
+            reasons.append("Similar size")
+        elif 0.25 <= ratio <= 4.0:  # Within 25-400%
+            score += 8
+
+    # P/E similarity (15 points)
+    target_pe = target.valuation.pe_trailing
+    candidate_pe = candidate.valuation.pe_trailing
+    if (target_pe and candidate_pe and
+        isinstance(target_pe, (int, float)) and isinstance(candidate_pe, (int, float)) and
+        target_pe > 0 and candidate_pe > 0):
+        pe_diff = abs(target_pe - candidate_pe)
+        if pe_diff <= 3:  # Very similar P/E
+            score += 15
+            reasons.append("Similar P/E")
+        elif pe_diff <= 7:
+            score += 10
+        elif pe_diff <= 12:
+            score += 5
+
+    # ROE similarity (10 points)
+    target_roe = target.profitability.roe
+    candidate_roe = candidate.profitability.roe
+    if target_roe is not None and candidate_roe is not None:
+        roe_diff = abs(target_roe - candidate_roe)
+        if roe_diff <= 3:  # Very similar ROE
+            score += 10
+            reasons.append("Similar ROE")
+        elif roe_diff <= 7:
+            score += 6
+        elif roe_diff <= 12:
+            score += 3
+
+    # Dividend yield similarity (10 points)
+    target_div = target.dividends.dividend_yield
+    candidate_div = candidate.dividends.dividend_yield
+    if target_div is not None and candidate_div is not None:
+        # Both pay dividends
+        div_diff = abs(target_div - candidate_div)
+        if div_diff <= 0.5:  # Very similar yield
+            score += 10
+            reasons.append("Similar dividend")
+        elif div_diff <= 1.5:
+            score += 6
+        elif div_diff <= 3:
+            score += 3
+    elif target_div is None and candidate_div is None:
+        # Both non-dividend payers
+        score += 5
+
+    # Technical/RSI similarity (10 points)
+    target_rsi = target.technical.rsi_14
+    candidate_rsi = candidate.technical.rsi_14
+    if target_rsi and candidate_rsi:
+        rsi_diff = abs(target_rsi - candidate_rsi)
+        if rsi_diff <= 5:  # Very similar momentum
+            score += 10
+            reasons.append("Similar momentum")
+        elif rsi_diff <= 12:
+            score += 6
+        elif rsi_diff <= 20:
+            score += 3
+
+    return score, reasons
+
+
+def find_similar_stocks(
+    target: Stock,
+    candidates: list[Stock],
+    limit: int = 10,
+    min_score: float = 25,
+) -> list[tuple[Stock, float, list[str]]]:
+    """
+    Find stocks similar to the target stock.
+
+    Args:
+        target: The stock to find similar stocks to
+        candidates: List of stocks to search through
+        limit: Maximum number of results to return
+        min_score: Minimum similarity score to include (0-100)
+
+    Returns:
+        List of (stock, score, reasons) tuples, sorted by score descending
+    """
+    scored = []
+
+    for candidate in candidates:
+        score, reasons = calculate_similarity_score(target, candidate)
+        if score >= min_score:
+            scored.append((candidate, score, reasons))
+
+    # Sort by score descending
+    scored.sort(key=lambda x: x[1], reverse=True)
+
+    return scored[:limit]
