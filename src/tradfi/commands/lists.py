@@ -530,3 +530,175 @@ def note_ticker(
         console.print(f"[green]Updated notes for {ticker} in '{list_name}'[/]")
     else:
         console.print(f"[red]Failed to update notes for {ticker}[/]")
+
+
+# ============================================================================
+# Position/Portfolio Commands
+# ============================================================================
+
+@app.command("position")
+def set_position_cmd(
+    list_name: str = typer.Argument(..., help="Name of the list"),
+    ticker: str = typer.Argument(..., help="Ticker symbol"),
+    shares: Optional[float] = typer.Option(None, "--shares", "-s", help="Number of shares"),
+    entry: Optional[float] = typer.Option(None, "--entry", "-e", help="Entry price per share"),
+    target: Optional[float] = typer.Option(None, "--target", "-T", help="Target price"),
+    thesis: Optional[str] = typer.Option(None, "--thesis", "-t", help="Investment thesis"),
+    clear: bool = typer.Option(False, "--clear", help="Clear position data"),
+) -> None:
+    """
+    Set position data (shares and entry price) for a list item.
+
+    This enables portfolio tracking with P&L calculations.
+
+    Examples:
+        tradfi list position my-picks AAPL --shares 100 --entry 150.50
+        tradfi list position my-picks AAPL -s 100 -e 150.50 -T 200
+        tradfi list position _long MSFT -s 50 -e 380
+        tradfi list position my-picks AAPL --clear
+    """
+    provider = _get_provider()
+    ticker = ticker.upper()
+
+    # Check list and ticker exist
+    list_data = provider.get_list(list_name)
+    if list_data is None:
+        console.print(f"[red]List '{list_name}' not found.[/]")
+        raise typer.Exit(1)
+
+    tickers = list_data.get("tickers", [])
+    if ticker not in tickers:
+        console.print(f"[yellow]{ticker} is not in list '{list_name}'[/]")
+        console.print(f"[dim]Add it first: tradfi list add {list_name} {ticker}[/]")
+        raise typer.Exit(1)
+
+    if clear:
+        if provider.clear_position(list_name, ticker):
+            console.print(f"[green]Cleared position data for {ticker}[/]")
+        else:
+            console.print(f"[red]Failed to clear position data[/]")
+        return
+
+    if shares is None and entry is None and target is None and thesis is None:
+        console.print("[yellow]Specify at least one of: --shares, --entry, --target, --thesis[/]")
+        raise typer.Exit(1)
+
+    if provider.set_position(list_name, ticker, shares=shares, entry_price=entry, target_price=target, thesis=thesis):
+        parts = []
+        if shares is not None:
+            parts.append(f"{shares:.0f} shares")
+        if entry is not None:
+            parts.append(f"${entry:.2f} entry")
+        if target is not None:
+            parts.append(f"${target:.2f} target")
+        console.print(f"[green]Set position for {ticker}: {', '.join(parts) if parts else 'updated'}[/]")
+    else:
+        console.print(f"[red]Failed to set position for {ticker}[/]")
+
+
+@app.command("portfolio")
+def show_portfolio(
+    list_name: str = typer.Argument(..., help="Name of the list"),
+    export: bool = typer.Option(False, "--export", "-e", help="Export as CSV"),
+) -> None:
+    """
+    Show portfolio view with P&L for a list.
+
+    Displays positions with gain/loss calculations and allocation percentages.
+
+    Examples:
+        tradfi list portfolio my-picks
+        tradfi list portfolio _long
+        tradfi list portfolio my-picks --export
+    """
+    provider = _get_provider()
+    portfolio = provider.get_portfolio(list_name)
+
+    if portfolio is None:
+        console.print(f"[red]List '{list_name}' not found.[/]")
+        raise typer.Exit(1)
+
+    if portfolio.get("position_count", 0) == 0:
+        console.print(f"[yellow]No positions in '{list_name}'[/]")
+        console.print(f"[dim]Add positions with: tradfi list position {list_name} TICKER --shares 100 --entry 50[/]")
+        return
+
+    if export:
+        _export_portfolio_csv(portfolio, list_name)
+        return
+
+    _display_portfolio_table(portfolio, list_name)
+
+
+def _display_portfolio_table(portfolio: dict, list_name: str) -> None:
+    """Display portfolio table with P&L."""
+    table = Table(
+        title=f"Portfolio: {list_name}",
+        box=box.ROUNDED,
+        show_header=True,
+        header_style="bold",
+    )
+
+    table.add_column("Ticker", style="bold cyan")
+    table.add_column("Shares", justify="right")
+    table.add_column("Entry", justify="right")
+    table.add_column("Price", justify="right")
+    table.add_column("Cost", justify="right")
+    table.add_column("Value", justify="right")
+    table.add_column("P&L $", justify="right")
+    table.add_column("P&L %", justify="right")
+    table.add_column("Alloc", justify="right")
+
+    for item in portfolio.get("items", []):
+        pnl = item.get("gain_loss")
+        pnl_pct = item.get("gain_loss_pct")
+        pnl_color = "green" if pnl and pnl >= 0 else "red"
+
+        table.add_row(
+            item.get("ticker", "-"),
+            f"{item['shares']:.0f}" if item.get("shares") else "-",
+            f"${item['entry_price']:.2f}" if item.get("entry_price") else "-",
+            f"${item['current_price']:.2f}" if item.get("current_price") else "-",
+            f"${item['cost_basis']:,.0f}" if item.get("cost_basis") else "-",
+            f"${item['current_value']:,.0f}" if item.get("current_value") else "-",
+            f"[{pnl_color}]${pnl:+,.0f}[/]" if pnl is not None else "-",
+            f"[{pnl_color}]{pnl_pct:+.1f}%[/]" if pnl_pct is not None else "-",
+            f"{item['allocation_pct']:.1f}%" if item.get("allocation_pct") else "-",
+        )
+
+    console.print(table)
+
+    # Summary row
+    console.print()
+    total_pnl = portfolio.get("total_gain_loss", 0)
+    total_pnl_pct = portfolio.get("total_gain_loss_pct")
+    total_pnl_color = "green" if total_pnl >= 0 else "red"
+
+    console.print(
+        f"[bold]Total:[/]  "
+        f"Cost: [cyan]${portfolio.get('total_cost_basis', 0):,.0f}[/]  |  "
+        f"Value: [cyan]${portfolio.get('total_current_value', 0):,.0f}[/]  |  "
+        f"P&L: [{total_pnl_color}]${total_pnl:+,.0f}[/] "
+        f"({total_pnl_pct:+.1f}%)" if total_pnl_pct else ""
+    )
+    console.print(f"[dim]Positions: {portfolio.get('position_count', 0)}[/]")
+
+
+def _export_portfolio_csv(portfolio: dict, list_name: str) -> None:
+    """Export portfolio as CSV to stdout."""
+    # Header
+    console.print("Ticker,Shares,Entry,Price,Cost,Value,P&L $,P&L %,Allocation %")
+
+    for item in portfolio.get("items", []):
+        row = [
+            item.get("ticker", ""),
+            f"{item['shares']:.2f}" if item.get("shares") else "",
+            f"{item['entry_price']:.2f}" if item.get("entry_price") else "",
+            f"{item['current_price']:.2f}" if item.get("current_price") else "",
+            f"{item['cost_basis']:.2f}" if item.get("cost_basis") else "",
+            f"{item['current_value']:.2f}" if item.get("current_value") else "",
+            f"{item['gain_loss']:.2f}" if item.get("gain_loss") is not None else "",
+            f"{item['gain_loss_pct']:.2f}" if item.get("gain_loss_pct") is not None else "",
+            f"{item['allocation_pct']:.2f}" if item.get("allocation_pct") else "",
+        ]
+        console.print(",".join(row))

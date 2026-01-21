@@ -9,23 +9,30 @@ from pydantic import BaseModel, EmailStr
 
 from tradfi.utils.cache import (
     create_magic_link_token,
+    get_batch_cached_stocks,
     get_cache_stats,
     revoke_session_token,
     user_add_to_list,
     user_add_to_watchlist,
+    user_clear_position,
     user_create_list,
     user_delete_list,
     user_get_list,
     user_get_list_items,
+    user_get_list_items_with_positions,
     user_get_lists,
+    user_get_position,
     user_get_watchlist,
+    user_has_positions,
     user_remove_from_list,
     user_remove_from_watchlist,
+    user_set_position,
     user_update_list_item_notes,
     user_update_watchlist_notes,
     validate_session_token,
     verify_magic_link_token,
 )
+from tradfi.core.portfolio import calculate_portfolio_metrics
 
 app = FastAPI(title="TradFi API", version="0.1.0")
 
@@ -115,6 +122,56 @@ class ListItemResponse(BaseModel):
     ticker: str
     added_at: int
     notes: str | None
+
+
+# Position/Portfolio models
+class PositionRequest(BaseModel):
+    """Request to set position data for a list item."""
+    shares: float | None = None
+    entry_price: float | None = None
+    target_price: float | None = None
+    thesis: str | None = None
+
+
+class PositionResponse(BaseModel):
+    """Position data for a single item."""
+    ticker: str
+    shares: float | None = None
+    entry_price: float | None = None
+    target_price: float | None = None
+    thesis: str | None = None
+    notes: str | None = None
+    added_at: int | None = None
+
+
+class PortfolioItemResponse(BaseModel):
+    """Full portfolio item with calculated P&L metrics."""
+    ticker: str
+    shares: float | None = None
+    entry_price: float | None = None
+    current_price: float | None = None
+    target_price: float | None = None
+    cost_basis: float | None = None
+    current_value: float | None = None
+    gain_loss: float | None = None
+    gain_loss_pct: float | None = None
+    allocation_pct: float | None = None
+    cost_allocation_pct: float | None = None
+    target_gain_pct: float | None = None
+    distance_to_target_pct: float | None = None
+    notes: str | None = None
+    thesis: str | None = None
+
+
+class PortfolioSummaryResponse(BaseModel):
+    """Portfolio summary with aggregated metrics."""
+    list_name: str
+    items: list[PortfolioItemResponse]
+    total_cost_basis: float
+    total_current_value: float
+    total_gain_loss: float
+    total_gain_loss_pct: float | None
+    position_count: int
 
 
 # ============================================================================
@@ -443,3 +500,148 @@ def update_list_item_notes(
     if user_get_list(current_user["id"], list_name) is None:
         raise HTTPException(status_code=404, detail=f"List '{list_name}' not found")
     raise HTTPException(status_code=404, detail=f"{ticker.upper()} not in '{list_name}'")
+
+
+# ============================================================================
+# Position/Portfolio Endpoints (User-Scoped)
+# ============================================================================
+
+
+@app.put("/api/lists/{list_name}/items/{ticker}/position", response_model=MessageResponse)
+def set_position(
+    list_name: str,
+    ticker: str,
+    request: PositionRequest,
+    current_user: Annotated[dict, Depends(get_current_user)]
+) -> MessageResponse:
+    """
+    Set position data for a list item (shares, entry_price, target_price, thesis).
+
+    This enables portfolio tracking with P&L calculations.
+    """
+    # Check if list exists
+    if user_get_list(current_user["id"], list_name) is None:
+        raise HTTPException(status_code=404, detail=f"List '{list_name}' not found")
+
+    # Check if at least one field is provided
+    if all(v is None for v in [request.shares, request.entry_price, request.target_price, request.thesis]):
+        raise HTTPException(
+            status_code=400,
+            detail="At least one field (shares, entry_price, target_price, thesis) is required"
+        )
+
+    updated = user_set_position(
+        current_user["id"],
+        list_name,
+        ticker,
+        shares=request.shares,
+        entry_price=request.entry_price,
+        target_price=request.target_price,
+        thesis=request.thesis,
+    )
+
+    if updated:
+        return MessageResponse(message=f"Position updated for {ticker.upper()}")
+    raise HTTPException(status_code=404, detail=f"{ticker.upper()} not in '{list_name}'")
+
+
+@app.get("/api/lists/{list_name}/items/{ticker}/position", response_model=PositionResponse)
+def get_position(
+    list_name: str,
+    ticker: str,
+    current_user: Annotated[dict, Depends(get_current_user)]
+) -> PositionResponse:
+    """Get position data for a specific item in a list."""
+    # Check if list exists
+    if user_get_list(current_user["id"], list_name) is None:
+        raise HTTPException(status_code=404, detail=f"List '{list_name}' not found")
+
+    position = user_get_position(current_user["id"], list_name, ticker)
+    if position is None:
+        raise HTTPException(status_code=404, detail=f"{ticker.upper()} not in '{list_name}'")
+
+    return PositionResponse(**position)
+
+
+@app.delete("/api/lists/{list_name}/items/{ticker}/position", response_model=MessageResponse)
+def clear_position(
+    list_name: str,
+    ticker: str,
+    current_user: Annotated[dict, Depends(get_current_user)]
+) -> MessageResponse:
+    """
+    Clear position data for a list item (set shares/entry_price to NULL).
+
+    The item remains in the list with notes preserved.
+    """
+    # Check if list exists
+    if user_get_list(current_user["id"], list_name) is None:
+        raise HTTPException(status_code=404, detail=f"List '{list_name}' not found")
+
+    cleared = user_clear_position(current_user["id"], list_name, ticker)
+    if cleared:
+        return MessageResponse(message=f"Position cleared for {ticker.upper()}")
+    raise HTTPException(status_code=404, detail=f"{ticker.upper()} not in '{list_name}'")
+
+
+@app.get("/api/lists/{list_name}/portfolio", response_model=PortfolioSummaryResponse)
+def get_portfolio(
+    list_name: str,
+    current_user: Annotated[dict, Depends(get_current_user)]
+) -> PortfolioSummaryResponse:
+    """
+    Get full portfolio view with P&L calculations for a list.
+
+    Returns all items with position data along with calculated metrics:
+    - cost_basis: shares * entry_price
+    - current_value: shares * current_price
+    - gain_loss: current_value - cost_basis
+    - gain_loss_pct: (gain_loss / cost_basis) * 100
+    - allocation_pct: (current_value / total_value) * 100
+    """
+    # Check if list exists
+    if user_get_list(current_user["id"], list_name) is None:
+        raise HTTPException(status_code=404, detail=f"List '{list_name}' not found")
+
+    # Get all items with position data
+    items = user_get_list_items_with_positions(current_user["id"], list_name)
+    if items is None:
+        raise HTTPException(status_code=404, detail=f"List '{list_name}' not found")
+
+    # Get current prices from cache
+    tickers = [item["ticker"] for item in items if item.get("ticker")]
+    cached_stocks = get_batch_cached_stocks(tickers) if tickers else {}
+
+    # Build price lookup
+    current_prices = {}
+    for ticker, data in cached_stocks.items():
+        if data and "current_price" in data:
+            current_prices[ticker] = data["current_price"]
+
+    # Calculate portfolio metrics
+    portfolio = calculate_portfolio_metrics(items, current_prices)
+    result = portfolio.to_dict(list_name)
+
+    return PortfolioSummaryResponse(
+        list_name=result["list_name"],
+        items=[PortfolioItemResponse(**item) for item in result["items"]],
+        total_cost_basis=result["total_cost_basis"],
+        total_current_value=result["total_current_value"],
+        total_gain_loss=result["total_gain_loss"],
+        total_gain_loss_pct=result["total_gain_loss_pct"],
+        position_count=result["position_count"],
+    )
+
+
+@app.get("/api/lists/{list_name}/has-positions")
+def check_has_positions(
+    list_name: str,
+    current_user: Annotated[dict, Depends(get_current_user)]
+) -> JSONResponse:
+    """Check if a list has any position data (for determining display mode)."""
+    # Check if list exists
+    if user_get_list(current_user["id"], list_name) is None:
+        raise HTTPException(status_code=404, detail=f"List '{list_name}' not found")
+
+    has_pos = user_has_positions(current_user["id"], list_name)
+    return JSONResponse({"has_positions": has_pos})
