@@ -34,7 +34,8 @@ router = APIRouter(prefix="/lists", tags=["lists"])
 @router.get("", response_model=list[str])
 async def get_lists():
     """Get all saved list names."""
-    return list_saved_lists()
+    lists = list_saved_lists()
+    return [lst["name"] for lst in lists]
 
 
 @router.post("", response_model=MessageSchema)
@@ -51,8 +52,9 @@ async def get_list(name: str):
     if tickers is None:
         raise HTTPException(status_code=404, detail=f"List '{name}' not found")
 
-    # Get notes for all items
-    notes = get_all_item_notes(name)
+    # Get notes for all items and convert list to dict keyed by ticker
+    notes_list = get_all_item_notes(name)
+    notes = {note["ticker"]: note for note in notes_list}
     items = []
     for ticker in tickers:
         note = notes.get(ticker, {})
