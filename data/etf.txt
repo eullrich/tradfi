@@ -449,3 +449,40 @@ SE
 GRAB
 CPNG
 TCEHY
+
+## Derivative Income
+# Covered Call ETFs
+JEPI
+JEPQ
+QYLD
+XYLD
+RYLD
+DIVO
+DJIA
+SPYI
+QQQI
+
+# Options Premium Income
+NUSI
+PUTW
+PBP
+
+# Single Stock Covered Call
+TSLY
+NVDY
+APLY
+GOOY
+AMZY
+CONY
+MSFO
+AMDY
+
+# Buffer/Defined Outcome
+BUFR
+BJUL
+BAPR
+BOCT
+PJUL
+PAPR
+UAPR
+UJUL
