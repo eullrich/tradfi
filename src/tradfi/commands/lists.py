@@ -1,6 +1,6 @@
 """List management commands - view, manage, and export saved stock lists."""
 
-from datetime import datetime
+import os
 from typing import Optional
 
 import typer
@@ -8,29 +8,23 @@ from rich.console import Console
 from rich.table import Table
 from rich import box
 
-from tradfi.utils.cache import (
-    list_saved_lists,
-    get_saved_list,
-    delete_saved_list,
-    save_list,
-    add_to_saved_list,
-    remove_from_saved_list,
-    create_category,
-    list_categories,
-    delete_category,
-    add_list_to_category,
-    remove_list_from_category,
-    get_lists_in_category,
-    set_item_note,
-    get_item_note,
-    get_all_item_notes,
-)
+from tradfi.core.remote_provider import RemoteDataProvider
 
 console = Console()
 
 # Reserved list names for long/short positions
 LONG_LIST = "_long"
 SHORT_LIST = "_short"
+
+# Default API URL - can be overridden with TRADFI_API_URL env var
+DEFAULT_API_URL = "https://deepv-production.up.railway.app"
+
+
+def _get_provider() -> RemoteDataProvider:
+    """Get the remote data provider using API URL from environment."""
+    api_url = os.environ.get("TRADFI_API_URL", DEFAULT_API_URL)
+    return RemoteDataProvider(api_url)
+
 
 app = typer.Typer(
     name="list",
@@ -47,11 +41,12 @@ def list_lists() -> None:
     Example:
         tradfi list ls
     """
-    lists = list_saved_lists()
+    provider = _get_provider()
+    lists = provider.get_lists()
 
     if not lists:
         console.print("[yellow]No saved lists found.[/]")
-        console.print("[dim]Create one with: tradfi screen --pe-max 15 --save my-list[/]")
+        console.print("[dim]Create one with: tradfi list create my-list AAPL,MSFT[/]")
         return
 
     table = Table(
@@ -63,17 +58,11 @@ def list_lists() -> None:
 
     table.add_column("Name", style="bold cyan")
     table.add_column("Stocks", justify="right")
-    table.add_column("Description")
-    table.add_column("Updated", justify="right")
 
-    for lst in lists:
-        updated = datetime.fromtimestamp(lst["updated_at"]).strftime("%Y-%m-%d %H:%M")
-        table.add_row(
-            lst["name"],
-            str(lst["count"]),
-            lst["description"] or "-",
-            updated,
-        )
+    for name in lists:
+        list_data = provider.get_list(name)
+        count = len(list_data.get("tickers", [])) if list_data else 0
+        table.add_row(name, str(count))
 
     console.print(table)
     console.print()
@@ -92,12 +81,15 @@ def show_list(
         tradfi list show my-value-picks
         tradfi list show my-value-picks --export
     """
-    tickers = get_saved_list(name)
+    provider = _get_provider()
+    list_data = provider.get_list(name)
 
-    if tickers is None:
+    if list_data is None:
         console.print(f"[red]List '{name}' not found.[/]")
         console.print("[dim]See available lists: tradfi list ls[/]")
         raise typer.Exit(1)
+
+    tickers = list_data.get("tickers", [])
 
     if export:
         # Export as comma-separated for easy copy/paste
@@ -114,13 +106,12 @@ def show_list(
 
     console.print()
     console.print("[dim]Commands:[/]")
-    console.print(f"[dim]  Screen this list: tradfi screen -t {','.join(tickers[:5])}{',...' if len(tickers) > 5 else ''}[/]")
     console.print(f"[dim]  Export tickers:   tradfi list show {name} --export[/]")
     console.print(f"[dim]  Delete list:      tradfi list delete {name}[/]")
 
 
 @app.command("delete")
-def delete_list(
+def delete_list_cmd(
     name: str = typer.Argument(..., help="Name of the list to delete"),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
 ) -> None:
@@ -131,11 +122,14 @@ def delete_list(
         tradfi list delete my-old-picks
         tradfi list delete my-old-picks --force
     """
-    tickers = get_saved_list(name)
+    provider = _get_provider()
+    list_data = provider.get_list(name)
 
-    if tickers is None:
+    if list_data is None:
         console.print(f"[red]List '{name}' not found.[/]")
         raise typer.Exit(1)
+
+    tickers = list_data.get("tickers", [])
 
     if not force:
         console.print(f"Delete list '{name}' with {len(tickers)} stocks?")
@@ -143,33 +137,34 @@ def delete_list(
             console.print("[dim]Cancelled.[/]")
             raise typer.Exit(0)
 
-    if delete_saved_list(name):
+    if provider.delete_list(name):
         console.print(f"[green]Deleted list '{name}'[/]")
     else:
         console.print(f"[red]Failed to delete list '{name}'[/]")
 
 
 @app.command("create")
-def create_list(
+def create_list_cmd(
     name: str = typer.Argument(..., help="Name for the new list"),
     tickers: str = typer.Argument(..., help="Comma-separated list of tickers"),
-    description: Optional[str] = typer.Option(None, "--desc", "-d", help="Description for the list"),
 ) -> None:
     """
     Create a new list from tickers.
 
     Example:
         tradfi list create tech-picks AAPL,MSFT,GOOGL,NVDA
-        tradfi list create dividends KO,PG,JNJ --desc "Dividend aristocrats"
     """
+    provider = _get_provider()
     ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()]
 
     if not ticker_list:
         console.print("[red]No valid tickers provided.[/]")
         raise typer.Exit(1)
 
-    save_list(name, ticker_list, description)
-    console.print(f"[green]Created list '{name}' with {len(ticker_list)} stocks[/]")
+    if provider.create_list(name, ticker_list):
+        console.print(f"[green]Created list '{name}' with {len(ticker_list)} stocks[/]")
+    else:
+        console.print(f"[red]Failed to create list '{name}'[/]")
 
 
 @app.command("add")
@@ -183,13 +178,14 @@ def add_ticker(
     Example:
         tradfi list add my-picks AAPL
     """
+    provider = _get_provider()
     ticker = ticker.upper()
 
-    if add_to_saved_list(name, ticker):
+    if provider.add_to_list(name, ticker):
         console.print(f"[green]Added {ticker} to '{name}'[/]")
     else:
         # Check if list exists
-        if get_saved_list(name) is None:
+        if provider.get_list(name) is None:
             console.print(f"[red]List '{name}' not found.[/]")
         else:
             console.print(f"[yellow]{ticker} is already in '{name}'[/]")
@@ -206,42 +202,13 @@ def remove_ticker(
     Example:
         tradfi list remove my-picks AAPL
     """
+    provider = _get_provider()
     ticker = ticker.upper()
 
-    if remove_from_saved_list(name, ticker):
+    if provider.remove_from_list(name, ticker):
         console.print(f"[green]Removed {ticker} from '{name}'[/]")
     else:
         console.print(f"[yellow]{ticker} not found in '{name}'[/]")
-
-
-@app.command("screen")
-def screen_list(
-    name: str = typer.Argument(..., help="Name of the list to screen"),
-) -> None:
-    """
-    Run a screen on stocks in a saved list.
-
-    This is a shortcut that passes the list's tickers to the screen command.
-
-    Example:
-        tradfi list screen my-picks
-    """
-    tickers = get_saved_list(name)
-
-    if tickers is None:
-        console.print(f"[red]List '{name}' not found.[/]")
-        raise typer.Exit(1)
-
-    # Import and call screen with these tickers
-    from tradfi.commands.screen import screen as screen_cmd
-
-    console.print(f"[dim]Screening {len(tickers)} stocks from list '{name}'[/]")
-
-    # Call screen with the tickers - we need to invoke it via Typer context
-    # For now, just print the command to run
-    tickers_str = ",".join(tickers)
-    console.print(f"\n[dim]Run: tradfi screen -t {tickers_str}[/]")
-    console.print(f"[dim]Or add filters: tradfi screen -t {tickers_str} --pe-max 15[/]")
 
 
 # ============================================================================
@@ -263,32 +230,36 @@ def long_list(
         tradfi list long AAPL -r      # Remove AAPL from long list
         tradfi list long --clear      # Clear entire long list
     """
+    provider = _get_provider()
+
     # Ensure the list exists
-    if get_saved_list(LONG_LIST) is None:
-        save_list(LONG_LIST, [], "Stocks to go long on")
+    if provider.get_list(LONG_LIST) is None:
+        provider.create_list(LONG_LIST, [])
 
     if clear:
-        save_list(LONG_LIST, [], "Stocks to go long on")
+        provider.delete_list(LONG_LIST)
+        provider.create_list(LONG_LIST, [])
         console.print("[green]Long list cleared[/]")
         return
 
     if ticker:
         ticker = ticker.upper()
         if remove:
-            if remove_from_saved_list(LONG_LIST, ticker):
+            if provider.remove_from_list(LONG_LIST, ticker):
                 console.print(f"[green]Removed {ticker} from long list[/]")
             else:
                 console.print(f"[yellow]{ticker} not in long list[/]")
         else:
-            if add_to_saved_list(LONG_LIST, ticker):
+            if provider.add_to_list(LONG_LIST, ticker):
                 console.print(f"[green]Added {ticker} to long list[/]")
             else:
                 console.print(f"[yellow]{ticker} already in long list[/]")
         return
 
     # View the list
-    tickers = get_saved_list(LONG_LIST) or []
-    _display_position_list("Long List", tickers, "green", "buy")
+    list_data = provider.get_list(LONG_LIST)
+    tickers = list_data.get("tickers", []) if list_data else []
+    _display_position_list(provider, "Long List", tickers, "green", "buy")
 
 
 # ============================================================================
@@ -310,38 +281,40 @@ def short_list(
         tradfi list short TSLA -r     # Remove TSLA from short list
         tradfi list short --clear     # Clear entire short list
     """
+    provider = _get_provider()
+
     # Ensure the list exists
-    if get_saved_list(SHORT_LIST) is None:
-        save_list(SHORT_LIST, [], "Stocks to short")
+    if provider.get_list(SHORT_LIST) is None:
+        provider.create_list(SHORT_LIST, [])
 
     if clear:
-        save_list(SHORT_LIST, [], "Stocks to short")
+        provider.delete_list(SHORT_LIST)
+        provider.create_list(SHORT_LIST, [])
         console.print("[red]Short list cleared[/]")
         return
 
     if ticker:
         ticker = ticker.upper()
         if remove:
-            if remove_from_saved_list(SHORT_LIST, ticker):
+            if provider.remove_from_list(SHORT_LIST, ticker):
                 console.print(f"[red]Removed {ticker} from short list[/]")
             else:
                 console.print(f"[yellow]{ticker} not in short list[/]")
         else:
-            if add_to_saved_list(SHORT_LIST, ticker):
+            if provider.add_to_list(SHORT_LIST, ticker):
                 console.print(f"[red]Added {ticker} to short list[/]")
             else:
                 console.print(f"[yellow]{ticker} already in short list[/]")
         return
 
     # View the list
-    tickers = get_saved_list(SHORT_LIST) or []
-    _display_position_list("Short List", tickers, "red", "short")
+    list_data = provider.get_list(SHORT_LIST)
+    tickers = list_data.get("tickers", []) if list_data else []
+    _display_position_list(provider, "Short List", tickers, "red", "short")
 
 
-def _display_position_list(title: str, tickers: list[str], color: str, action: str) -> None:
+def _display_position_list(provider: RemoteDataProvider, title: str, tickers: list[str], color: str, action: str) -> None:
     """Display a long or short position list with current prices."""
-    from tradfi.core.data import fetch_stock
-
     if not tickers:
         console.print(f"[yellow]Your {title.lower()} is empty.[/]")
         console.print(f"[dim]Add stocks with: tradfi list {'long' if action == 'buy' else 'short'} <TICKER>[/]")
@@ -357,7 +330,7 @@ def _display_position_list(title: str, tickers: list[str], color: str, action: s
     table.add_column("RSI", justify="right")
 
     for ticker in tickers:
-        stock = fetch_stock(ticker)
+        stock = provider.fetch_stock(ticker)
         if stock:
             price = f"${stock.current_price:.2f}" if stock.current_price else "-"
             pe = f"{stock.valuation.pe_trailing:.1f}" if stock.valuation.pe_trailing and isinstance(stock.valuation.pe_trailing, (int, float)) else "-"
@@ -390,17 +363,16 @@ app.add_typer(category_app, name="category")
 def category_create(
     name: str = typer.Argument(..., help="Category name"),
     icon: Optional[str] = typer.Option(None, "--icon", "-i", help="Icon/emoji for the category"),
-    color: Optional[str] = typer.Option(None, "--color", "-c", help="Color for the category"),
 ) -> None:
     """
     Create a new category for organizing lists.
 
     Examples:
         tradfi list category create "Value Picks"
-        tradfi list category create "Tech" --icon "💻" --color blue
+        tradfi list category create "Tech" --icon "💻"
     """
-    category_id = create_category(name, color=color, icon=icon)
-    if category_id:
+    provider = _get_provider()
+    if provider.create_category(name, icon=icon):
         icon_str = f" {icon}" if icon else ""
         console.print(f"[green]Created category '{name}'{icon_str}[/]")
     else:
@@ -415,7 +387,8 @@ def category_list() -> None:
     Example:
         tradfi list category ls
     """
-    categories = list_categories()
+    provider = _get_provider()
+    categories = provider.get_categories()
 
     if not categories:
         console.print("[yellow]No categories found.[/]")
@@ -432,18 +405,12 @@ def category_list() -> None:
     table.add_column("ID", justify="right", style="dim")
     table.add_column("Name", style="bold cyan")
     table.add_column("Icon")
-    table.add_column("Color")
-    table.add_column("Lists", justify="right")
 
     for cat in categories:
-        lists_in_cat = get_lists_in_category(cat["id"])
-        list_count = len(lists_in_cat) if lists_in_cat else 0
         table.add_row(
-            str(cat["id"]),
-            cat["name"],
-            cat["icon"] or "-",
-            cat["color"] or "-",
-            str(list_count),
+            str(cat.get("id", "-")),
+            cat.get("name", "-"),
+            cat.get("icon") or "-",
         )
 
     console.print(table)
@@ -451,80 +418,68 @@ def category_list() -> None:
 
 @category_app.command("delete")
 def category_delete(
-    name: str = typer.Argument(..., help="Category name to delete"),
+    category_id: int = typer.Argument(..., help="Category ID to delete"),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
 ) -> None:
     """
-    Delete a category.
+    Delete a category by ID.
 
     Example:
-        tradfi list category delete "Old Category"
+        tradfi list category delete 1
     """
     if not force:
-        if not typer.confirm(f"Delete category '{name}'?"):
+        if not typer.confirm(f"Delete category {category_id}?"):
             console.print("[dim]Cancelled.[/]")
             raise typer.Exit(0)
 
-    if delete_category(name):
-        console.print(f"[green]Deleted category '{name}'[/]")
+    provider = _get_provider()
+    if provider.delete_category(category_id):
+        console.print(f"[green]Deleted category {category_id}[/]")
     else:
-        console.print(f"[red]Category '{name}' not found[/]")
+        console.print(f"[red]Category {category_id} not found[/]")
 
 
 @app.command("move")
 def move_list(
     list_name: str = typer.Argument(..., help="Name of the list to move"),
-    category_name: str = typer.Argument(..., help="Target category name"),
+    category_id: int = typer.Argument(..., help="Target category ID"),
 ) -> None:
     """
     Move a list to a category.
 
     Example:
-        tradfi list move my-picks "Value Picks"
+        tradfi list move my-picks 1
     """
-    # Find category ID
-    categories = list_categories()
-    category = next((c for c in categories if c["name"].lower() == category_name.lower()), None)
-
-    if not category:
-        console.print(f"[red]Category '{category_name}' not found.[/]")
-        console.print("[dim]Create it with: tradfi list category create \"{category_name}\"[/]")
-        raise typer.Exit(1)
+    provider = _get_provider()
 
     # Check list exists
-    if get_saved_list(list_name) is None:
+    if provider.get_list(list_name) is None:
         console.print(f"[red]List '{list_name}' not found.[/]")
         raise typer.Exit(1)
 
-    if add_list_to_category(list_name, category["id"]):
-        icon = category.get("icon", "")
-        console.print(f"[green]Moved '{list_name}' to {icon} {category_name}[/]")
+    if provider.add_list_to_category(list_name, category_id):
+        console.print(f"[green]Moved '{list_name}' to category {category_id}[/]")
     else:
-        console.print(f"[yellow]'{list_name}' is already in '{category_name}'[/]")
+        console.print(f"[yellow]Failed to move '{list_name}' to category {category_id}[/]")
 
 
 @app.command("unmove")
 def unmove_list(
     list_name: str = typer.Argument(..., help="Name of the list to remove from category"),
-    category_name: str = typer.Argument(..., help="Category name to remove from"),
+    category_id: int = typer.Argument(..., help="Category ID to remove from"),
 ) -> None:
     """
     Remove a list from a category.
 
     Example:
-        tradfi list unmove my-picks "Value Picks"
+        tradfi list unmove my-picks 1
     """
-    categories = list_categories()
-    category = next((c for c in categories if c["name"].lower() == category_name.lower()), None)
+    provider = _get_provider()
 
-    if not category:
-        console.print(f"[red]Category '{category_name}' not found.[/]")
-        raise typer.Exit(1)
-
-    if remove_list_from_category(list_name, category["id"]):
-        console.print(f"[green]Removed '{list_name}' from '{category_name}'[/]")
+    if provider.remove_list_from_category(list_name, category_id):
+        console.print(f"[green]Removed '{list_name}' from category {category_id}[/]")
     else:
-        console.print(f"[yellow]'{list_name}' was not in '{category_name}'[/]")
+        console.print(f"[yellow]'{list_name}' was not in category {category_id}[/]")
 
 
 # ============================================================================
@@ -535,112 +490,43 @@ def unmove_list(
 def note_ticker(
     list_name: str = typer.Argument(..., help="Name of the list"),
     ticker: str = typer.Argument(..., help="Ticker to add note to"),
-    notes: Optional[str] = typer.Argument(None, help="Note text (omit to view current note)"),
+    notes: Optional[str] = typer.Argument(None, help="Note text"),
     thesis: Optional[str] = typer.Option(None, "--thesis", "-t", help="Investment thesis"),
     entry: Optional[float] = typer.Option(None, "--entry", "-e", help="Entry price target"),
     target: Optional[float] = typer.Option(None, "--target", "-T", help="Target price"),
 ) -> None:
     """
-    Add or view notes for a ticker in a list.
+    Add notes for a ticker in a list.
 
     Examples:
         tradfi list note my-picks AAPL "Strong moat, waiting for pullback"
         tradfi list note my-picks AAPL --thesis "Services growth play"
         tradfi list note my-picks AAPL --entry 165 --target 200
-        tradfi list note my-picks AAPL  # View current note
     """
+    provider = _get_provider()
     ticker = ticker.upper()
 
     # Check list exists and has ticker
-    tickers = get_saved_list(list_name)
-    if tickers is None:
+    list_data = provider.get_list(list_name)
+    if list_data is None:
         console.print(f"[red]List '{list_name}' not found.[/]")
         raise typer.Exit(1)
 
+    tickers = list_data.get("tickers", [])
     if ticker not in tickers:
         console.print(f"[yellow]{ticker} is not in list '{list_name}'[/]")
         console.print(f"[dim]Add it first: tradfi list add {list_name} {ticker}[/]")
         raise typer.Exit(1)
 
-    # If no new data provided, show current note
-    if notes is None and thesis is None and entry is None and target is None:
-        existing = get_item_note(list_name, ticker)
-        if existing:
-            console.print(f"\n[bold cyan]{ticker}[/] in [bold]{list_name}[/]\n")
-            if existing.get("notes"):
-                console.print(f"[bold]Notes:[/] {existing['notes']}")
-            if existing.get("thesis"):
-                console.print(f"[bold]Thesis:[/] {existing['thesis']}")
-            if existing.get("entry_price"):
-                console.print(f"[bold]Entry:[/] ${existing['entry_price']:.2f}")
-            if existing.get("target_price"):
-                console.print(f"[bold]Target:[/] ${existing['target_price']:.2f}")
-            console.print()
-        else:
-            console.print(f"[yellow]No notes for {ticker} in '{list_name}'[/]")
-        return
-
     # Set/update note
-    set_item_note(
-        list_name=list_name,
-        ticker=ticker,
+    if provider.set_item_note(
+        list_name,
+        ticker,
         notes=notes,
         thesis=thesis,
         entry_price=entry,
         target_price=target,
-    )
-    console.print(f"[green]Updated notes for {ticker} in '{list_name}'[/]")
-
-
-@app.command("notes")
-def show_notes(
-    list_name: str = typer.Argument(..., help="Name of the list"),
-) -> None:
-    """
-    Show all notes for a list.
-
-    Example:
-        tradfi list notes my-picks
-    """
-    tickers = get_saved_list(list_name)
-    if tickers is None:
-        console.print(f"[red]List '{list_name}' not found.[/]")
-        raise typer.Exit(1)
-
-    notes = get_all_item_notes(list_name)
-
-    if not notes:
-        console.print(f"[yellow]No notes in list '{list_name}'[/]")
-        console.print(f"[dim]Add notes with: tradfi list note {list_name} <TICKER> \"Your note\"[/]")
-        return
-
-    console.print(f"\n[bold cyan]{list_name}[/] Notes\n")
-
-    table = Table(box=box.ROUNDED, show_header=True, header_style="bold")
-    table.add_column("Ticker", style="bold cyan")
-    table.add_column("Notes")
-    table.add_column("Thesis", style="dim")
-    table.add_column("Entry", justify="right")
-    table.add_column("Target", justify="right")
-
-    for note in notes:
-        entry_str = f"${note['entry_price']:.2f}" if note.get("entry_price") else "-"
-        target_str = f"${note['target_price']:.2f}" if note.get("target_price") else "-"
-        notes_str = (note.get("notes") or "")[:40]
-        if len(note.get("notes") or "") > 40:
-            notes_str += "..."
-        thesis_str = (note.get("thesis") or "")[:30]
-        if len(note.get("thesis") or "") > 30:
-            thesis_str += "..."
-
-        table.add_row(
-            note["ticker"],
-            notes_str,
-            thesis_str,
-            entry_str,
-            target_str,
-        )
-
-    console.print(table)
-    console.print()
-    console.print(f"[dim]View full note: tradfi list note {list_name} <TICKER>[/]")
+    ):
+        console.print(f"[green]Updated notes for {ticker} in '{list_name}'[/]")
+    else:
+        console.print(f"[red]Failed to update notes for {ticker}[/]")

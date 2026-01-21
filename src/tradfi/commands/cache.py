@@ -1,154 +1,67 @@
-"""Cache management commands."""
+"""Cache management commands - status, clear, and refresh via remote API."""
 
-import time
-from datetime import datetime
+import os
 from typing import Optional
 
 import typer
 from rich.console import Console
 from rich.table import Table
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeElapsedColumn
 from rich import box
 
-from tradfi.utils.cache import (
-    clear_cache,
-    get_cache_stats,
-    get_config,
-    get_cached_stock_data,
-    set_cache_ttl,
-    set_rate_limit_delay,
-    set_cache_enabled,
-    set_offline_mode,
-)
-from tradfi.core.screener import load_tickers, AVAILABLE_UNIVERSES
+from tradfi.core.remote_provider import RemoteDataProvider
+from tradfi.core.screener import AVAILABLE_UNIVERSES
 
 console = Console()
-app = typer.Typer(help="Manage the stock data cache")
+
+# Default API URL - can be overridden with TRADFI_API_URL env var
+DEFAULT_API_URL = "https://deepv-production.up.railway.app"
 
 
-def _format_timestamp(ts: int | None) -> str:
-    """Format a timestamp as a human-readable string with relative time."""
-    if ts is None:
-        return "Never"
+def _get_provider() -> RemoteDataProvider:
+    """Get the remote data provider using API URL from environment."""
+    api_url = os.environ.get("TRADFI_API_URL", DEFAULT_API_URL)
+    return RemoteDataProvider(api_url)
 
-    dt = datetime.fromtimestamp(ts)
-    age_seconds = time.time() - ts
 
-    # Format relative time
-    if age_seconds < 60:
-        relative = "just now"
-    elif age_seconds < 3600:
-        minutes = int(age_seconds / 60)
-        relative = f"{minutes}m ago"
-    elif age_seconds < 86400:
-        hours = int(age_seconds / 3600)
-        relative = f"{hours}h ago"
-    else:
-        days = int(age_seconds / 86400)
-        relative = f"{days}d ago"
-
-    return f"{dt.strftime('%Y-%m-%d %H:%M:%S')} ({relative})"
+app = typer.Typer(
+    name="cache",
+    help="Manage server cache (all operations go to remote API).",
+    add_completion=False,
+)
 
 
 @app.command("status")
-def cache_status(
-    remote: Optional[str] = typer.Option(
-        None, "--remote", "-r",
-        help="Check remote API cache instead of local (e.g., https://deepv-production.up.railway.app)"
-    ),
-) -> None:
-    """Show cache status and statistics."""
-    if remote:
-        _show_remote_cache_status(remote)
-    else:
-        _show_local_cache_status()
+def cache_status() -> None:
+    """
+    Show cache statistics from the remote server.
 
+    Example:
+        tradfi cache status
+    """
+    provider = _get_provider()
+    stats = provider.get_cache_stats()
 
-def _show_local_cache_status() -> None:
-    """Show local cache status."""
-    stats = get_cache_stats()
-    config = get_config()
-
-    table = Table(title="Local Cache Status", box=box.ROUNDED)
-    table.add_column("Setting", style="cyan")
-    table.add_column("Value", style="green")
-
-    table.add_row("Cache Enabled", "Yes" if stats["cache_enabled"] else "No")
-    offline_status = "[bold green]Yes (DB only)[/]" if config.offline_mode else "No"
-    table.add_row("Offline Mode", offline_status)
-    table.add_row("Cache TTL", f"{stats['cache_ttl_minutes']} minutes")
-    table.add_row("Rate Limit Delay", f"{stats['rate_limit_delay']}s between requests")
-    table.add_row("", "")
-    table.add_row("Total Cached Stocks", str(stats["total_cached"]))
-    table.add_row("Fresh (within TTL)", f"[green]{stats['fresh']}[/]")
-    table.add_row("Stale (expired)", f"[yellow]{stats['stale']}[/]")
-    table.add_row("", "")
-    table.add_row("Last Updated", _format_timestamp(stats.get("last_updated")))
-    table.add_row("Oldest Entry", _format_timestamp(stats.get("oldest_entry")))
+    if not stats:
+        console.print("[red]Could not fetch cache stats from server.[/]")
+        console.print(f"[dim]API URL: {os.environ.get('TRADFI_API_URL', DEFAULT_API_URL)}[/]")
+        return
 
     console.print()
-    console.print(table)
+    console.print("[bold]Server Cache Status[/]")
     console.print()
 
+    table = Table(box=box.ROUNDED, show_header=False)
+    table.add_column("Metric", style="dim")
+    table.add_column("Value", style="bold")
 
-def _show_remote_cache_status(api_url: str) -> None:
-    """Show remote API cache status."""
-    import httpx
+    table.add_row("Total cached", str(stats.get("total_cached", 0)))
+    table.add_row("Fresh", f"[green]{stats.get('fresh', 0)}[/]")
+    table.add_row("Stale", f"[yellow]{stats.get('stale', 0)}[/]")
+    table.add_row("TTL", f"{stats.get('cache_ttl_minutes', 0)} minutes")
 
-    # Normalize URL
-    api_url = api_url.rstrip("/")
-    cache_endpoint = f"{api_url}/api/v1/cache/stats"
-
-    console.print(f"[dim]Fetching cache status from {api_url}...[/]")
-
-    try:
-        response = httpx.get(cache_endpoint, timeout=10.0)
-        response.raise_for_status()
-        stats = response.json()
-    except httpx.ConnectError:
-        console.print(f"[red]Could not connect to {api_url}[/]")
-        raise typer.Exit(1)
-    except httpx.HTTPStatusError as e:
-        console.print(f"[red]API error: {e.response.status_code}[/]")
-        raise typer.Exit(1)
-    except Exception as e:
-        console.print(f"[red]Error: {e}[/]")
-        raise typer.Exit(1)
-
-    table = Table(title=f"Remote Cache Status ({api_url})", box=box.ROUNDED)
-    table.add_column("Setting", style="cyan")
-    table.add_column("Value", style="green")
-
-    table.add_row("Cache Enabled", "Yes" if stats.get("cache_enabled", True) else "No")
-    table.add_row("Cache TTL", f"{stats.get('cache_ttl_minutes', 'N/A')} minutes")
-    table.add_row("Rate Limit Delay", f"{stats.get('rate_limit_delay', 'N/A')}s")
-    table.add_row("", "")
-    table.add_row("Total Cached Stocks", str(stats.get("total_cached", 0)))
-    table.add_row("Fresh (within TTL)", f"[green]{stats.get('fresh', 0)}[/]")
-    table.add_row("Stale (expired)", f"[yellow]{stats.get('stale', 0)}[/]")
-    table.add_row("", "")
-    table.add_row("Last Updated", _format_timestamp(stats.get("last_updated")))
-    table.add_row("Oldest Entry", _format_timestamp(stats.get("oldest_entry")))
-
-    # Show last updated time
     if stats.get("last_updated"):
-        last_dt = datetime.fromtimestamp(stats["last_updated"])
-        age_seconds = time.time() - stats["last_updated"]
-        if age_seconds < 60:
-            age_str = f"{int(age_seconds)}s ago"
-        elif age_seconds < 3600:
-            age_str = f"{int(age_seconds / 60)}m ago"
-        elif age_seconds < 86400:
-            age_str = f"{int(age_seconds / 3600)}h ago"
-        else:
-            age_str = f"{int(age_seconds / 86400)}d ago"
-        table.add_row("", "")
-        table.add_row("Last Updated", f"{last_dt.strftime('%Y-%m-%d %H:%M:%S')} ({age_str})")
-    else:
-        table.add_row("", "")
-        table.add_row("Last Updated", "[dim]Never[/]")
+        table.add_row("Last updated", stats.get("last_updated_ago", stats.get("last_updated")))
 
-    console.print()
     console.print(table)
     console.print()
 
@@ -157,223 +70,73 @@ def _show_remote_cache_status(api_url: str) -> None:
 def cache_clear(
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
 ) -> None:
-    """Clear all cached stock data."""
-    stats = get_cache_stats()
+    """
+    Clear all cached stock data on the server.
 
-    if stats["total_cached"] == 0:
-        console.print("[yellow]Cache is already empty.[/]")
-        return
-
+    Example:
+        tradfi cache clear
+        tradfi cache clear --force
+    """
     if not force:
-        confirm = typer.confirm(f"Clear {stats['total_cached']} cached stocks?")
-        if not confirm:
-            console.print("Cancelled.")
-            return
+        console.print("[yellow]This will clear ALL cached stock data on the server.[/]")
+        if not typer.confirm("Continue?"):
+            console.print("[dim]Cancelled.[/]")
+            raise typer.Exit(0)
 
-    count = clear_cache()
-    console.print(f"[green]Cleared {count} cached stocks.[/]")
+    provider = _get_provider()
+    count = provider.clear_cache()
 
-
-@app.command("ttl")
-def cache_ttl(
-    minutes: int = typer.Argument(..., help="Cache TTL in minutes (e.g., 30, 60)"),
-) -> None:
-    """Set cache TTL (time-to-live) in minutes."""
-    if minutes < 1:
-        console.print("[red]TTL must be at least 1 minute.[/]")
-        raise typer.Exit(1)
-
-    set_cache_ttl(minutes)
-    console.print(f"[green]Cache TTL set to {minutes} minutes.[/]")
+    if count > 0:
+        console.print(f"[green]Cleared {count} cached entries on server[/]")
+    else:
+        console.print("[yellow]Cache cleared (or was already empty)[/]")
 
 
-@app.command("delay")
-def cache_delay(
-    seconds: float = typer.Argument(..., help="Delay between API requests in seconds (e.g., 0.5, 1.0)"),
-) -> None:
-    """Set rate limit delay between API requests."""
-    if seconds < 0:
-        console.print("[red]Delay cannot be negative.[/]")
-        raise typer.Exit(1)
-
-    set_rate_limit_delay(seconds)
-    console.print(f"[green]Rate limit delay set to {seconds}s.[/]")
-
-
-@app.command("enable")
-def cache_enable() -> None:
-    """Enable caching."""
-    set_cache_enabled(True)
-    console.print("[green]Caching enabled.[/]")
-
-
-@app.command("disable")
-def cache_disable() -> None:
-    """Disable caching (always fetch fresh data)."""
-    set_cache_enabled(False)
-    console.print("[yellow]Caching disabled. All data will be fetched fresh.[/]")
-    console.print("[dim]Note: This may cause rate limiting issues with large universes.[/]")
-
-
-@app.command("offline")
-def cache_offline() -> None:
-    """Enable offline mode (only load from DB, no API calls)."""
-    set_offline_mode(True)
-    console.print("[green]Offline mode enabled.[/]")
-    console.print("[dim]All data will be loaded from the local database only.[/]")
-    console.print("[dim]Stocks not in cache will return no data.[/]")
-
-
-@app.command("online")
-def cache_online() -> None:
-    """Disable offline mode (allow API calls for missing/stale data)."""
-    set_offline_mode(False)
-    console.print("[green]Online mode enabled.[/]")
-    console.print("[dim]Missing or stale data will be fetched from the API.[/]")
-
-
-@app.command("prefetch")
-def cache_prefetch(
+@app.command("refresh")
+def cache_refresh(
     universe: Optional[str] = typer.Argument(
         None,
-        help="Universe to prefetch (sp500, nasdaq100, etc.) or 'all' for everything",
-    ),
-    skip_cached: bool = typer.Option(
-        True, "--skip-cached/--refresh",
-        help="Skip already cached stocks (default) or refresh all",
-    ),
-    delay: Optional[float] = typer.Option(
-        None, "--delay", "-d",
-        help="Override rate limit delay (seconds). Use 5-10 for large batches to avoid rate limits.",
+        help="Universe to refresh (sp500, dow30, etc.) or omit to see options",
     ),
 ) -> None:
     """
-    Pre-fetch and cache stock data for faster screening.
+    Trigger a server-side refresh for a universe.
 
-    Yahoo Finance limits: ~360 requests/hour. For large prefetches, use --delay 5 or higher.
+    This tells the server to re-fetch stock data from Yahoo Finance.
 
     Examples:
-        tradfi cache prefetch dow30             # Small, uses default delay
-        tradfi cache prefetch sp500 --delay 5   # Safer for 500 stocks
-        tradfi cache prefetch all --delay 10    # Safest for all 1241 stocks
+        tradfi cache refresh           # Show available universes
+        tradfi cache refresh dow30     # Refresh Dow 30
+        tradfi cache refresh sp500     # Refresh S&P 500
     """
-    from tradfi.core.data import fetch_stock_from_api
+    provider = _get_provider()
 
-    # Determine which universes to fetch
     if universe is None:
-        # Show available options
+        # Show available universes
         console.print()
-        console.print("[bold]Available universes to prefetch:[/]")
+        console.print("[bold]Available universes to refresh:[/]")
         console.print()
 
-        all_tickers = set()
-        for name in AVAILABLE_UNIVERSES.keys():
-            try:
-                tickers = load_tickers(name)
-                all_tickers.update(tickers)
-                console.print(f"  [cyan]{name:15}[/] {len(tickers):4} stocks")
-            except:
-                pass
+        for name, description in AVAILABLE_UNIVERSES.items():
+            console.print(f"  [cyan]{name:15}[/] {description}")
 
         console.print()
-        console.print(f"  [bold green]{'all':15}[/] {len(all_tickers):4} unique stocks (all universes)")
-        console.print()
-        console.print("[dim]Usage: tradfi cache prefetch <universe>[/]")
-        console.print("[dim]Example: tradfi cache prefetch sp500[/]")
+        console.print("[dim]Usage: tradfi cache refresh <universe>[/]")
+        console.print("[dim]Example: tradfi cache refresh dow30[/]")
         return
 
-    # Collect tickers to fetch
-    if universe.lower() == "all":
-        tickers_to_fetch = set()
-        for name in AVAILABLE_UNIVERSES.keys():
-            try:
-                tickers = load_tickers(name)
-                tickers_to_fetch.update(tickers)
-            except:
-                pass
-        tickers_to_fetch = sorted(tickers_to_fetch)
-        console.print(f"[bold]Prefetching all universes ({len(tickers_to_fetch)} unique stocks)[/]")
+    if universe.lower() not in AVAILABLE_UNIVERSES:
+        console.print(f"[red]Unknown universe: {universe}[/]")
+        console.print(f"[dim]Available: {', '.join(AVAILABLE_UNIVERSES.keys())}[/]")
+        raise typer.Exit(1)
+
+    console.print(f"[dim]Triggering refresh for {universe}...[/]")
+
+    result = provider.trigger_refresh(universe.lower())
+
+    if "error" in result:
+        console.print(f"[red]Failed to trigger refresh: {result['error']}[/]")
     else:
-        try:
-            tickers_to_fetch = load_tickers(universe)
-            console.print(f"[bold]Prefetching {universe} ({len(tickers_to_fetch)} stocks)[/]")
-        except FileNotFoundError:
-            console.print(f"[red]Unknown universe: {universe}[/]")
-            console.print(f"[dim]Available: {', '.join(AVAILABLE_UNIVERSES.keys())}, all[/]")
-            raise typer.Exit(1)
-
-    # Skip already cached if requested
-    if skip_cached:
-        original_count = len(tickers_to_fetch)
-        tickers_to_fetch = [t for t in tickers_to_fetch if get_cached_stock_data(t) is None]
-        skipped = original_count - len(tickers_to_fetch)
-        if skipped > 0:
-            console.print(f"[dim]Skipping {skipped} already cached stocks[/]")
-
-    if not tickers_to_fetch:
-        console.print("[green]All stocks already cached![/]")
-        return
-
-    # Apply delay override if specified
-    config = get_config()
-    effective_delay = delay if delay is not None else config.rate_limit_delay
-
-    # Warn about rate limits for large batches
-    if len(tickers_to_fetch) > 100 and effective_delay < 5:
-        console.print(f"[yellow]Warning: {len(tickers_to_fetch)} stocks with {effective_delay}s delay may hit rate limits.[/]")
-        console.print(f"[yellow]Consider using: tradfi cache prefetch {universe} --delay 5[/]")
-        console.print()
-
-    # Temporarily set the delay if overridden
-    if delay is not None:
-        original_delay = config.rate_limit_delay
-        set_rate_limit_delay(delay)
-
-    # Estimate time
-    est_time = len(tickers_to_fetch) * (effective_delay + 0.8)
-    console.print(f"[dim]Estimated time: {est_time/60:.0f} minutes (delay: {effective_delay}s)[/]")
-    console.print()
-
-    # Fetch with progress
-    fetched = 0
-    failed = 0
-    failed_tickers = []
-
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TaskProgressColumn(),
-        TimeElapsedColumn(),
-        console=console,
-    ) as progress:
-        task = progress.add_task("Prefetching...", total=len(tickers_to_fetch))
-
-        for ticker in tickers_to_fetch:
-            progress.update(task, description=f"Fetching {ticker}...")
-
-            # Fetch from yfinance API and save to cache
-            stock = fetch_stock_from_api(ticker)
-            if stock:
-                fetched += 1
-            else:
-                failed += 1
-                failed_tickers.append(ticker)
-
-            progress.advance(task)
-
-    # Restore original delay if we overrode it
-    if delay is not None:
-        set_rate_limit_delay(original_delay)
-
-    # Summary
-    console.print()
-    console.print(f"[green]Prefetched {fetched} stocks[/]")
-    if failed > 0:
-        console.print(f"[yellow]Failed: {failed} stocks[/]")
-        if len(failed_tickers) <= 10:
-            console.print(f"[dim]  {', '.join(failed_tickers)}[/]")
-
-    stats = get_cache_stats()
-    console.print()
-    console.print(f"[dim]Cache now has {stats['total_cached']} stocks[/]")
+        console.print(f"[green]Refresh triggered for {universe}[/]")
+        if result.get("message"):
+            console.print(f"[dim]{result['message']}[/]")

@@ -139,7 +139,6 @@ class ActionMenuScreen(ModalScreen):
                     self.dismiss(action_id)
                     return
 
-from tradfi.core.data import fetch_stock, fetch_stock_from_api
 from tradfi.core.screener import (
     AVAILABLE_UNIVERSES,
     PRESET_SCREENS,
@@ -150,16 +149,7 @@ from tradfi.core.screener import (
     screen_stock,
 )
 from tradfi.models.stock import Stock
-from tradfi.utils.cache import (
-    add_to_saved_list,
-    clear_cache,
-    get_all_cached_industries,
-    get_cache_stats,
-    get_cached_stock_data,
-    get_saved_list,
-    list_saved_lists,
-    save_list,
-)
+from tradfi.core.remote_provider import RemoteDataProvider
 
 
 def _simplify_industry(industry: str) -> str:
@@ -196,9 +186,10 @@ class StockDetailScreen(Screen):
         Binding("q", "quarterly_data", "Quarterly"),
     ]
 
-    def __init__(self, stock: Stock) -> None:
+    def __init__(self, stock: Stock, remote_provider: RemoteDataProvider) -> None:
         super().__init__()
         self.stock = stock
+        self.remote_provider = remote_provider
         self.research_report = None
         self.quarterly_data = None
 
@@ -511,16 +502,17 @@ class StockDetailScreen(Screen):
         return f"{val:+.1f}%" if val is not None else "N/A"
 
     def action_add_to_watchlist(self) -> None:
-        from tradfi.utils.cache import add_to_watchlist
-        add_to_watchlist(self.stock.ticker)
-        self.notify(f"Added {self.stock.ticker} to watchlist")
+        if self.remote_provider.add_to_watchlist(self.stock.ticker):
+            self.notify(f"Added {self.stock.ticker} to watchlist")
+        else:
+            self.notify(f"Failed to add {self.stock.ticker} to watchlist", severity="error")
 
     def action_add_to_long(self) -> None:
         """Add current stock to long list."""
         # Ensure long list exists
-        if get_saved_list("_long") is None:
-            save_list("_long", [], "Stocks to go long on")
-        if add_to_saved_list("_long", self.stock.ticker):
+        if self.remote_provider.get_list("_long") is None:
+            self.remote_provider.create_list("_long", [])
+        if self.remote_provider.add_to_list("_long", self.stock.ticker):
             self.notify(f"[green]Added {self.stock.ticker} to LONG list[/]", title="Long List")
         else:
             self.notify(f"{self.stock.ticker} already in long list", severity="warning")
@@ -528,9 +520,9 @@ class StockDetailScreen(Screen):
     def action_add_to_short(self) -> None:
         """Add current stock to short list."""
         # Ensure short list exists
-        if get_saved_list("_short") is None:
-            save_list("_short", [], "Stocks to short")
-        if add_to_saved_list("_short", self.stock.ticker):
+        if self.remote_provider.get_list("_short") is None:
+            self.remote_provider.create_list("_short", [])
+        if self.remote_provider.add_to_list("_short", self.stock.ticker):
             self.notify(f"[red]Added {self.stock.ticker} to SHORT list[/]", title="Short List")
         else:
             self.notify(f"{self.stock.ticker} already in short list", severity="warning")
@@ -988,7 +980,6 @@ class ScreenerApp(App):
 
         # Remote API provider (required - TUI always uses remote API)
         self.api_url = api_url
-        from tradfi.core.remote_provider import RemoteDataProvider
         self.remote_provider = RemoteDataProvider(api_url)
 
     def _get_stock(self, ticker: str) -> Stock | None:
@@ -1166,12 +1157,12 @@ class ScreenerApp(App):
             pass
 
     def _populate_industries(self) -> None:
-        """Populate the industry selection list from cached data."""
+        """Populate the industry selection list from remote API."""
         try:
             industry_select = self.query_one("#industry-select", SelectionList)
 
-            # Get industries from cache
-            industries = get_all_cached_industries()
+            # Get industries from remote API
+            industries = self.remote_provider.get_industries()
 
             if not industries:
                 industry_select.add_option(("No cached data", "none", False))
@@ -1354,7 +1345,8 @@ class ScreenerApp(App):
 
     def _load_position_list(self, list_name: str, display_name: str) -> None:
         """Load and display a position list (long or short)."""
-        tickers = get_saved_list(list_name)
+        list_data = self.remote_provider.get_list(list_name)
+        tickers = list_data.get("tickers", []) if list_data else []
 
         if not tickers:
             self.notify(f"{display_name} is empty.\nAdd stocks with 'l' (long) or 'x' (short) in detail view.",
@@ -1439,23 +1431,19 @@ class ScreenerApp(App):
 
         passing_stocks = []
         total = len(ticker_list)
-        cache_hits = 0
+        fetched = 0
 
         for i, ticker in enumerate(ticker_list):
-            # Check if cached
-            is_cached = get_cached_stock_data(ticker) is not None
-
             # Update progress via call_from_thread
             progress = (i + 1) / total * 100
             self.call_from_thread(
                 self._update_progress, ticker, i + 1, total,
-                len(passing_stocks), progress, cache_hits, is_cached
+                len(passing_stocks), progress, fetched
             )
 
             stock = self._get_stock(ticker)
             if stock:
-                if is_cached:
-                    cache_hits += 1
+                fetched += 1
 
                 # Apply screening criteria
                 if not screen_stock(stock, criteria):
@@ -1471,21 +1459,19 @@ class ScreenerApp(App):
         return passing_stocks
 
     def _update_progress(self, ticker: str, current: int, total: int, found: int,
-                         progress: float, cache_hits: int, is_cached: bool) -> None:
+                         progress: float, fetched: int) -> None:
         try:
             # Current ticker being processed
             loading_detail = self.query_one("#loading-detail", Static)
-            cache_indicator = "[green]⚡[/]" if is_cached else "[yellow]○[/]"
-            loading_detail.update(f"{cache_indicator} [bold]{ticker}[/]")
+            loading_detail.update(f"[green]⚡[/] [bold]{ticker}[/]")
 
             # Stats line
             loading_stats = self.query_one("#loading-stats", Static)
             pct = int(progress)
-            cache_pct = int(cache_hits / current * 100) if current > 0 else 0
             loading_stats.update(
                 f"[dim]Progress:[/] {current}/{total} ({pct}%)  "
                 f"[dim]Found:[/] [green]{found}[/]  "
-                f"[dim]Cache:[/] {cache_pct}%"
+                f"[dim]Fetched:[/] {fetched}"
             )
         except Exception:
             pass  # Ignore if widgets not available
@@ -1501,9 +1487,9 @@ class ScreenerApp(App):
                 self._update_api_status(event.worker.result)
             elif event.worker.name == "_resync_all_universes":
                 # Resync completed
-                result = event.worker.result or {"total": 0, "fetched": 0, "failed": 0}
+                result = event.worker.result or {"triggered": 0, "failed": 0, "universes": []}
                 self.notify(
-                    f"Resync complete: {result['fetched']}/{result['total']} stocks "
+                    f"Resync triggered for {result['triggered']} universes "
                     f"({result['failed']} failed)",
                     title="Resync Complete",
                     timeout=10,
@@ -1598,7 +1584,7 @@ class ScreenerApp(App):
         # Find the stock
         for stock in self.stocks:
             if stock.ticker == ticker:
-                self.push_screen(StockDetailScreen(stock))
+                self.push_screen(StockDetailScreen(stock, self.remote_provider))
                 break
 
     def action_refresh(self) -> None:
@@ -1657,54 +1643,41 @@ class ScreenerApp(App):
         )
 
     def action_clear_cache(self) -> None:
-        """Clear all cached stock data."""
-        count = clear_cache()
-        self.notify(f"Cleared {count} cached entries", title="Cache Cleared")
+        """Clear all cached stock data on the server."""
+        count = self.remote_provider.clear_cache()
+        self.notify(f"Cleared {count} cached entries on server", title="Cache Cleared")
 
     def action_resync_universes(self) -> None:
-        """Resync all universes by fetching fresh data."""
-        self.notify("Starting resync of all universes...", title="Resync")
+        """Resync all universes by triggering server-side refresh."""
+        self.notify("Triggering server-side resync of all universes...", title="Resync")
         self.run_worker(self._resync_all_universes, exclusive=True, thread=True)
 
     def _resync_all_universes(self) -> dict:
-        """Worker to resync all universes."""
+        """Worker to trigger server-side resync for all universes."""
         import time
 
-        all_tickers: set[str] = set()
+        results = {"triggered": 0, "failed": 0, "universes": []}
+
         for name in AVAILABLE_UNIVERSES.keys():
             try:
-                tickers = load_tickers(name)
-                all_tickers.update(tickers)
-            except Exception:
-                pass
-
-        tickers_list = sorted(all_tickers)
-        total = len(tickers_list)
-        fetched = 0
-        failed = 0
-
-        for i, ticker in enumerate(tickers_list):
-            try:
-                stock = fetch_stock_from_api(ticker)
-                if stock:
-                    fetched += 1
+                result = self.remote_provider.trigger_refresh(name)
+                if "error" not in result:
+                    results["triggered"] += 1
+                    results["universes"].append(name)
+                    self.call_from_thread(
+                        self.notify,
+                        f"Triggered refresh for {name}",
+                        title="Resyncing...",
+                    )
                 else:
-                    failed += 1
+                    results["failed"] += 1
             except Exception:
-                failed += 1
+                results["failed"] += 1
 
-            # Update progress every 10 stocks
-            if (i + 1) % 10 == 0:
-                self.call_from_thread(
-                    self.notify,
-                    f"Progress: {i + 1}/{total} ({fetched} ok, {failed} failed)",
-                    title="Resyncing...",
-                )
+            # Small delay between triggering refreshes
+            time.sleep(1.0)
 
-            # Rate limit delay
-            time.sleep(2.0)
-
-        return {"total": total, "fetched": fetched, "failed": failed}
+        return results
 
     def _sort_by(self, sort_key: str) -> None:
         """Sort table by the given key, toggling direction if same key."""
@@ -1773,17 +1746,21 @@ class ScreenerApp(App):
             universe_name = f"{len(self.selected_universes)}univ"
         list_name = f"{universe_name}-{preset_name}"
 
-        # Save the list
+        # Save the list via remote API
         tickers = [s.ticker for s in self.stocks]
-        description = f"TUI screen: {preset_name} from {universe_name}"
-        save_list(list_name, tickers, description)
-
-        self.notify(
-            f"Saved {len(tickers)} stocks to '{list_name}'\n"
-            f"View with: tradfi list show {list_name}",
-            title="List Saved",
-            timeout=5,
-        )
+        if self.remote_provider.create_list(list_name, tickers):
+            self.notify(
+                f"Saved {len(tickers)} stocks to '{list_name}'\n"
+                f"View with: tradfi list show {list_name}",
+                title="List Saved",
+                timeout=5,
+            )
+        else:
+            self.notify(
+                f"Failed to save list '{list_name}' to server",
+                title="Save Failed",
+                severity="error",
+            )
 
     def action_focus_search(self) -> None:
         """Focus the search input."""
