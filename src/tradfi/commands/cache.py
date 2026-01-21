@@ -1,6 +1,7 @@
 """Cache management commands - status, clear, and refresh via remote API."""
 
 import os
+from datetime import datetime
 from typing import Optional
 
 import typer
@@ -60,7 +61,12 @@ def cache_status() -> None:
     table.add_row("TTL", f"{stats.get('cache_ttl_minutes', 0)} minutes")
 
     if stats.get("last_updated"):
-        table.add_row("Last updated", stats.get("last_updated_ago", stats.get("last_updated")))
+        last_updated_display = stats.get("last_updated_ago")
+        if not last_updated_display:
+            # Convert timestamp to readable format
+            ts = stats.get("last_updated")
+            last_updated_display = datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
+        table.add_row("Last updated", last_updated_display)
 
     console.print(table)
     console.print()
