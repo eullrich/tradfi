@@ -2503,7 +2503,7 @@ class ScreenerApp(App):
         table.display = True
 
         # If we were in portfolio mode, restore normal columns
-        if self._portfolio_mode or table.column_count != 8:
+        if self._portfolio_mode or len(table.columns) != 8:
             table.clear(columns=True)
             table.add_columns("Ticker", "Price", "P/E", "ROE", "RSI", "MoS%", "Div", "Signal")
             self._portfolio_mode = False
