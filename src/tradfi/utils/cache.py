@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import sqlite3
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 # Default cache location - supports environment variable overrides for cloud deployment
 CACHE_DIR = Path(os.environ.get("TRADFI_DATA_DIR", str(Path.home() / ".tradfi")))
@@ -189,6 +189,29 @@ def _init_db(conn: sqlite3.Connection) -> None:
             FOREIGN KEY (list_name) REFERENCES saved_lists(name) ON DELETE CASCADE,
             FOREIGN KEY (category_id) REFERENCES list_categories(id) ON DELETE CASCADE
         );
+
+        -- User accounts (passwordless email auth)
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT UNIQUE NOT NULL,
+            created_at INTEGER NOT NULL,
+            last_login_at INTEGER
+        );
+
+        -- Auth tokens for passwordless login (magic links)
+        CREATE TABLE IF NOT EXISTS auth_tokens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            token TEXT UNIQUE NOT NULL,
+            token_type TEXT NOT NULL,  -- 'magic_link' or 'session'
+            created_at INTEGER NOT NULL,
+            expires_at INTEGER NOT NULL,
+            used_at INTEGER,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        -- Add user_id to watchlist (optional, for user-scoped data)
+        -- Note: SQLite doesn't support ADD COLUMN IF NOT EXISTS, so we handle this in code
     """)
     conn.commit()
 
@@ -976,5 +999,285 @@ def update_smart_list_timestamp(name: str) -> None:
             (int(time.time()), name)
         )
         conn.commit()
+    finally:
+        conn.close()
+
+
+# ============================================================================
+# USER AUTHENTICATION (Passwordless Email)
+# ============================================================================
+
+# Token expiry times
+MAGIC_LINK_EXPIRY = 15 * 60  # 15 minutes
+SESSION_TOKEN_EXPIRY = 30 * 24 * 60 * 60  # 30 days
+
+
+def create_user(email: str) -> dict | None:
+    """
+    Create a new user account.
+
+    Args:
+        email: User's email address
+
+    Returns:
+        User dict if created, None if email already exists
+    """
+    email = email.lower().strip()
+    now = int(time.time())
+    conn = get_db_connection()
+    try:
+        cursor = conn.execute(
+            "INSERT INTO users (email, created_at) VALUES (?, ?)",
+            (email, now)
+        )
+        conn.commit()
+        return {
+            "id": cursor.lastrowid,
+            "email": email,
+            "created_at": now,
+            "last_login_at": None,
+        }
+    except sqlite3.IntegrityError:
+        return None
+    finally:
+        conn.close()
+
+
+def get_user_by_email(email: str) -> dict | None:
+    """Get a user by email address."""
+    email = email.lower().strip()
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT id, email, created_at, last_login_at FROM users WHERE email = ?",
+            (email,)
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def get_user_by_id(user_id: int) -> dict | None:
+    """Get a user by ID."""
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT id, email, created_at, last_login_at FROM users WHERE id = ?",
+            (user_id,)
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def create_magic_link_token(email: str) -> tuple[str, dict] | tuple[None, None]:
+    """
+    Create a magic link token for passwordless login.
+
+    If user doesn't exist, creates the account first.
+
+    Args:
+        email: User's email address
+
+    Returns:
+        Tuple of (token, user_dict) or (None, None) if failed
+    """
+    email = email.lower().strip()
+
+    # Get or create user
+    user = get_user_by_email(email)
+    if not user:
+        user = create_user(email)
+        if not user:
+            return None, None
+
+    # Generate secure token
+    token = secrets.token_urlsafe(32)
+    now = int(time.time())
+    expires_at = now + MAGIC_LINK_EXPIRY
+
+    conn = get_db_connection()
+    try:
+        conn.execute(
+            """INSERT INTO auth_tokens (user_id, token, token_type, created_at, expires_at)
+               VALUES (?, ?, 'magic_link', ?, ?)""",
+            (user["id"], token, now, expires_at)
+        )
+        conn.commit()
+        return token, user
+    finally:
+        conn.close()
+
+
+def verify_magic_link_token(token: str) -> tuple[str, dict] | tuple[None, None]:
+    """
+    Verify a magic link token and create a session token.
+
+    Args:
+        token: The magic link token to verify
+
+    Returns:
+        Tuple of (session_token, user_dict) or (None, None) if invalid/expired
+    """
+    now = int(time.time())
+    conn = get_db_connection()
+    try:
+        # Find and validate token
+        row = conn.execute(
+            """SELECT t.id, t.user_id, u.email, u.created_at as user_created_at
+               FROM auth_tokens t
+               JOIN users u ON t.user_id = u.id
+               WHERE t.token = ? AND t.token_type = 'magic_link'
+               AND t.expires_at > ? AND t.used_at IS NULL""",
+            (token, now)
+        ).fetchone()
+
+        if not row:
+            return None, None
+
+        # Mark magic link as used
+        conn.execute(
+            "UPDATE auth_tokens SET used_at = ? WHERE id = ?",
+            (now, row["id"])
+        )
+
+        # Update user's last login
+        conn.execute(
+            "UPDATE users SET last_login_at = ? WHERE id = ?",
+            (now, row["user_id"])
+        )
+
+        # Create session token
+        session_token = secrets.token_urlsafe(32)
+        session_expires = now + SESSION_TOKEN_EXPIRY
+
+        conn.execute(
+            """INSERT INTO auth_tokens (user_id, token, token_type, created_at, expires_at)
+               VALUES (?, ?, 'session', ?, ?)""",
+            (row["user_id"], session_token, now, session_expires)
+        )
+
+        conn.commit()
+
+        user = {
+            "id": row["user_id"],
+            "email": row["email"],
+            "created_at": row["user_created_at"],
+            "last_login_at": now,
+        }
+        return session_token, user
+    finally:
+        conn.close()
+
+
+def validate_session_token(token: str) -> dict | None:
+    """
+    Validate a session token and return the user.
+
+    Args:
+        token: Session token to validate
+
+    Returns:
+        User dict if valid, None if invalid/expired
+    """
+    now = int(time.time())
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            """SELECT u.id, u.email, u.created_at, u.last_login_at
+               FROM auth_tokens t
+               JOIN users u ON t.user_id = u.id
+               WHERE t.token = ? AND t.token_type = 'session'
+               AND t.expires_at > ? AND t.used_at IS NULL""",
+            (token, now)
+        ).fetchone()
+
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def revoke_session_token(token: str) -> bool:
+    """
+    Revoke a session token (logout).
+
+    Args:
+        token: Session token to revoke
+
+    Returns:
+        True if revoked, False if not found
+    """
+    now = int(time.time())
+    conn = get_db_connection()
+    try:
+        cursor = conn.execute(
+            "UPDATE auth_tokens SET used_at = ? WHERE token = ? AND token_type = 'session'",
+            (now, token)
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
+def revoke_all_user_sessions(user_id: int) -> int:
+    """
+    Revoke all session tokens for a user.
+
+    Args:
+        user_id: User ID
+
+    Returns:
+        Number of sessions revoked
+    """
+    now = int(time.time())
+    conn = get_db_connection()
+    try:
+        cursor = conn.execute(
+            """UPDATE auth_tokens SET used_at = ?
+               WHERE user_id = ? AND token_type = 'session' AND used_at IS NULL""",
+            (now, user_id)
+        )
+        conn.commit()
+        return cursor.rowcount
+    finally:
+        conn.close()
+
+
+def cleanup_expired_tokens() -> int:
+    """
+    Clean up expired tokens from the database.
+
+    Returns:
+        Number of tokens deleted
+    """
+    now = int(time.time())
+    conn = get_db_connection()
+    try:
+        cursor = conn.execute(
+            "DELETE FROM auth_tokens WHERE expires_at < ?",
+            (now,)
+        )
+        conn.commit()
+        return cursor.rowcount
+    finally:
+        conn.close()
+
+
+def delete_user(user_id: int) -> bool:
+    """
+    Delete a user and all their data.
+
+    Args:
+        user_id: User ID to delete
+
+    Returns:
+        True if deleted, False if not found
+    """
+    conn = get_db_connection()
+    try:
+        cursor = conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        conn.commit()
+        return cursor.rowcount > 0
     finally:
         conn.close()
