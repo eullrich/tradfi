@@ -61,6 +61,8 @@ ACTION_MENU_ITEMS = {
     ],
     "View": [
         ("help", "?", "Show all shortcuts"),
+        ("heatmap", "h", "Sector Heatmap"),
+        ("scatter", "p", "Scatter Plot"),
     ],
 }
 
@@ -160,6 +162,395 @@ from tradfi.core.screener import (
 )
 from tradfi.models.stock import Stock
 from tradfi.core.remote_provider import RemoteDataProvider
+from tradfi.utils.sparkline import ascii_bar, ascii_scatter
+
+
+# Metrics available for heatmap and scatter plot
+VISUALIZATION_METRICS = {
+    "rsi": ("RSI", lambda s: s.technical.rsi_14, False),  # (label, getter, reverse_bar)
+    "pe": ("P/E", lambda s: s.valuation.pe_trailing if s.valuation.pe_trailing and isinstance(s.valuation.pe_trailing, (int, float)) and s.valuation.pe_trailing > 0 else None, True),
+    "roe": ("ROE %", lambda s: s.profitability.roe, False),
+    "return_1m": ("1M Return", lambda s: s.technical.return_1m, False),
+    "mos": ("MoS %", lambda s: s.fair_value.margin_of_safety_pct, False),
+    "div": ("Div Yield", lambda s: s.dividends.dividend_yield, False),
+    "pb": ("P/B", lambda s: s.valuation.pb_ratio if s.valuation.pb_ratio and s.valuation.pb_ratio > 0 else None, True),
+}
+
+
+class SectorHeatmapScreen(ModalScreen):
+    """Modal showing sector performance heatmap."""
+
+    BINDINGS = [
+        Binding("escape", "dismiss", "Close"),
+        Binding("q", "dismiss", "Close"),
+        Binding("1", "metric_rsi", "RSI"),
+        Binding("2", "metric_pe", "P/E"),
+        Binding("3", "metric_roe", "ROE"),
+        Binding("4", "metric_return", "1M Return"),
+        Binding("5", "metric_mos", "MoS"),
+        Binding("enter", "select_sector", "Filter"),
+    ]
+
+    CSS = """
+    SectorHeatmapScreen {
+        align: center middle;
+    }
+
+    #heatmap-container {
+        width: 72;
+        max-height: 85%;
+        background: $surface;
+        border: thick $primary;
+        padding: 1 2;
+    }
+
+    #heatmap-title {
+        text-align: center;
+        text-style: bold;
+        color: $secondary;
+        padding-bottom: 1;
+    }
+
+    #heatmap-content {
+        padding: 0 1;
+    }
+
+    #heatmap-footer {
+        text-align: center;
+        color: $text-muted;
+        padding-top: 1;
+        border-top: solid $primary;
+        margin-top: 1;
+    }
+    """
+
+    def __init__(self, stocks: list[Stock]) -> None:
+        super().__init__()
+        self.stocks = stocks
+        self.current_metric = "rsi"
+        self.sector_stats = {}
+        self.selected_index = 0
+        self.sector_list = []
+
+    def compose(self) -> ComposeResult:
+        with VerticalScroll(id="heatmap-container"):
+            yield Static("[bold cyan]Sector Heatmap[/]", id="heatmap-title")
+            yield Static("", id="heatmap-content")
+            yield Static(
+                "[dim]1=RSI 2=P/E 3=ROE 4=Return 5=MoS | Enter=Filter | Esc=Close[/]",
+                id="heatmap-footer"
+            )
+
+    def on_mount(self) -> None:
+        self._calculate_stats()
+        self._render_heatmap()
+
+    def _calculate_stats(self) -> None:
+        """Aggregate stocks by sector."""
+        self.sector_stats = {}
+
+        for stock in self.stocks:
+            sector = stock.sector or "Unknown"
+            if sector not in self.sector_stats:
+                self.sector_stats[sector] = {
+                    "count": 0,
+                    "rsi": [],
+                    "pe": [],
+                    "roe": [],
+                    "return_1m": [],
+                    "mos": [],
+                }
+
+            self.sector_stats[sector]["count"] += 1
+
+            # Collect metrics
+            if stock.technical.rsi_14:
+                self.sector_stats[sector]["rsi"].append(stock.technical.rsi_14)
+            pe = stock.valuation.pe_trailing
+            if pe and isinstance(pe, (int, float)) and pe > 0:
+                self.sector_stats[sector]["pe"].append(pe)
+            if stock.profitability.roe is not None:
+                self.sector_stats[sector]["roe"].append(stock.profitability.roe)
+            if stock.technical.return_1m is not None:
+                self.sector_stats[sector]["return_1m"].append(stock.technical.return_1m)
+            if stock.fair_value.margin_of_safety_pct is not None:
+                self.sector_stats[sector]["mos"].append(stock.fair_value.margin_of_safety_pct)
+
+        # Sort by stock count descending
+        self.sector_list = sorted(
+            self.sector_stats.keys(),
+            key=lambda s: self.sector_stats[s]["count"],
+            reverse=True
+        )
+
+    def _render_heatmap(self) -> None:
+        """Render the heatmap display."""
+        content = self.query_one("#heatmap-content", Static)
+        title = self.query_one("#heatmap-title", Static)
+
+        metric_label, getter, reverse = VISUALIZATION_METRICS[self.current_metric]
+        title.update(f"[bold cyan]Sector Heatmap - {metric_label}[/]")
+
+        if not self.sector_stats:
+            content.update("[dim]No sector data available[/]")
+            return
+
+        # Calculate min/max for bar scaling
+        all_values = []
+        for sector in self.sector_list:
+            values = self.sector_stats[sector].get(self.current_metric, [])
+            if values:
+                all_values.append(sum(values) / len(values))
+
+        if not all_values:
+            content.update("[dim]No data for selected metric[/]")
+            return
+
+        min_val = min(all_values)
+        max_val = max(all_values)
+
+        lines = [
+            "[dim]Sector              Bar              Value   Count[/]",
+            "─" * 60,
+        ]
+
+        for i, sector in enumerate(self.sector_list):
+            values = self.sector_stats[sector].get(self.current_metric, [])
+            count = self.sector_stats[sector]["count"]
+
+            if values:
+                avg_val = sum(values) / len(values)
+                bar = ascii_bar(avg_val, min_val, max_val, width=14, reverse=reverse)
+
+                # Color based on metric and value
+                if self.current_metric == "rsi":
+                    if avg_val < 35:
+                        color = "green"
+                        label = "Oversold"
+                    elif avg_val > 65:
+                        color = "red"
+                        label = "Overbought"
+                    else:
+                        color = "yellow"
+                        label = ""
+                elif self.current_metric == "pe":
+                    if avg_val < 15:
+                        color = "green"
+                        label = "Cheap"
+                    elif avg_val > 25:
+                        color = "red"
+                        label = "Expensive"
+                    else:
+                        color = "yellow"
+                        label = ""
+                elif self.current_metric in ("roe", "mos", "return_1m"):
+                    if avg_val > 15:
+                        color = "green"
+                        label = ""
+                    elif avg_val < 0:
+                        color = "red"
+                        label = ""
+                    else:
+                        color = "yellow"
+                        label = ""
+                else:
+                    color = "dim"
+                    label = ""
+
+                # Highlight selected row
+                sector_display = f"{sector[:18]:<18}"
+                if i == self.selected_index:
+                    sector_display = f"[bold reverse]{sector_display}[/]"
+
+                val_str = f"{avg_val:>6.1f}"
+                label_str = f" [{color}]{label}[/]" if label else ""
+
+                lines.append(
+                    f"{sector_display} [{color}]{bar}[/]  {val_str}  ({count:>3}){label_str}"
+                )
+            else:
+                sector_display = f"{sector[:18]:<18}"
+                if i == self.selected_index:
+                    sector_display = f"[bold reverse]{sector_display}[/]"
+                lines.append(f"{sector_display} [dim]{'░' * 14}[/]     N/A  ({count:>3})")
+
+        content.update("\n".join(lines))
+
+    def on_key(self, event) -> None:
+        """Handle navigation keys."""
+        if event.key == "up" and self.selected_index > 0:
+            self.selected_index -= 1
+            self._render_heatmap()
+        elif event.key == "down" and self.selected_index < len(self.sector_list) - 1:
+            self.selected_index += 1
+            self._render_heatmap()
+
+    def action_metric_rsi(self) -> None:
+        self.current_metric = "rsi"
+        self._render_heatmap()
+
+    def action_metric_pe(self) -> None:
+        self.current_metric = "pe"
+        self._render_heatmap()
+
+    def action_metric_roe(self) -> None:
+        self.current_metric = "roe"
+        self._render_heatmap()
+
+    def action_metric_return(self) -> None:
+        self.current_metric = "return_1m"
+        self._render_heatmap()
+
+    def action_metric_mos(self) -> None:
+        self.current_metric = "mos"
+        self._render_heatmap()
+
+    def action_select_sector(self) -> None:
+        """Return selected sector to filter main table."""
+        if self.sector_list:
+            selected_sector = self.sector_list[self.selected_index]
+            self.dismiss(selected_sector)
+        else:
+            self.dismiss(None)
+
+
+class ScatterPlotScreen(ModalScreen):
+    """Modal showing scatter plot of two metrics."""
+
+    BINDINGS = [
+        Binding("escape", "dismiss", "Close"),
+        Binding("q", "dismiss", "Close"),
+        Binding("x", "cycle_x", "Change X"),
+        Binding("y", "cycle_y", "Change Y"),
+    ]
+
+    CSS = """
+    ScatterPlotScreen {
+        align: center middle;
+    }
+
+    #scatter-container {
+        width: 80;
+        height: 32;
+        background: $surface;
+        border: thick $primary;
+        padding: 1 2;
+    }
+
+    #scatter-title {
+        text-align: center;
+        text-style: bold;
+        color: $secondary;
+        padding-bottom: 1;
+    }
+
+    #scatter-plot {
+        padding: 0;
+    }
+
+    #scatter-legend {
+        padding-top: 1;
+    }
+
+    #scatter-footer {
+        text-align: center;
+        color: $text-muted;
+        padding-top: 1;
+        border-top: solid $primary;
+    }
+    """
+
+    METRIC_KEYS = ["pe", "pb", "roe", "rsi", "mos", "return_1m", "div"]
+
+    def __init__(self, stocks: list[Stock]) -> None:
+        super().__init__()
+        self.stocks = stocks
+        self.x_metric = "pe"
+        self.y_metric = "roe"
+
+    def compose(self) -> ComposeResult:
+        with VerticalScroll(id="scatter-container"):
+            yield Static("[bold cyan]Scatter Plot[/]", id="scatter-title")
+            yield Static("", id="scatter-plot")
+            yield Static("", id="scatter-legend")
+            yield Static(
+                "[dim]x=Change X axis | y=Change Y axis | Esc=Close[/]",
+                id="scatter-footer"
+            )
+
+    def on_mount(self) -> None:
+        self._render_plot()
+
+    def _render_plot(self) -> None:
+        """Render the scatter plot."""
+        title = self.query_one("#scatter-title", Static)
+        plot_area = self.query_one("#scatter-plot", Static)
+        legend = self.query_one("#scatter-legend", Static)
+
+        x_label, x_getter, _ = VISUALIZATION_METRICS[self.x_metric]
+        y_label, y_getter, _ = VISUALIZATION_METRICS[self.y_metric]
+
+        title.update(f"[bold cyan]Scatter: {x_label} vs {y_label}[/]")
+
+        # Collect points
+        points = []
+        for stock in self.stocks:
+            x_val = x_getter(stock)
+            y_val = y_getter(stock)
+            if x_val is not None and y_val is not None:
+                points.append((x_val, y_val, stock.ticker))
+
+        if not points:
+            plot_area.update("[dim]No valid data points for selected metrics[/]")
+            legend.update("")
+            return
+
+        # Generate scatter plot
+        plot_str = ascii_scatter(
+            points,
+            width=55,
+            height=15,
+            x_label=x_label,
+            y_label=y_label,
+        )
+
+        plot_area.update(plot_str)
+
+        # Build legend with quadrant hints
+        if self.x_metric == "pe" and self.y_metric == "roe":
+            legend.update(
+                "[green]■[/] Value (low P/E + high ROE)  "
+                "[yellow]■[/] Growth (high P/E + high ROE)  "
+                "[red]■[/] Trap? (low P/E + low ROE)"
+            )
+        elif self.x_metric == "rsi":
+            legend.update(
+                f"[green]←[/] Oversold (RSI < 30)  "
+                f"[red]→[/] Overbought (RSI > 70)  "
+                f"[dim]{len(points)} stocks plotted[/]"
+            )
+        else:
+            legend.update(f"[dim]{len(points)} stocks plotted[/]")
+
+    def action_cycle_x(self) -> None:
+        """Cycle to next X metric."""
+        idx = self.METRIC_KEYS.index(self.x_metric)
+        self.x_metric = self.METRIC_KEYS[(idx + 1) % len(self.METRIC_KEYS)]
+        # Avoid same metric on both axes
+        if self.x_metric == self.y_metric:
+            self.x_metric = self.METRIC_KEYS[(idx + 2) % len(self.METRIC_KEYS)]
+        self._render_plot()
+        self.notify(f"X axis: {VISUALIZATION_METRICS[self.x_metric][0]}", timeout=2)
+
+    def action_cycle_y(self) -> None:
+        """Cycle to next Y metric."""
+        idx = self.METRIC_KEYS.index(self.y_metric)
+        self.y_metric = self.METRIC_KEYS[(idx + 1) % len(self.METRIC_KEYS)]
+        # Avoid same metric on both axes
+        if self.y_metric == self.x_metric:
+            self.y_metric = self.METRIC_KEYS[(idx + 2) % len(self.METRIC_KEYS)]
+        self._render_plot()
+        self.notify(f"Y axis: {VISUALIZATION_METRICS[self.y_metric][0]}", timeout=2)
 
 
 def _simplify_industry(industry: str) -> str:
@@ -2012,6 +2403,9 @@ class ScreenerApp(App):
                 "preset_turnaround": self.action_preset_turnaround,
                 "preset_momentum": self.action_preset_momentum_value,
                 "preset_dividend": self.action_preset_dividend_growers,
+                # Visualizations
+                "heatmap": self.action_show_heatmap,
+                "scatter": self.action_show_scatter,
                 # Sort options
                 "sort_pe": self.action_sort_pe,
                 "sort_mos": self.action_sort_mos,
@@ -2040,10 +2434,35 @@ class ScreenerApp(App):
             "\n"
             "In action menu, press any key to execute that action.\n"
             "\n"
-            "Detail view: l=Long x=Short w=Watchlist d=Research m=Similar",
+            "Detail view: l=Long x=Short w=Watchlist d=Research m=Similar\n"
+            "Visualizations: h=Heatmap p=Scatter",
             title="Help",
             timeout=10,
         )
+
+    # === Visualization Actions ===
+    def action_show_heatmap(self) -> None:
+        """Show sector heatmap visualization."""
+        if not self.stocks:
+            self.notify("No stocks to visualize. Run a screen first.", severity="warning")
+            return
+
+        def on_sector_selected(sector: str | None) -> None:
+            if sector:
+                # Filter stocks to selected sector
+                self.stocks = [s for s in self.stocks if s.sector == sector]
+                self._populate_table()
+                self._update_status(f"Filtered to sector: {sector} ({len(self.stocks)} stocks)")
+
+        self.push_screen(SectorHeatmapScreen(self.stocks.copy()), on_sector_selected)
+
+    def action_show_scatter(self) -> None:
+        """Show scatter plot visualization."""
+        if not self.stocks:
+            self.notify("No stocks to visualize. Run a screen first.", severity="warning")
+            return
+
+        self.push_screen(ScatterPlotScreen(self.stocks.copy()))
 
     # === Discovery Preset Actions ===
     def _run_discovery_preset(self, preset_name: str) -> None:
