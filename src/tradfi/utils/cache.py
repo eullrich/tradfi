@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import sqlite3
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 # Default cache location - supports environment variable overrides for cloud deployment
 CACHE_DIR = Path(os.environ.get("TRADFI_DATA_DIR", str(Path.home() / ".tradfi")))
@@ -188,6 +188,60 @@ def _init_db(conn: sqlite3.Connection) -> None:
             PRIMARY KEY (list_name, category_id),
             FOREIGN KEY (list_name) REFERENCES saved_lists(name) ON DELETE CASCADE,
             FOREIGN KEY (category_id) REFERENCES list_categories(id) ON DELETE CASCADE
+        );
+
+        -- User accounts (passwordless email auth)
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT UNIQUE NOT NULL,
+            created_at INTEGER NOT NULL,
+            last_login_at INTEGER
+        );
+
+        -- Auth tokens for passwordless login (magic links)
+        CREATE TABLE IF NOT EXISTS auth_tokens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            token TEXT UNIQUE NOT NULL,
+            token_type TEXT NOT NULL,  -- 'magic_link' or 'session'
+            created_at INTEGER NOT NULL,
+            expires_at INTEGER NOT NULL,
+            used_at INTEGER,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        -- User-scoped watchlist (for authenticated API access)
+        CREATE TABLE IF NOT EXISTS user_watchlist (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            ticker TEXT NOT NULL,
+            added_at INTEGER NOT NULL,
+            notes TEXT,
+            UNIQUE(user_id, ticker),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        -- User-scoped saved lists (for authenticated API access)
+        CREATE TABLE IF NOT EXISTS user_saved_lists (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            UNIQUE(user_id, name),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        -- User-scoped saved list items
+        CREATE TABLE IF NOT EXISTS user_saved_list_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            list_id INTEGER NOT NULL,
+            ticker TEXT NOT NULL,
+            added_at INTEGER NOT NULL,
+            notes TEXT,
+            UNIQUE(list_id, ticker),
+            FOREIGN KEY (list_id) REFERENCES user_saved_lists(id) ON DELETE CASCADE
         );
     """)
     conn.commit()
@@ -976,5 +1030,580 @@ def update_smart_list_timestamp(name: str) -> None:
             (int(time.time()), name)
         )
         conn.commit()
+    finally:
+        conn.close()
+
+
+# ============================================================================
+# USER AUTHENTICATION (Passwordless Email)
+# ============================================================================
+
+# Token expiry times
+MAGIC_LINK_EXPIRY = 15 * 60  # 15 minutes
+SESSION_TOKEN_EXPIRY = 30 * 24 * 60 * 60  # 30 days
+
+
+def create_user(email: str) -> dict | None:
+    """
+    Create a new user account.
+
+    Args:
+        email: User's email address
+
+    Returns:
+        User dict if created, None if email already exists
+    """
+    email = email.lower().strip()
+    now = int(time.time())
+    conn = get_db_connection()
+    try:
+        cursor = conn.execute(
+            "INSERT INTO users (email, created_at) VALUES (?, ?)",
+            (email, now)
+        )
+        conn.commit()
+        return {
+            "id": cursor.lastrowid,
+            "email": email,
+            "created_at": now,
+            "last_login_at": None,
+        }
+    except sqlite3.IntegrityError:
+        return None
+    finally:
+        conn.close()
+
+
+def get_user_by_email(email: str) -> dict | None:
+    """Get a user by email address."""
+    email = email.lower().strip()
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT id, email, created_at, last_login_at FROM users WHERE email = ?",
+            (email,)
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def get_user_by_id(user_id: int) -> dict | None:
+    """Get a user by ID."""
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT id, email, created_at, last_login_at FROM users WHERE id = ?",
+            (user_id,)
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def create_magic_link_token(email: str) -> tuple[str, dict] | tuple[None, None]:
+    """
+    Create a magic link token for passwordless login.
+
+    If user doesn't exist, creates the account first.
+
+    Args:
+        email: User's email address
+
+    Returns:
+        Tuple of (token, user_dict) or (None, None) if failed
+    """
+    email = email.lower().strip()
+
+    # Get or create user
+    user = get_user_by_email(email)
+    if not user:
+        user = create_user(email)
+        if not user:
+            return None, None
+
+    # Generate secure token
+    token = secrets.token_urlsafe(32)
+    now = int(time.time())
+    expires_at = now + MAGIC_LINK_EXPIRY
+
+    conn = get_db_connection()
+    try:
+        conn.execute(
+            """INSERT INTO auth_tokens (user_id, token, token_type, created_at, expires_at)
+               VALUES (?, ?, 'magic_link', ?, ?)""",
+            (user["id"], token, now, expires_at)
+        )
+        conn.commit()
+        return token, user
+    finally:
+        conn.close()
+
+
+def verify_magic_link_token(token: str) -> tuple[str, dict] | tuple[None, None]:
+    """
+    Verify a magic link token and create a session token.
+
+    Args:
+        token: The magic link token to verify
+
+    Returns:
+        Tuple of (session_token, user_dict) or (None, None) if invalid/expired
+    """
+    now = int(time.time())
+    conn = get_db_connection()
+    try:
+        # Find and validate token
+        row = conn.execute(
+            """SELECT t.id, t.user_id, u.email, u.created_at as user_created_at
+               FROM auth_tokens t
+               JOIN users u ON t.user_id = u.id
+               WHERE t.token = ? AND t.token_type = 'magic_link'
+               AND t.expires_at > ? AND t.used_at IS NULL""",
+            (token, now)
+        ).fetchone()
+
+        if not row:
+            return None, None
+
+        # Mark magic link as used
+        conn.execute(
+            "UPDATE auth_tokens SET used_at = ? WHERE id = ?",
+            (now, row["id"])
+        )
+
+        # Update user's last login
+        conn.execute(
+            "UPDATE users SET last_login_at = ? WHERE id = ?",
+            (now, row["user_id"])
+        )
+
+        # Create session token
+        session_token = secrets.token_urlsafe(32)
+        session_expires = now + SESSION_TOKEN_EXPIRY
+
+        conn.execute(
+            """INSERT INTO auth_tokens (user_id, token, token_type, created_at, expires_at)
+               VALUES (?, ?, 'session', ?, ?)""",
+            (row["user_id"], session_token, now, session_expires)
+        )
+
+        conn.commit()
+
+        user = {
+            "id": row["user_id"],
+            "email": row["email"],
+            "created_at": row["user_created_at"],
+            "last_login_at": now,
+        }
+        return session_token, user
+    finally:
+        conn.close()
+
+
+def validate_session_token(token: str) -> dict | None:
+    """
+    Validate a session token and return the user.
+
+    Args:
+        token: Session token to validate
+
+    Returns:
+        User dict if valid, None if invalid/expired
+    """
+    now = int(time.time())
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            """SELECT u.id, u.email, u.created_at, u.last_login_at
+               FROM auth_tokens t
+               JOIN users u ON t.user_id = u.id
+               WHERE t.token = ? AND t.token_type = 'session'
+               AND t.expires_at > ? AND t.used_at IS NULL""",
+            (token, now)
+        ).fetchone()
+
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def revoke_session_token(token: str) -> bool:
+    """
+    Revoke a session token (logout).
+
+    Args:
+        token: Session token to revoke
+
+    Returns:
+        True if revoked, False if not found
+    """
+    now = int(time.time())
+    conn = get_db_connection()
+    try:
+        cursor = conn.execute(
+            "UPDATE auth_tokens SET used_at = ? WHERE token = ? AND token_type = 'session'",
+            (now, token)
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
+def revoke_all_user_sessions(user_id: int) -> int:
+    """
+    Revoke all session tokens for a user.
+
+    Args:
+        user_id: User ID
+
+    Returns:
+        Number of sessions revoked
+    """
+    now = int(time.time())
+    conn = get_db_connection()
+    try:
+        cursor = conn.execute(
+            """UPDATE auth_tokens SET used_at = ?
+               WHERE user_id = ? AND token_type = 'session' AND used_at IS NULL""",
+            (now, user_id)
+        )
+        conn.commit()
+        return cursor.rowcount
+    finally:
+        conn.close()
+
+
+def cleanup_expired_tokens() -> int:
+    """
+    Clean up expired tokens from the database.
+
+    Returns:
+        Number of tokens deleted
+    """
+    now = int(time.time())
+    conn = get_db_connection()
+    try:
+        cursor = conn.execute(
+            "DELETE FROM auth_tokens WHERE expires_at < ?",
+            (now,)
+        )
+        conn.commit()
+        return cursor.rowcount
+    finally:
+        conn.close()
+
+
+def delete_user(user_id: int) -> bool:
+    """
+    Delete a user and all their data.
+
+    Args:
+        user_id: User ID to delete
+
+    Returns:
+        True if deleted, False if not found
+    """
+    conn = get_db_connection()
+    try:
+        cursor = conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
+# ============================================================================
+# USER-SCOPED WATCHLIST
+# ============================================================================
+
+
+def user_add_to_watchlist(user_id: int, ticker: str, notes: str | None = None) -> bool:
+    """
+    Add a ticker to user's watchlist.
+
+    Args:
+        user_id: User ID
+        ticker: Stock ticker
+        notes: Optional notes
+
+    Returns:
+        True if added, False if already exists
+    """
+    conn = get_db_connection()
+    try:
+        conn.execute(
+            """INSERT OR IGNORE INTO user_watchlist (user_id, ticker, added_at, notes)
+               VALUES (?, ?, ?, ?)""",
+            (user_id, ticker.upper(), int(time.time()), notes)
+        )
+        conn.commit()
+        return conn.total_changes > 0
+    finally:
+        conn.close()
+
+
+def user_remove_from_watchlist(user_id: int, ticker: str) -> bool:
+    """Remove a ticker from user's watchlist."""
+    conn = get_db_connection()
+    try:
+        cursor = conn.execute(
+            "DELETE FROM user_watchlist WHERE user_id = ? AND ticker = ?",
+            (user_id, ticker.upper())
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
+def user_get_watchlist(user_id: int) -> list[dict]:
+    """Get all tickers in user's watchlist."""
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            """SELECT ticker, added_at, notes FROM user_watchlist
+               WHERE user_id = ? ORDER BY added_at DESC""",
+            (user_id,)
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def user_update_watchlist_notes(user_id: int, ticker: str, notes: str) -> bool:
+    """Update notes for a watchlist item."""
+    conn = get_db_connection()
+    try:
+        cursor = conn.execute(
+            "UPDATE user_watchlist SET notes = ? WHERE user_id = ? AND ticker = ?",
+            (notes, user_id, ticker.upper())
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
+# ============================================================================
+# USER-SCOPED SAVED LISTS
+# ============================================================================
+
+
+def user_create_list(
+    user_id: int, name: str, description: str | None = None
+) -> dict | None:
+    """
+    Create a new saved list for a user.
+
+    Args:
+        user_id: User ID
+        name: List name
+        description: Optional description
+
+    Returns:
+        List dict if created, None if name already exists
+    """
+    name = name.lower().replace(" ", "-")
+    now = int(time.time())
+    conn = get_db_connection()
+    try:
+        cursor = conn.execute(
+            """INSERT INTO user_saved_lists (user_id, name, description, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (user_id, name, description, now, now)
+        )
+        conn.commit()
+        return {
+            "id": cursor.lastrowid,
+            "name": name,
+            "description": description,
+            "created_at": now,
+            "updated_at": now,
+        }
+    except sqlite3.IntegrityError:
+        return None
+    finally:
+        conn.close()
+
+
+def user_get_lists(user_id: int) -> list[dict]:
+    """Get all saved lists for a user with item counts."""
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            """SELECT
+                l.id,
+                l.name,
+                l.description,
+                l.created_at,
+                l.updated_at,
+                COUNT(i.id) as item_count
+               FROM user_saved_lists l
+               LEFT JOIN user_saved_list_items i ON l.id = i.list_id
+               WHERE l.user_id = ?
+               GROUP BY l.id
+               ORDER BY l.updated_at DESC""",
+            (user_id,)
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def user_get_list(user_id: int, name: str) -> dict | None:
+    """Get a specific list by name."""
+    name = name.lower().replace(" ", "-")
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            """SELECT id, name, description, created_at, updated_at
+               FROM user_saved_lists WHERE user_id = ? AND name = ?""",
+            (user_id, name)
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def user_delete_list(user_id: int, name: str) -> bool:
+    """Delete a saved list."""
+    name = name.lower().replace(" ", "-")
+    conn = get_db_connection()
+    try:
+        cursor = conn.execute(
+            "DELETE FROM user_saved_lists WHERE user_id = ? AND name = ?",
+            (user_id, name)
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
+def user_add_to_list(
+    user_id: int, list_name: str, ticker: str, notes: str | None = None
+) -> bool:
+    """
+    Add a ticker to a user's saved list.
+
+    Args:
+        user_id: User ID
+        list_name: Name of the list
+        ticker: Stock ticker
+        notes: Optional notes
+
+    Returns:
+        True if added, False if list not found or ticker already in list
+    """
+    list_name = list_name.lower().replace(" ", "-")
+    conn = get_db_connection()
+    try:
+        # Get the list
+        list_row = conn.execute(
+            "SELECT id FROM user_saved_lists WHERE user_id = ? AND name = ?",
+            (user_id, list_name)
+        ).fetchone()
+
+        if not list_row:
+            return False
+
+        now = int(time.time())
+        conn.execute(
+            """INSERT OR IGNORE INTO user_saved_list_items (list_id, ticker, added_at, notes)
+               VALUES (?, ?, ?, ?)""",
+            (list_row["id"], ticker.upper(), now, notes)
+        )
+        conn.execute(
+            "UPDATE user_saved_lists SET updated_at = ? WHERE id = ?",
+            (now, list_row["id"])
+        )
+        conn.commit()
+        return conn.total_changes > 0
+    finally:
+        conn.close()
+
+
+def user_remove_from_list(user_id: int, list_name: str, ticker: str) -> bool:
+    """Remove a ticker from a user's saved list."""
+    list_name = list_name.lower().replace(" ", "-")
+    conn = get_db_connection()
+    try:
+        # Get the list
+        list_row = conn.execute(
+            "SELECT id FROM user_saved_lists WHERE user_id = ? AND name = ?",
+            (user_id, list_name)
+        ).fetchone()
+
+        if not list_row:
+            return False
+
+        cursor = conn.execute(
+            "DELETE FROM user_saved_list_items WHERE list_id = ? AND ticker = ?",
+            (list_row["id"], ticker.upper())
+        )
+        if cursor.rowcount > 0:
+            conn.execute(
+                "UPDATE user_saved_lists SET updated_at = ? WHERE id = ?",
+                (int(time.time()), list_row["id"])
+            )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
+def user_get_list_items(user_id: int, list_name: str) -> list[dict] | None:
+    """
+    Get all items in a user's saved list.
+
+    Returns:
+        List of item dicts, or None if list not found
+    """
+    list_name = list_name.lower().replace(" ", "-")
+    conn = get_db_connection()
+    try:
+        # Get the list
+        list_row = conn.execute(
+            "SELECT id FROM user_saved_lists WHERE user_id = ? AND name = ?",
+            (user_id, list_name)
+        ).fetchone()
+
+        if not list_row:
+            return None
+
+        rows = conn.execute(
+            """SELECT ticker, added_at, notes FROM user_saved_list_items
+               WHERE list_id = ? ORDER BY added_at DESC""",
+            (list_row["id"],)
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def user_update_list_item_notes(
+    user_id: int, list_name: str, ticker: str, notes: str
+) -> bool:
+    """Update notes for an item in a user's saved list."""
+    list_name = list_name.lower().replace(" ", "-")
+    conn = get_db_connection()
+    try:
+        # Get the list
+        list_row = conn.execute(
+            "SELECT id FROM user_saved_lists WHERE user_id = ? AND name = ?",
+            (user_id, list_name)
+        ).fetchone()
+
+        if not list_row:
+            return False
+
+        cursor = conn.execute(
+            "UPDATE user_saved_list_items SET notes = ? WHERE list_id = ? AND ticker = ?",
+            (notes, list_row["id"], ticker.upper())
+        )
+        conn.commit()
+        return cursor.rowcount > 0
     finally:
         conn.close()
