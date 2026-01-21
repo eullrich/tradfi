@@ -8,7 +8,7 @@ from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from tradfi.core.data import fetch_stock
+from tradfi.core.data import fetch_stock_from_api
 from tradfi.core.screener import AVAILABLE_UNIVERSES, load_tickers
 from tradfi.utils.cache import get_config, set_rate_limit_delay
 
@@ -69,7 +69,7 @@ async def refresh_universe(universe: str, delay: float = 2.0) -> dict:
 
     for i, ticker in enumerate(tickers):
         try:
-            stock = fetch_stock(ticker, use_cache=True)
+            stock = fetch_stock_from_api(ticker)
             if stock:
                 fetched += 1
             else:
