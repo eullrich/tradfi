@@ -1429,22 +1429,29 @@ class ScreenerApp(App):
         else:
             criteria = ScreenCriteria()  # No filter - show all stocks
 
+        # Update progress to show we're fetching
+        self.call_from_thread(
+            self._update_progress_batch, "Loading from cache...", 0, len(ticker_list), 0
+        )
+
+        # Fetch all stocks in a single batch request (MUCH faster than individual requests)
+        all_stocks = self.remote_provider.fetch_stocks_batch(ticker_list)
+
+        # Filter stocks locally (fast in-memory operation)
         passing_stocks = []
         total = len(ticker_list)
-        fetched = 0
 
         for i, ticker in enumerate(ticker_list):
-            # Update progress via call_from_thread
-            progress = (i + 1) / total * 100
-            self.call_from_thread(
-                self._update_progress, ticker, i + 1, total,
-                len(passing_stocks), progress, fetched
-            )
+            # Update progress less frequently (every 50 stocks) to reduce UI overhead
+            if i % 50 == 0 or i == total - 1:
+                found = len(passing_stocks)
+                self.call_from_thread(
+                    self._update_progress_batch, f"Filtering {ticker}...",
+                    i + 1, total, found
+                )
 
-            stock = self._get_stock(ticker)
+            stock = all_stocks.get(ticker)
             if stock:
-                fetched += 1
-
                 # Apply screening criteria
                 if not screen_stock(stock, criteria):
                     continue
@@ -1473,6 +1480,24 @@ class ScreenerApp(App):
                 f"[dim]Found:[/] [green]{found}[/]  "
                 f"[dim]Fetched:[/] {fetched}"
             )
+        except Exception:
+            pass  # Ignore if widgets not available
+
+    def _update_progress_batch(self, status: str, current: int, total: int, found: int) -> None:
+        """Update progress display for batch operations."""
+        try:
+            loading_detail = self.query_one("#loading-detail", Static)
+            loading_detail.update(f"[green]⚡[/] {status}")
+
+            loading_stats = self.query_one("#loading-stats", Static)
+            if total > 0:
+                pct = int((current / total) * 100)
+                loading_stats.update(
+                    f"[dim]Progress:[/] {current}/{total} ({pct}%)  "
+                    f"[dim]Found:[/] [green]{found}[/]"
+                )
+            else:
+                loading_stats.update(f"[dim]Found:[/] [green]{found}[/]")
         except Exception:
             pass  # Ignore if widgets not available
 

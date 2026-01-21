@@ -59,6 +59,52 @@ class RemoteDataProvider:
         except httpx.RequestError:
             return None
 
+    def fetch_all_stocks(self) -> dict[str, Stock]:
+        """Fetch all cached stocks in a single request.
+
+        This is optimized for bulk loading - much faster than individual requests.
+
+        Returns:
+            Dict mapping ticker to Stock object.
+        """
+        try:
+            with httpx.Client(timeout=60.0) as client:  # Longer timeout for bulk
+                response = client.get(f"{self.api_url}/api/v1/stocks/batch/all")
+
+            if response.status_code == 200:
+                data = response.json()
+                return {ticker: self._schema_to_stock(stock_data)
+                        for ticker, stock_data in data.items()}
+            return {}
+        except httpx.RequestError:
+            return {}
+
+    def fetch_stocks_batch(self, tickers: list[str]) -> dict[str, Stock]:
+        """Fetch multiple stocks by ticker in a single request.
+
+        Args:
+            tickers: List of ticker symbols to fetch.
+
+        Returns:
+            Dict mapping ticker to Stock object. Missing tickers are omitted.
+        """
+        if not tickers:
+            return {}
+        try:
+            with httpx.Client(timeout=60.0) as client:  # Longer timeout for bulk
+                response = client.post(
+                    f"{self.api_url}/api/v1/stocks/batch",
+                    json=tickers
+                )
+
+            if response.status_code == 200:
+                data = response.json()
+                return {ticker: self._schema_to_stock(stock_data)
+                        for ticker, stock_data in data.items()}
+            return {}
+        except httpx.RequestError:
+            return {}
+
     def _schema_to_stock(self, data: dict) -> Stock:
         """Convert API response schema to Stock dataclass."""
         return Stock(

@@ -8,7 +8,7 @@ from tradfi.api.schemas import (
     QuarterlyTrendsSchema,
     StockSchema,
 )
-from tradfi.core.data import fetch_stock
+from tradfi.core.data import fetch_stock, fetch_stocks_batch
 from tradfi.core.quarterly import fetch_quarterly_financials
 
 router = APIRouter(prefix="/stocks", tags=["stocks"])
@@ -46,6 +46,31 @@ async def analyze_stocks(request: AnalyzeRequestSchema):
         if stock is not None:
             results.append(stock_to_schema(stock))
     return results
+
+
+@router.get("/batch/all", response_model=dict[str, StockSchema])
+async def get_all_stocks():
+    """
+    Get all cached stocks in a single request.
+
+    This is optimized for the TUI screener to fetch all stocks at once
+    instead of making individual requests per ticker.
+
+    Returns dict mapping ticker to stock data.
+    """
+    stocks = fetch_stocks_batch()
+    return {ticker: stock_to_schema(stock) for ticker, stock in stocks.items()}
+
+
+@router.post("/batch", response_model=dict[str, StockSchema])
+async def get_stocks_batch(tickers: list[str]):
+    """
+    Get multiple stocks by ticker in a single request.
+
+    Returns dict mapping ticker to stock data. Missing tickers are omitted.
+    """
+    stocks = fetch_stocks_batch(tickers)
+    return {ticker: stock_to_schema(stock) for ticker, stock in stocks.items()}
 
 
 @router.get("/{ticker}/quarterly", response_model=QuarterlyTrendsSchema)
