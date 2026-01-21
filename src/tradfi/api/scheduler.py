@@ -1,5 +1,6 @@
 """APScheduler setup for daily stock data refresh."""
 
+import asyncio
 import logging
 import os
 import time
@@ -136,7 +137,7 @@ async def daily_refresh_job():
             stats = await refresh_universe(universe, delay=delay)
             all_stats.append(stats)
             # Small pause between universes
-            time.sleep(5)
+            await asyncio.sleep(5)
 
     logger.info(f"Daily refresh completed. Stats: {all_stats}")
     return all_stats
