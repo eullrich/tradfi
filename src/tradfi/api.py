@@ -1,7 +1,12 @@
 """FastAPI server for TradFi cache status and data."""
 
+import os
 from datetime import datetime
 from typing import Annotated
+
+# Development mode: returns magic link tokens in response for testing
+# In production, set TRADFI_PRODUCTION=1 to disable token exposure
+IS_PRODUCTION = os.getenv("TRADFI_PRODUCTION", "").lower() in ("1", "true", "yes")
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse
@@ -51,9 +56,7 @@ class RegisterResponse(BaseModel):
     """Response after requesting magic link."""
     message: str
     email: str
-    # In production, don't return token - send via email instead
-    # Included here for development/testing
-    magic_link_token: str | None = None
+    magic_link_token: str | None = None  # Only populated in development mode
 
 
 class VerifyRequest(BaseModel):
@@ -244,7 +247,7 @@ def register(request: RegisterRequest) -> RegisterResponse:
     return RegisterResponse(
         message=f"Account {action}. Check your email for the magic link.",
         email=request.email,
-        magic_link_token=token,  # Remove in production
+        magic_link_token=None if IS_PRODUCTION else token,
     )
 
 
