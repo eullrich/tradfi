@@ -1141,12 +1141,20 @@ class StockDetailScreen(Screen):
         """Background worker to fetch and analyze SEC filing."""
         from tradfi.core.research import deep_research
 
-        report = deep_research(self.stock.ticker)
-        self.call_from_thread(self._display_research, report)
+        try:
+            report = deep_research(self.stock.ticker)
+            self.call_from_thread(self._display_research, report)
+        except Exception:
+            # Screen may have been dismissed, silently ignore
+            pass
 
     def _display_research(self, report) -> None:
         """Display research report in the panel."""
-        research_panel = self.query_one("#research-panel", Static)
+        try:
+            research_panel = self.query_one("#research-panel", Static)
+        except Exception:
+            # Screen was dismissed before callback ran
+            return
 
         if not report:
             research_panel.update(
@@ -1228,14 +1236,22 @@ class StockDetailScreen(Screen):
         """Background worker to fetch quarterly data."""
         from tradfi.core.quarterly import fetch_quarterly_financials
 
-        trends = fetch_quarterly_financials(self.stock.ticker, periods=8)
-        self.call_from_thread(self._display_quarterly, trends)
+        try:
+            trends = fetch_quarterly_financials(self.stock.ticker, periods=8)
+            self.call_from_thread(self._display_quarterly, trends)
+        except Exception:
+            # Screen may have been dismissed, silently ignore
+            pass
 
     def _display_quarterly(self, trends) -> None:
         """Display quarterly trends in the panel."""
         from tradfi.utils.sparkline import sparkline, format_large_number
 
-        quarterly_panel = self.query_one("#quarterly-panel", Static)
+        try:
+            quarterly_panel = self.query_one("#quarterly-panel", Static)
+        except Exception:
+            # Screen was dismissed before callback ran
+            return
 
         if not trends or not trends.quarters:
             quarterly_panel.update(
@@ -1314,29 +1330,37 @@ class StockDetailScreen(Screen):
 
     def _fetch_similar(self) -> None:
         """Background worker to find similar stocks."""
-        # Fetch all stocks from cache to compare against
-        all_tickers = []
-        for name in AVAILABLE_UNIVERSES.keys():
-            try:
-                all_tickers.extend(load_tickers(name))
-            except FileNotFoundError:
-                pass
+        try:
+            # Fetch all stocks from cache to compare against
+            all_tickers = []
+            for name in AVAILABLE_UNIVERSES.keys():
+                try:
+                    all_tickers.extend(load_tickers(name))
+                except FileNotFoundError:
+                    pass
 
-        # Remove duplicates and limit to reasonable size
-        unique_tickers = list(set(all_tickers))
+            # Remove duplicates and limit to reasonable size
+            unique_tickers = list(set(all_tickers))
 
-        # Fetch stock data in batch
-        all_stocks = self.remote_provider.fetch_stocks_batch(unique_tickers)
-        candidates = list(all_stocks.values())
+            # Fetch stock data in batch
+            all_stocks = self.remote_provider.fetch_stocks_batch(unique_tickers)
+            candidates = list(all_stocks.values())
 
-        # Find similar stocks
-        similar = find_similar_stocks(self.stock, candidates, limit=8, min_score=20)
+            # Find similar stocks
+            similar = find_similar_stocks(self.stock, candidates, limit=8, min_score=20)
 
-        self.call_from_thread(self._display_similar, similar)
+            self.call_from_thread(self._display_similar, similar)
+        except Exception:
+            # Screen may have been dismissed, silently ignore
+            pass
 
     def _display_similar(self, similar: list) -> None:
         """Display similar stocks in the panel."""
-        similar_panel = self.query_one("#similar-panel", Static)
+        try:
+            similar_panel = self.query_one("#similar-panel", Static)
+        except Exception:
+            # Screen was dismissed before callback ran
+            return
 
         if not similar:
             similar_panel.update(
