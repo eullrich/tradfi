@@ -5,23 +5,191 @@ from __future__ import annotations
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
-from textual.screen import Screen, ModalScreen
+from textual.message import Message
+from textual.screen import ModalScreen, Screen
 from textual.widgets import (
-    Button,
     DataTable,
     Footer,
     Header,
     Input,
-    Label,
-    ListItem,
-    ListView,
     OptionList,
     SelectionList,
     Static,
-    TabbedContent,
-    TabPane,
 )
 from textual.worker import Worker
+
+# Filter pill types for color coding
+FILTER_PILL_COLORS = {
+    "universe": "cyan",
+    "industry": "yellow",
+    "preset": "green",
+    "category": "magenta",
+}
+
+# ETF category icons for quick visual recognition
+ETF_CATEGORY_ICONS = {
+    "REITs": "🏢",
+    "Commodities": "⚡",
+    "Sectors": "📊",
+    "International": "🌍",
+}
+
+
+class FilterPill(Static):
+    """A removable filter pill showing [name ×]."""
+
+    class Removed(Message):
+        """Message sent when a filter pill is removed."""
+
+        def __init__(self, filter_type: str, filter_value: str) -> None:
+            super().__init__()
+            self.filter_type = filter_type
+            self.filter_value = filter_value
+
+    def __init__(
+        self,
+        filter_type: str,
+        filter_value: str,
+        display_name: str | None = None,
+        **kwargs,
+    ) -> None:
+        super().__init__(**kwargs)
+        self.filter_type = filter_type
+        self.filter_value = filter_value
+        self.display_name = display_name or filter_value
+        self._update_display()
+
+    def _update_display(self) -> None:
+        """Update the pill display text."""
+        color = FILTER_PILL_COLORS.get(self.filter_type, "white")
+        # Truncate long names
+        name = self.display_name
+        if len(name) > 15:
+            name = name[:13] + ".."
+        self.update(f"[{color}][{name} ×][/{color}]")
+
+    def on_click(self) -> None:
+        """Handle click to remove the pill."""
+        self.post_message(self.Removed(self.filter_type, self.filter_value))
+
+
+class ClearAllPill(Static):
+    """A 'Clear All' button pill."""
+
+    class Clicked(Message):
+        """Message sent when Clear All is clicked."""
+        pass
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.update("[red bold][Clear All][/]")
+
+    def on_click(self) -> None:
+        """Handle click to clear all filters."""
+        self.post_message(self.Clicked())
+
+
+class FilterPillsContainer(Horizontal):
+    """Container for all active filter pills."""
+
+    DEFAULT_CSS = """
+    FilterPillsContainer {
+        height: auto;
+        min-height: 0;
+        padding: 0 0 1 0;
+        display: none;
+    }
+
+    FilterPillsContainer.has-pills {
+        display: block;
+        min-height: 2;
+    }
+
+    FilterPill {
+        width: auto;
+        margin: 0 1 0 0;
+        padding: 0 1;
+        background: $surface-darken-1;
+    }
+
+    FilterPill:hover {
+        background: $surface-lighten-1;
+        text-style: bold;
+    }
+
+    ClearAllPill {
+        width: auto;
+        margin: 0 0 0 1;
+        padding: 0 1;
+        background: $error-darken-2;
+    }
+
+    ClearAllPill:hover {
+        background: $error;
+        text-style: bold;
+    }
+    """
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+
+    def update_pills(
+        self,
+        universes: set[str],
+        industries: set[str],
+        categories: set[str],
+        preset: str | None,
+    ) -> None:
+        """Update the pills based on current filter state."""
+        # Remove all existing children
+        self.remove_children()
+
+        has_any = bool(universes or industries or categories or preset)
+
+        if not has_any:
+            self.remove_class("has-pills")
+            return
+
+        self.add_class("has-pills")
+
+        # Add universe pills
+        for universe in sorted(universes):
+            self.mount(FilterPill(
+                filter_type="universe",
+                filter_value=universe,
+                display_name=universe,
+            ))
+
+        # Add category pills
+        for category in sorted(categories):
+            self.mount(FilterPill(
+                filter_type="category",
+                filter_value=category,
+                display_name=category,
+            ))
+
+        # Add industry pills
+        for industry in sorted(industries):
+            # Truncate industry names for display
+            display = industry if len(industry) <= 20 else industry[:18] + ".."
+            self.mount(FilterPill(
+                filter_type="industry",
+                filter_value=industry,
+                display_name=display,
+            ))
+
+        # Add preset pill
+        if preset:
+            self.mount(FilterPill(
+                filter_type="preset",
+                filter_value=preset,
+                display_name=preset,
+            ))
+
+        # Add Clear All button if we have multiple filters
+        total_filters = len(universes) + len(industries) + len(categories) + (1 if preset else 0)
+        if total_filters > 1:
+            self.mount(ClearAllPill())
 
 
 # Action menu categories and items
@@ -146,11 +314,12 @@ class ActionMenuScreen(ModalScreen):
                     self.dismiss(action_id)
                     return
 
+from tradfi.core.remote_provider import RemoteDataProvider
 from tradfi.core.screener import (
     AVAILABLE_UNIVERSES,
+    PRESET_DESCRIPTIONS,
     PRESET_INFO,
     PRESET_SCREENS,
-    PRESET_DESCRIPTIONS,
     ScreenCriteria,
     find_similar_stocks,
     get_universe_categories,
@@ -159,7 +328,6 @@ from tradfi.core.screener import (
     screen_stock,
 )
 from tradfi.models.stock import Stock
-from tradfi.core.remote_provider import RemoteDataProvider
 
 
 def _simplify_industry(industry: str) -> str:
@@ -543,7 +711,7 @@ class StockDetailScreen(Screen):
     def action_deep_research(self) -> None:
         """Fetch and analyze SEC filing with LLM (OpenRouter or Anthropic)."""
         import os
-        from tradfi.core.research import deep_research
+
 
         # Check for API key (OpenRouter preferred, Anthropic as fallback)
         has_openrouter = os.environ.get("OPENROUTER_API_KEY")
@@ -668,7 +836,7 @@ class StockDetailScreen(Screen):
 
     def _display_quarterly(self, trends) -> None:
         """Display quarterly trends in the panel."""
-        from tradfi.utils.sparkline import sparkline, format_large_number
+        from tradfi.utils.sparkline import format_large_number, sparkline
 
         quarterly_panel = self.query_one("#quarterly-panel", Static)
 
@@ -1112,11 +1280,11 @@ class ScreenerApp(App):
                 Static("🔍 DEEP VALUE", id="sidebar-title"),
                 Static("Search", classes="section-title"),
                 Input(placeholder="Ticker (e.g. AAPL)", id="search-input"),
-                Static("Universes (toggle)", classes="section-title"),
+                Static("Universes [dim](toggle)[/]", classes="section-title", id="universe-title"),
                 SelectionList[str](id="universe-select"),
                 Static("Categories", classes="section-title", id="category-title"),
                 SelectionList[str](id="category-select"),
-                Static("Industries (toggle)", classes="section-title"),
+                Static("Industries [dim](toggle)[/]", classes="section-title", id="industry-title"),
                 Input(placeholder="Filter industries...", id="industry-search"),
                 SelectionList[str](id="industry-select"),
                 Static("Presets", classes="section-title"),
@@ -1175,6 +1343,7 @@ class ScreenerApp(App):
                     Static("", id="loading-stats"),
                     id="loading",
                 ),
+                FilterPillsContainer(id="filter-pills"),
                 DataTable(id="results-table"),
                 id="content",
             ),
@@ -1402,9 +1571,11 @@ class ScreenerApp(App):
                 # Add "ALL" option at the top
                 category_select.add_option(("★ ALL", "__all__", False))
 
-                # Add each category
+                # Add each category with icon if available
                 for cat in sorted(all_categories):
-                    category_select.add_option((cat, cat, False))
+                    icon = ETF_CATEGORY_ICONS.get(cat, "")
+                    display_name = f"{icon} {cat}" if icon else cat
+                    category_select.add_option((display_name, cat, False))
 
         except Exception:
             pass
@@ -1429,6 +1600,8 @@ class ScreenerApp(App):
             # Always update categories based on current universe selection
             self._update_categories_for_selection()
             self._update_workflow_status()
+            self._update_section_titles()
+            self._update_filter_pills()
         elif event.selection_list.id == "category-select":
             # Update selected categories (filter out __all__ marker)
             selected = set(event.selection_list.selected)
@@ -1437,6 +1610,8 @@ class ScreenerApp(App):
             else:
                 self.selected_categories = selected
             self._update_workflow_status()
+            self._update_section_titles()
+            self._update_filter_pills()
         elif event.selection_list.id == "industry-select":
             # Update selected industries (filter out __all__ marker)
             selected = set(event.selection_list.selected)
@@ -1445,6 +1620,8 @@ class ScreenerApp(App):
             else:
                 self.selected_industries = selected
             self._update_workflow_status()
+            self._update_section_titles()
+            self._update_filter_pills()
 
     def _update_workflow_status(self) -> None:
         """Update status bar with contextual workflow guidance."""
@@ -1508,6 +1685,87 @@ class ScreenerApp(App):
             f"[bold]r[/]=scan"
         )
 
+    def _update_section_titles(self) -> None:
+        """Update section titles to show selection counts."""
+        try:
+            # Update universe title
+            universe_title = self.query_one("#universe-title", Static)
+            if self.selected_universes:
+                count = len(self.selected_universes)
+                universe_title.update(f"Universes [cyan]({count} selected)[/]")
+            else:
+                universe_title.update("Universes [dim](toggle)[/]")
+
+            # Update industry title
+            industry_title = self.query_one("#industry-title", Static)
+            if self.selected_industries:
+                count = len(self.selected_industries)
+                industry_title.update(f"Industries [yellow]({count} selected)[/]")
+            else:
+                industry_title.update("Industries [dim](toggle)[/]")
+
+            # Category title is handled by _update_categories_for_selection
+            # but we can add count here too
+            if self.selected_categories:
+                category_title = self.query_one("#category-title", Static)
+                count = len(self.selected_categories)
+                category_title.update(f"Categories [magenta]({count} selected)[/]")
+        except Exception:
+            pass
+
+    def _update_filter_pills(self) -> None:
+        """Update the filter pills container based on current filter state."""
+        try:
+            pills_container = self.query_one("#filter-pills", FilterPillsContainer)
+            pills_container.update_pills(
+                universes=self.selected_universes,
+                industries=self.selected_industries,
+                categories=self.selected_categories,
+                preset=self.current_preset,
+            )
+        except Exception:
+            pass
+
+    def on_filter_pill_removed(self, event: FilterPill.Removed) -> None:
+        """Handle removal of a filter pill."""
+        filter_type = event.filter_type
+        filter_value = event.filter_value
+
+        try:
+            if filter_type == "universe":
+                # Remove from selected universes and deselect in list
+                self.selected_universes.discard(filter_value)
+                universe_select = self.query_one("#universe-select", SelectionList)
+                universe_select.deselect(filter_value)
+                self._update_categories_for_selection()
+            elif filter_type == "industry":
+                # Remove from selected industries and deselect in list
+                self.selected_industries.discard(filter_value)
+                industry_select = self.query_one("#industry-select", SelectionList)
+                industry_select.deselect(filter_value)
+            elif filter_type == "category":
+                # Remove from selected categories and deselect in list
+                self.selected_categories.discard(filter_value)
+                category_select = self.query_one("#category-select", SelectionList)
+                category_select.deselect(filter_value)
+            elif filter_type == "preset":
+                # Clear preset
+                self.current_preset = None
+                # Also deselect in preset list
+                preset_list = self.query_one("#preset-list", OptionList)
+                preset_list.highlighted = 0  # Select "None (Custom)"
+
+            # Update all UI components
+            self._update_section_titles()
+            self._update_filter_pills()
+            self._update_workflow_status()
+        except Exception:
+            pass
+
+    def on_clear_all_pill_clicked(self, event: ClearAllPill.Clicked) -> None:
+        """Handle click on Clear All pill."""
+        self.action_clear_filters()
+
     def _get_preset_key_from_selection(self, selected: str) -> str | None:
         """Extract preset key from the formatted option string."""
         if "None" in selected or "Custom" in selected:
@@ -1522,6 +1780,7 @@ class ScreenerApp(App):
         if event.option_list.id == "preset-list":
             selected = str(event.option.prompt)
             self.current_preset = self._get_preset_key_from_selection(selected)
+            self._update_filter_pills()
             self._run_screen()
         elif event.option_list.id == "position-list":
             selected = str(event.option.prompt)
@@ -2049,6 +2308,7 @@ class ScreenerApp(App):
     def _run_discovery_preset(self, preset_name: str) -> None:
         """Run a discovery preset screen."""
         self.current_preset = preset_name
+        self._update_filter_pills()
         desc = PRESET_DESCRIPTIONS.get(preset_name, preset_name)
         self.notify(f"Running: {desc}", title=f"Discovery: {preset_name}", timeout=3)
         self._run_screen()
@@ -2230,10 +2490,20 @@ class ScreenerApp(App):
 
             # Clear and hide categories
             self._hide_categories()
+            self.selected_categories = set()
 
             industry_select = self.query_one("#industry-select", SelectionList)
             industry_select.deselect_all()
             self.selected_industries = set()
+
+            # Clear preset
+            self.current_preset = None
+            preset_list = self.query_one("#preset-list", OptionList)
+            preset_list.highlighted = 0  # Select "None (Custom)"
+
+            # Update section titles and filter pills to reflect cleared state
+            self._update_section_titles()
+            self._update_filter_pills()
 
             self.notify("All filters cleared", timeout=2)
             self._run_screen()
@@ -2264,7 +2534,7 @@ class ScreenerApp(App):
         table.display = False
 
         loading_text = self.query_one("#loading-text", Static)
-        loading_text.update(f"[cyan]SEARCHING[/]")
+        loading_text.update("[cyan]SEARCHING[/]")
 
         loading_detail = self.query_one("#loading-detail", Static)
         loading_detail.update(f"[bold]{ticker}[/]")
