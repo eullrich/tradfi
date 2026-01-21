@@ -111,6 +111,51 @@ PRESET_SCREENS: dict[str, ScreenCriteria] = {
 }
 
 
+# Preset descriptions and criteria summaries for UI display
+PRESET_INFO: dict[str, dict[str, str]] = {
+    "graham": {
+        "name": "Graham",
+        "description": "Benjamin Graham's value criteria",
+        "criteria": "P/E<15, P/B<1.5, CR>2",
+    },
+    "buffett": {
+        "name": "Buffett",
+        "description": "Quality companies at fair prices",
+        "criteria": "ROE>15%, Margin>10%, P/E<25",
+    },
+    "deep-value": {
+        "name": "Deep Value",
+        "description": "Extremely cheap stocks",
+        "criteria": "P/B<1.0, P/E<10",
+    },
+    "oversold-value": {
+        "name": "Oversold Value",
+        "description": "Value stocks at technical lows",
+        "criteria": "P/E<15, RSI<35, near 52W low",
+    },
+    "dividend": {
+        "name": "Dividend",
+        "description": "High-yield income stocks",
+        "criteria": "Yield>3%, ROE>10%",
+    },
+    "quality": {
+        "name": "Quality",
+        "description": "High-margin, profitable businesses",
+        "criteria": "ROE>20%, Margin>15%",
+    },
+    "buyback": {
+        "name": "Buyback",
+        "description": "Cash-rich stocks buying back shares",
+        "criteria": "FCF Yield>3%, down 10%+ from high",
+    },
+    "short-candidates": {
+        "name": "Short Candidates",
+        "description": "Overvalued, weak stocks",
+        "criteria": "P/E>40, ROE<10%, RSI>60",
+    },
+}
+
+
 # Available universes with descriptions
 AVAILABLE_UNIVERSES: dict[str, str] = {
     "sp500": "S&P 500 (~500 large-cap US stocks)",

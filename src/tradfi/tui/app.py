@@ -141,6 +141,7 @@ class ActionMenuScreen(ModalScreen):
 
 from tradfi.core.screener import (
     AVAILABLE_UNIVERSES,
+    PRESET_INFO,
     PRESET_SCREENS,
     ScreenCriteria,
     get_universe_categories,
@@ -918,6 +919,25 @@ class ScreenerApp(App):
     #search-input:focus {
         border: double $success;
     }
+
+    #industry-search {
+        height: 1;
+        min-height: 1;
+        padding: 0 1;
+        margin: 0 0 1 0;
+        border: none;
+        background: $surface-darken-1;
+    }
+
+    #industry-search:focus {
+        border: solid $accent;
+    }
+
+    #sort-indicator {
+        width: auto;
+        padding: 0 2;
+        text-align: center;
+    }
     """
 
     # Simplified bindings - most actions now in action menu (Space)
@@ -977,6 +997,7 @@ class ScreenerApp(App):
         self.selected_universes: set[str] = set()  # Selected universes
         self.selected_categories: set[str] = set()  # Selected categories (for ETF universe)
         self._industries_loaded: bool = False  # Track if industries list is populated
+        self._all_industries: list[tuple[str, int]] = []  # Full list for filtering
 
         # Remote API provider (required - TUI always uses remote API)
         self.api_url = api_url
@@ -998,11 +1019,15 @@ class ScreenerApp(App):
                 Static("Categories", classes="section-title", id="category-title"),
                 SelectionList[str](id="category-select"),
                 Static("Industries (toggle)", classes="section-title"),
+                Input(placeholder="Filter industries...", id="industry-search"),
                 SelectionList[str](id="industry-select"),
                 Static("Presets", classes="section-title"),
                 OptionList(
-                    "None (Custom)",
-                    *[k for k in PRESET_SCREENS.keys()],
+                    "[dim]None (Custom)[/]",
+                    *[
+                        f"[bold]{PRESET_INFO[k]['name']}[/] [dim]{PRESET_INFO[k]['criteria']}[/]"
+                        for k in PRESET_SCREENS.keys()
+                    ],
                     id="preset-list",
                 ),
                 Static("My Lists", classes="section-title"),
@@ -1059,6 +1084,7 @@ class ScreenerApp(App):
         )
         yield Horizontal(
             Static("[dim]Ready.[/] Press [bold]Space[/] for actions, [bold]/[/] to search, [bold]r[/] to scan.", id="status-bar"),
+            Static("[cyan]Sort: P/E ↓[/]", id="sort-indicator"),
             Static("[dim]Connecting...[/]", id="api-status"),
             id="bottom-bar",
         )
@@ -1074,6 +1100,9 @@ class ScreenerApp(App):
 
         # Populate universe selection list
         self._populate_universes()
+
+        # Initialize categories (shows hint when no universe selected)
+        self._update_categories_for_selection()
 
         # Populate industry selection list
         self._populate_industries()
@@ -1168,24 +1197,67 @@ class ScreenerApp(App):
                 industry_select.add_option(("No cached data", "none", False))
                 return
 
-            # Add "ALL" option at the top
-            total_stocks = sum(count for _, count in industries)
-            industry_select.add_option((f"★ ALL ({total_stocks})", "__all__", False))
+            # Store full list for filtering
+            self._all_industries = sorted(industries, key=lambda x: x[0].lower())
 
-            # Sort industries alphabetically and add all
-            sorted_industries = sorted(industries, key=lambda x: x[0].lower())
-            for industry, count in sorted_industries:
-                # Shorten long industry names for display
-                display_name = _simplify_industry(industry)
-                label = f"{display_name} ({count})"
-                industry_select.add_option((label, industry, False))
+            # Display all industries
+            self._display_filtered_industries("")
 
             self._industries_loaded = True
         except Exception:
             pass
 
-    def _populate_categories(self, universe: str) -> None:
-        """Populate the category selection list for a universe."""
+    def _display_filtered_industries(self, search_term: str) -> None:
+        """Display industries filtered by search term."""
+        try:
+            industry_select = self.query_one("#industry-select", SelectionList)
+
+            # Remember current selections
+            current_selections = set(industry_select.selected)
+
+            # Clear and repopulate
+            industry_select.clear_options()
+
+            # Filter industries by search term
+            search_lower = search_term.lower().strip()
+            if search_lower:
+                filtered = [
+                    (ind, count) for ind, count in self._all_industries
+                    if search_lower in ind.lower()
+                ]
+            else:
+                filtered = self._all_industries
+
+            if not filtered and search_term:
+                industry_select.add_option((f"No matches for '{search_term}'", "__none__", False))
+                return
+
+            # Add "ALL" option at the top
+            total_stocks = sum(count for _, count in filtered)
+            industry_select.add_option((f"★ ALL ({total_stocks})", "__all__", False))
+
+            # Add filtered industries
+            for industry, count in filtered:
+                display_name = _simplify_industry(industry)
+                label = f"{display_name} ({count})"
+                # Restore selection if it was selected before
+                is_selected = industry in current_selections
+                industry_select.add_option((label, industry, is_selected))
+
+        except Exception:
+            pass
+
+    def _get_universes_with_categories(self) -> dict[str, list[str]]:
+        """Get all universes that have categories and their category lists."""
+        result = {}
+        for universe in AVAILABLE_UNIVERSES.keys():
+            categories = get_universe_categories(universe)
+            if categories:
+                result[universe] = categories
+        return result
+
+    def _update_categories_for_selection(self) -> None:
+        """Update the category list based on selected universes."""
         try:
             category_select = self.query_one("#category-select", SelectionList)
             category_title = self.query_one("#category-title", Static)
@@ -1194,39 +1266,58 @@ class ScreenerApp(App):
             category_select.clear_options()
             self.selected_categories = set()
 
-            # Get categories for the universe
-            categories = get_universe_categories(universe)
+            # Get universes with categories
+            universes_with_cats = self._get_universes_with_categories()
 
-            if not categories:
-                # No categories - hide the widget
-                category_select.styles.display = "none"
-                category_title.styles.display = "none"
-                return
+            # Find which selected universes have categories
+            if self.selected_universes:
+                relevant_universes = self.selected_universes & set(universes_with_cats.keys())
+            else:
+                # No universes selected = all universes
+                relevant_universes = set(universes_with_cats.keys())
 
-            # Show the widget
+            # Collect all categories from relevant universes
+            all_categories = set()
+            for universe in relevant_universes:
+                all_categories.update(universes_with_cats.get(universe, []))
+
+            # Always show the category section with appropriate content
             category_select.styles.display = "block"
             category_title.styles.display = "block"
 
-            # Add "ALL" option at the top
-            category_select.add_option(("★ ALL", "__all__", False))
+            if not all_categories:
+                # No categories available - show hint
+                if self.selected_universes:
+                    hint = "No categories (try selecting etf)"
+                else:
+                    hint = "Categories available for: etf"
+                category_title.update(f"Categories [dim]({hint})[/]")
+                category_select.styles.display = "none"
+            else:
+                # Show category title with context
+                if len(relevant_universes) == 1:
+                    universe = list(relevant_universes)[0]
+                    category_title.update(f"Categories [dim]({universe})[/]")
+                else:
+                    category_title.update(f"Categories [dim]({len(relevant_universes)} universes)[/]")
 
-            # Add each category
-            for cat in categories:
-                category_select.add_option((cat, cat, False))
+                # Add "ALL" option at the top
+                category_select.add_option(("★ ALL", "__all__", False))
+
+                # Add each category
+                for cat in sorted(all_categories):
+                    category_select.add_option((cat, cat, False))
 
         except Exception:
             pass
+
+    def _populate_categories(self, universe: str) -> None:
+        """Populate the category selection list for a universe (legacy compatibility)."""
+        self._update_categories_for_selection()
 
     def _hide_categories(self) -> None:
-        """Hide the category selection widget."""
-        try:
-            category_select = self.query_one("#category-select", SelectionList)
-            category_title = self.query_one("#category-title", Static)
-            category_select.styles.display = "none"
-            category_title.styles.display = "none"
-            self.selected_categories = set()
-        except Exception:
-            pass
+        """Update categories when universes change."""
+        self._update_categories_for_selection()
 
     def on_selection_list_selected_changed(self, event: SelectionList.SelectedChanged) -> None:
         """Handle selection changes for universes, categories, and industries."""
@@ -1235,15 +1326,10 @@ class ScreenerApp(App):
             selected = set(event.selection_list.selected)
             if "__all__" in selected:
                 self.selected_universes = set()
-                self._hide_categories()
             else:
                 self.selected_universes = selected
-                # Show category selector if exactly one universe with categories is selected
-                if len(selected) == 1:
-                    universe = list(selected)[0]
-                    self._populate_categories(universe)
-                else:
-                    self._hide_categories()
+            # Always update categories based on current universe selection
+            self._update_categories_for_selection()
             self._update_workflow_status()
         elif event.selection_list.id == "category-select":
             # Update selected categories (filter out __all__ marker)
@@ -1276,34 +1362,68 @@ class ScreenerApp(App):
             except FileNotFoundError:
                 pass
 
-        # Build status message
+        # Build status message with actual names
         parts = []
+
+        # Universe names (show up to 3, then count)
         if self.selected_universes:
-            count = len(self.selected_universes)
-            parts.append(f"{count} universe{'s' if count > 1 else ''}")
+            if len(self.selected_universes) <= 3:
+                names = sorted(self.selected_universes)
+                parts.append(f"[cyan]{'+'.join(names)}[/]")
+            else:
+                parts.append(f"[cyan]{len(self.selected_universes)} universes[/]")
         else:
-            parts.append("all universes")
+            parts.append("[dim]all universes[/]")
 
+        # Category names (show up to 2, then count)
         if self.selected_categories:
-            count = len(self.selected_categories)
-            parts.append(f"{count} categor{'ies' if count > 1 else 'y'}")
+            if len(self.selected_categories) <= 2:
+                cats = sorted(self.selected_categories)
+                parts.append(f"[magenta]{'+'.join(cats)}[/]")
+            else:
+                parts.append(f"[magenta]{len(self.selected_categories)} categories[/]")
 
+        # Industry names (show up to 2, then count)
         if self.selected_industries:
-            count = len(self.selected_industries)
-            parts.append(f"{count} industr{'ies' if count > 1 else 'y'}")
+            if len(self.selected_industries) <= 2:
+                inds = sorted(self.selected_industries)
+                # Truncate long names
+                short_inds = [ind[:15] + ".." if len(ind) > 17 else ind for ind in inds]
+                parts.append(f"[yellow]{'+'.join(short_inds)}[/]")
+            else:
+                parts.append(f"[yellow]{len(self.selected_industries)} industries[/]")
 
-        filter_desc = " + ".join(parts)
-        preset_info = f" [{self.current_preset}]" if self.current_preset else ""
+        filter_desc = " | ".join(parts)
+
+        # Preset info with criteria
+        if self.current_preset and self.current_preset in PRESET_INFO:
+            preset_name = PRESET_INFO[self.current_preset]["name"]
+            preset_criteria = PRESET_INFO[self.current_preset]["criteria"]
+            preset_info = f" [bold green]{preset_name}[/] [dim]({preset_criteria})[/]"
+        elif self.current_preset:
+            preset_info = f" [bold green]{self.current_preset}[/]"
+        else:
+            preset_info = ""
 
         self._update_status(
-            f"[bold]Filters:[/] {filter_desc}{preset_info} (~{total_tickers} stocks). "
-            f"Press [bold]r[/] to scan."
+            f"{filter_desc}{preset_info} [dim]~{total_tickers} stocks[/] | "
+            f"[bold]r[/]=scan"
         )
+
+    def _get_preset_key_from_selection(self, selected: str) -> str | None:
+        """Extract preset key from the formatted option string."""
+        if "None" in selected or "Custom" in selected:
+            return None
+        # Find which preset matches based on display name
+        for key, info in PRESET_INFO.items():
+            if info["name"] in selected:
+                return key
+        return None
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         if event.option_list.id == "preset-list":
             selected = str(event.option.prompt)
-            self.current_preset = None if selected == "None (Custom)" else selected
+            self.current_preset = self._get_preset_key_from_selection(selected)
             self._run_screen()
         elif event.option_list.id == "position-list":
             selected = str(event.option.prompt)
@@ -1534,6 +1654,11 @@ class ScreenerApp(App):
         table.display = True
         table.clear()
 
+        # Handle empty results with helpful feedback
+        if not self.stocks:
+            self._show_empty_results_feedback()
+            return
+
         # Sort stocks according to current sort setting
         sort_key, default_reverse, sort_name = self.SORT_OPTIONS[self.current_sort]
         # XOR with sort_reverse to toggle direction
@@ -1603,6 +1728,51 @@ class ScreenerApp(App):
                 f"Found {len(self.stocks)} in {universe_display}{preset_info}{filter_info}. "
                 f"Sort: {sort_name} {direction}. Space=actions, Enter=details."
             )
+
+    def _show_empty_results_feedback(self) -> None:
+        """Show helpful feedback when screening returns no results."""
+        # Build explanation of why no results
+        issues = []
+        suggestions = []
+
+        # Check if preset is too restrictive
+        if self.current_preset:
+            preset_name = PRESET_INFO.get(self.current_preset, {}).get("name", self.current_preset)
+            preset_criteria = PRESET_INFO.get(self.current_preset, {}).get("criteria", "")
+            issues.append(f"Preset '{preset_name}' ({preset_criteria}) filtered all stocks")
+            suggestions.append("Try 'None (Custom)' preset")
+
+        # Check industry filter mismatch
+        if self.selected_industries and self.selected_universes:
+            universes = ", ".join(sorted(self.selected_universes))
+            industries = ", ".join(sorted(list(self.selected_industries)[:2]))
+            if len(self.selected_industries) > 2:
+                industries += f" +{len(self.selected_industries) - 2} more"
+            issues.append(f"Industries '{industries}' may not exist in '{universes}'")
+            suggestions.append("Clear industry filter or select different universe")
+
+        # Check category filter
+        if self.selected_categories and self.selected_universes:
+            cats = ", ".join(sorted(self.selected_categories))
+            issues.append(f"Categories '{cats}' may have no matching stocks")
+            suggestions.append("Clear category filter")
+
+        # Default message
+        if not issues:
+            if self.selected_universes:
+                issues.append("No stocks match current filter combination")
+            else:
+                issues.append("No cached data available")
+            suggestions.append("Press 'c' to clear all filters")
+
+        # Format status message
+        issue_text = issues[0] if issues else "No results"
+        suggestion_text = suggestions[0] if suggestions else "Try different filters"
+
+        self._update_status(
+            f"[yellow]No results:[/] {issue_text}. "
+            f"[dim]Suggestion: {suggestion_text}[/]"
+        )
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         ticker = str(event.row_key.value)
@@ -1717,7 +1887,20 @@ class ScreenerApp(App):
             self.current_sort = sort_key
             self.sort_reverse = False
 
+        self._update_sort_indicator()
         self._populate_table()
+
+    def _update_sort_indicator(self) -> None:
+        """Update the sort indicator in the bottom bar."""
+        try:
+            indicator = self.query_one("#sort-indicator", Static)
+            _, default_reverse, sort_name = self.SORT_OPTIONS[self.current_sort]
+            # XOR with sort_reverse to get actual direction
+            is_descending = default_reverse != self.sort_reverse
+            direction = "↓" if is_descending else "↑"
+            indicator.update(f"[cyan]Sort: {sort_name} {direction}[/]")
+        except Exception:
+            pass
 
     def action_sort_ticker(self) -> None:
         self._sort_by("ticker")
@@ -1821,6 +2004,11 @@ class ScreenerApp(App):
         except Exception:
             pass
 
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Handle input changes for real-time filtering."""
+        if event.input.id == "industry-search":
+            self._display_filtered_industries(event.value)
+
     def on_input_submitted(self, event: Input.Submitted) -> None:
         """Handle input submission."""
         if event.input.id == "search-input":
@@ -1828,6 +2016,9 @@ class ScreenerApp(App):
             if ticker:
                 self._search_ticker(ticker)
                 event.input.value = ""  # Clear the input
+        elif event.input.id == "industry-search":
+            # Just filter on submit as well (already handled by on_input_changed)
+            pass
 
     def _search_ticker(self, ticker: str) -> None:
         """Search for a single ticker and display it."""
