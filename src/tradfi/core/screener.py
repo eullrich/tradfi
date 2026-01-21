@@ -251,7 +251,6 @@ AVAILABLE_UNIVERSES: dict[str, str] = {
     "dow30": "Dow Jones Industrial Average (30 stocks)",
     "nasdaq100": "NASDAQ-100 (100 largest NASDAQ stocks)",
     "russell2000": "Russell 2000 sample (~200 small-cap stocks)",
-    "sweetspot": "$2-12B market cap sweet spot (under-followed + fallen angels)",
     "etf": "ETFs (REITs, Commodities, Sectors, International)",
 }
 
@@ -286,8 +285,7 @@ def load_tickers(universe: str = "sp500") -> list[str]:
     Load ticker list for a given universe.
 
     Args:
-        universe: Name of the universe (sp500, dow30, nasdaq100, russell2000,
-                  sweetspot, etf)
+        universe: Name of the universe (sp500, dow30, nasdaq100, russell2000, etf)
 
     Returns:
         List of ticker symbols
