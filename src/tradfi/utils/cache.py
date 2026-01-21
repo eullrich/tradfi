@@ -379,6 +379,41 @@ def get_cache_stats() -> dict:
         conn.close()
 
 
+def get_batch_cached_stocks(tickers: list[str] | None = None) -> dict[str, dict]:
+    """Get multiple cached stocks in a single query.
+
+    Args:
+        tickers: List of ticker symbols. If None, returns all cached stocks.
+
+    Returns:
+        Dict mapping ticker to cached data dict.
+    """
+    conn = get_db_connection()
+    try:
+        if tickers is None:
+            # Get all cached stocks
+            rows = conn.execute("SELECT ticker, data FROM stock_cache").fetchall()
+        else:
+            # Get specific tickers
+            if not tickers:
+                return {}
+            placeholders = ",".join("?" * len(tickers))
+            rows = conn.execute(
+                f"SELECT ticker, data FROM stock_cache WHERE ticker IN ({placeholders})",
+                [t.upper() for t in tickers]
+            ).fetchall()
+
+        result = {}
+        for row in rows:
+            try:
+                result[row["ticker"]] = json.loads(row["data"])
+            except json.JSONDecodeError:
+                pass
+        return result
+    finally:
+        conn.close()
+
+
 def clear_cache() -> int:
     """Clear all cached stock data. Returns number of entries cleared."""
     conn = get_db_connection()

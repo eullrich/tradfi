@@ -33,6 +33,7 @@ from tradfi.core.valuation import (
 from tradfi.utils.cache import (
     cache_stock_data,
     get_cached_stock_data,
+    get_batch_cached_stocks,
     get_config,
 )
 
@@ -58,6 +59,20 @@ def fetch_stock(ticker_symbol: str, use_cache: bool = True, cache_only: bool = F
     if cached:
         return _dict_to_stock(cached)
     return None
+
+
+def fetch_stocks_batch(tickers: list[str] | None = None) -> dict[str, Stock]:
+    """
+    Fetch multiple stocks from cache in a single efficient query.
+
+    Args:
+        tickers: List of ticker symbols. If None, returns all cached stocks.
+
+    Returns:
+        Dict mapping ticker to Stock object.
+    """
+    cached_data = get_batch_cached_stocks(tickers)
+    return {ticker: _dict_to_stock(data) for ticker, data in cached_data.items()}
 
 
 def fetch_stock_from_api(ticker_symbol: str) -> Stock | None:
