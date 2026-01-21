@@ -1849,20 +1849,30 @@ class ScreenerApp(App):
         except Exception:
             pass
 
-    def _populate_industries(self) -> None:
-        """Populate the industry selection list from remote API."""
+    def _populate_industries(self, tickers: list[str] | None = None) -> None:
+        """Populate the industry selection list from remote API.
+
+        Args:
+            tickers: Optional list of tickers to filter industries by.
+                     If not provided, shows all industries from cache.
+        """
         try:
             industry_select = self.query_one("#industry-select", SelectionList)
 
-            # Get industries from remote API
-            industries = self.remote_provider.get_industries()
+            # Get industries from remote API (filtered by tickers if provided)
+            industries = self.remote_provider.get_industries(tickers)
 
             if not industries:
+                industry_select.clear_options()
                 industry_select.add_option(("No cached data", "none", False))
                 return
 
             # Store full list for filtering
             self._all_industries = sorted(industries, key=lambda x: x[0].lower())
+
+            # Clear any previously selected industries that are no longer available
+            available_industries = {ind for ind, _ in industries}
+            self.selected_industries = self.selected_industries & available_industries
 
             # Display all industries
             self._display_filtered_industries("")
@@ -1870,6 +1880,27 @@ class ScreenerApp(App):
             self._industries_loaded = True
         except Exception:
             pass
+
+    def _update_industries_for_selection(self) -> None:
+        """Update the industry list based on selected universes."""
+        # Get all tickers from selected universes
+        tickers: list[str] = []
+        universes_to_check = (
+            self.selected_universes if self.selected_universes
+            else set(AVAILABLE_UNIVERSES.keys())
+        )
+
+        for name in universes_to_check:
+            try:
+                if self.selected_categories:
+                    tickers.extend(load_tickers_by_categories(name, self.selected_categories))
+                else:
+                    tickers.extend(load_tickers(name))
+            except FileNotFoundError:
+                pass
+
+        # Update industries with the tickers from selected universes
+        self._populate_industries(tickers if tickers else None)
 
     def _display_filtered_industries(self, search_term: str) -> None:
         """Display industries filtered by search term."""
@@ -1996,6 +2027,8 @@ class ScreenerApp(App):
                 self.selected_universes = selected
             # Always update categories based on current universe selection
             self._update_categories_for_selection()
+            # Update industries to show only those in selected universes
+            self._update_industries_for_selection()
             self._update_workflow_status()
             self._update_section_titles()
             self._update_filter_pills()
@@ -2006,6 +2039,8 @@ class ScreenerApp(App):
                 self.selected_categories = set()
             else:
                 self.selected_categories = selected
+            # Update industries based on category selection too
+            self._update_industries_for_selection()
             self._update_workflow_status()
             self._update_section_titles()
             self._update_filter_pills()
