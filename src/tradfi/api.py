@@ -11,6 +11,18 @@ from tradfi.utils.cache import (
     create_magic_link_token,
     get_cache_stats,
     revoke_session_token,
+    user_add_to_list,
+    user_add_to_watchlist,
+    user_create_list,
+    user_delete_list,
+    user_get_list,
+    user_get_list_items,
+    user_get_lists,
+    user_get_watchlist,
+    user_remove_from_list,
+    user_remove_from_watchlist,
+    user_update_list_item_notes,
+    user_update_watchlist_notes,
     validate_session_token,
     verify_magic_link_token,
 )
@@ -59,6 +71,50 @@ class UserResponse(BaseModel):
 class MessageResponse(BaseModel):
     """Simple message response."""
     message: str
+
+
+# Watchlist models
+class WatchlistItemRequest(BaseModel):
+    """Request to add/update a watchlist item."""
+    ticker: str
+    notes: str | None = None
+
+
+class WatchlistItemResponse(BaseModel):
+    """Watchlist item response."""
+    ticker: str
+    added_at: int
+    notes: str | None
+
+
+# List models
+class CreateListRequest(BaseModel):
+    """Request to create a new list."""
+    name: str
+    description: str | None = None
+
+
+class ListResponse(BaseModel):
+    """Saved list response."""
+    id: int
+    name: str
+    description: str | None
+    created_at: int
+    updated_at: int
+    item_count: int | None = None
+
+
+class ListItemRequest(BaseModel):
+    """Request to add/update a list item."""
+    ticker: str
+    notes: str | None = None
+
+
+class ListItemResponse(BaseModel):
+    """List item response."""
+    ticker: str
+    added_at: int
+    notes: str | None
 
 
 # ============================================================================
@@ -216,3 +272,174 @@ def cache_status() -> JSONResponse:
 def health() -> JSONResponse:
     """Health check endpoint."""
     return JSONResponse({"status": "ok"})
+
+
+# ============================================================================
+# Watchlist Endpoints (User-Scoped)
+# ============================================================================
+
+
+@app.get("/api/watchlist", response_model=list[WatchlistItemResponse])
+def get_watchlist(
+    current_user: Annotated[dict, Depends(get_current_user)]
+) -> list[WatchlistItemResponse]:
+    """Get the current user's watchlist."""
+    items = user_get_watchlist(current_user["id"])
+    return [WatchlistItemResponse(**item) for item in items]
+
+
+@app.post("/api/watchlist", response_model=MessageResponse)
+def add_to_watchlist(
+    request: WatchlistItemRequest,
+    current_user: Annotated[dict, Depends(get_current_user)]
+) -> MessageResponse:
+    """Add a ticker to the current user's watchlist."""
+    added = user_add_to_watchlist(current_user["id"], request.ticker, request.notes)
+    if added:
+        return MessageResponse(message=f"{request.ticker.upper()} added to watchlist")
+    return MessageResponse(message=f"{request.ticker.upper()} already in watchlist")
+
+
+@app.delete("/api/watchlist/{ticker}", response_model=MessageResponse)
+def remove_from_watchlist(
+    ticker: str,
+    current_user: Annotated[dict, Depends(get_current_user)]
+) -> MessageResponse:
+    """Remove a ticker from the current user's watchlist."""
+    removed = user_remove_from_watchlist(current_user["id"], ticker)
+    if removed:
+        return MessageResponse(message=f"{ticker.upper()} removed from watchlist")
+    raise HTTPException(status_code=404, detail=f"{ticker.upper()} not in watchlist")
+
+
+@app.patch("/api/watchlist/{ticker}", response_model=MessageResponse)
+def update_watchlist_notes(
+    ticker: str,
+    request: WatchlistItemRequest,
+    current_user: Annotated[dict, Depends(get_current_user)]
+) -> MessageResponse:
+    """Update notes for a watchlist item."""
+    if request.notes is None:
+        raise HTTPException(status_code=400, detail="Notes field required")
+    updated = user_update_watchlist_notes(current_user["id"], ticker, request.notes)
+    if updated:
+        return MessageResponse(message=f"Notes updated for {ticker.upper()}")
+    raise HTTPException(status_code=404, detail=f"{ticker.upper()} not in watchlist")
+
+
+# ============================================================================
+# Saved Lists Endpoints (User-Scoped)
+# ============================================================================
+
+
+@app.get("/api/lists", response_model=list[ListResponse])
+def get_lists(
+    current_user: Annotated[dict, Depends(get_current_user)]
+) -> list[ListResponse]:
+    """Get all saved lists for the current user."""
+    lists = user_get_lists(current_user["id"])
+    return [ListResponse(**lst) for lst in lists]
+
+
+@app.post("/api/lists", response_model=ListResponse)
+def create_list(
+    request: CreateListRequest,
+    current_user: Annotated[dict, Depends(get_current_user)]
+) -> ListResponse:
+    """Create a new saved list."""
+    result = user_create_list(current_user["id"], request.name, request.description)
+    if result:
+        return ListResponse(**result, item_count=0)
+    raise HTTPException(status_code=409, detail=f"List '{request.name}' already exists")
+
+
+@app.get("/api/lists/{list_name}", response_model=ListResponse)
+def get_list(
+    list_name: str,
+    current_user: Annotated[dict, Depends(get_current_user)]
+) -> ListResponse:
+    """Get a specific saved list."""
+    result = user_get_list(current_user["id"], list_name)
+    if result:
+        items = user_get_list_items(current_user["id"], list_name)
+        return ListResponse(**result, item_count=len(items) if items else 0)
+    raise HTTPException(status_code=404, detail=f"List '{list_name}' not found")
+
+
+@app.delete("/api/lists/{list_name}", response_model=MessageResponse)
+def delete_list(
+    list_name: str,
+    current_user: Annotated[dict, Depends(get_current_user)]
+) -> MessageResponse:
+    """Delete a saved list."""
+    deleted = user_delete_list(current_user["id"], list_name)
+    if deleted:
+        return MessageResponse(message=f"List '{list_name}' deleted")
+    raise HTTPException(status_code=404, detail=f"List '{list_name}' not found")
+
+
+@app.get("/api/lists/{list_name}/items", response_model=list[ListItemResponse])
+def get_list_items(
+    list_name: str,
+    current_user: Annotated[dict, Depends(get_current_user)]
+) -> list[ListItemResponse]:
+    """Get all items in a saved list."""
+    items = user_get_list_items(current_user["id"], list_name)
+    if items is None:
+        raise HTTPException(status_code=404, detail=f"List '{list_name}' not found")
+    return [ListItemResponse(**item) for item in items]
+
+
+@app.post("/api/lists/{list_name}/items", response_model=MessageResponse)
+def add_to_list(
+    list_name: str,
+    request: ListItemRequest,
+    current_user: Annotated[dict, Depends(get_current_user)]
+) -> MessageResponse:
+    """Add a ticker to a saved list."""
+    added = user_add_to_list(
+        current_user["id"], list_name, request.ticker, request.notes
+    )
+    if added:
+        return MessageResponse(message=f"{request.ticker.upper()} added to '{list_name}'")
+    # Check if list exists
+    if user_get_list(current_user["id"], list_name) is None:
+        raise HTTPException(status_code=404, detail=f"List '{list_name}' not found")
+    return MessageResponse(message=f"{request.ticker.upper()} already in '{list_name}'")
+
+
+@app.delete("/api/lists/{list_name}/items/{ticker}", response_model=MessageResponse)
+def remove_from_list(
+    list_name: str,
+    ticker: str,
+    current_user: Annotated[dict, Depends(get_current_user)]
+) -> MessageResponse:
+    """Remove a ticker from a saved list."""
+    removed = user_remove_from_list(current_user["id"], list_name, ticker)
+    if removed:
+        return MessageResponse(message=f"{ticker.upper()} removed from '{list_name}'")
+    # Check if list exists
+    if user_get_list(current_user["id"], list_name) is None:
+        raise HTTPException(status_code=404, detail=f"List '{list_name}' not found")
+    raise HTTPException(status_code=404, detail=f"{ticker.upper()} not in '{list_name}'")
+
+
+@app.patch("/api/lists/{list_name}/items/{ticker}", response_model=MessageResponse)
+def update_list_item_notes(
+    list_name: str,
+    ticker: str,
+    request: ListItemRequest,
+    current_user: Annotated[dict, Depends(get_current_user)]
+) -> MessageResponse:
+    """Update notes for an item in a saved list."""
+    if request.notes is None:
+        raise HTTPException(status_code=400, detail="Notes field required")
+    updated = user_update_list_item_notes(
+        current_user["id"], list_name, ticker, request.notes
+    )
+    if updated:
+        return MessageResponse(message=f"Notes updated for {ticker.upper()}")
+    # Check if list exists
+    if user_get_list(current_user["id"], list_name) is None:
+        raise HTTPException(status_code=404, detail=f"List '{list_name}' not found")
+    raise HTTPException(status_code=404, detail=f"{ticker.upper()} not in '{list_name}'")

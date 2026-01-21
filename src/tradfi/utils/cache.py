@@ -210,8 +210,39 @@ def _init_db(conn: sqlite3.Connection) -> None:
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
 
-        -- Add user_id to watchlist (optional, for user-scoped data)
-        -- Note: SQLite doesn't support ADD COLUMN IF NOT EXISTS, so we handle this in code
+        -- User-scoped watchlist (for authenticated API access)
+        CREATE TABLE IF NOT EXISTS user_watchlist (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            ticker TEXT NOT NULL,
+            added_at INTEGER NOT NULL,
+            notes TEXT,
+            UNIQUE(user_id, ticker),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        -- User-scoped saved lists (for authenticated API access)
+        CREATE TABLE IF NOT EXISTS user_saved_lists (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            UNIQUE(user_id, name),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        -- User-scoped saved list items
+        CREATE TABLE IF NOT EXISTS user_saved_list_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            list_id INTEGER NOT NULL,
+            ticker TEXT NOT NULL,
+            added_at INTEGER NOT NULL,
+            notes TEXT,
+            UNIQUE(list_id, ticker),
+            FOREIGN KEY (list_id) REFERENCES user_saved_lists(id) ON DELETE CASCADE
+        );
     """)
     conn.commit()
 
@@ -1277,6 +1308,301 @@ def delete_user(user_id: int) -> bool:
     conn = get_db_connection()
     try:
         cursor = conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
+# ============================================================================
+# USER-SCOPED WATCHLIST
+# ============================================================================
+
+
+def user_add_to_watchlist(user_id: int, ticker: str, notes: str | None = None) -> bool:
+    """
+    Add a ticker to user's watchlist.
+
+    Args:
+        user_id: User ID
+        ticker: Stock ticker
+        notes: Optional notes
+
+    Returns:
+        True if added, False if already exists
+    """
+    conn = get_db_connection()
+    try:
+        conn.execute(
+            """INSERT OR IGNORE INTO user_watchlist (user_id, ticker, added_at, notes)
+               VALUES (?, ?, ?, ?)""",
+            (user_id, ticker.upper(), int(time.time()), notes)
+        )
+        conn.commit()
+        return conn.total_changes > 0
+    finally:
+        conn.close()
+
+
+def user_remove_from_watchlist(user_id: int, ticker: str) -> bool:
+    """Remove a ticker from user's watchlist."""
+    conn = get_db_connection()
+    try:
+        cursor = conn.execute(
+            "DELETE FROM user_watchlist WHERE user_id = ? AND ticker = ?",
+            (user_id, ticker.upper())
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
+def user_get_watchlist(user_id: int) -> list[dict]:
+    """Get all tickers in user's watchlist."""
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            """SELECT ticker, added_at, notes FROM user_watchlist
+               WHERE user_id = ? ORDER BY added_at DESC""",
+            (user_id,)
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def user_update_watchlist_notes(user_id: int, ticker: str, notes: str) -> bool:
+    """Update notes for a watchlist item."""
+    conn = get_db_connection()
+    try:
+        cursor = conn.execute(
+            "UPDATE user_watchlist SET notes = ? WHERE user_id = ? AND ticker = ?",
+            (notes, user_id, ticker.upper())
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
+# ============================================================================
+# USER-SCOPED SAVED LISTS
+# ============================================================================
+
+
+def user_create_list(
+    user_id: int, name: str, description: str | None = None
+) -> dict | None:
+    """
+    Create a new saved list for a user.
+
+    Args:
+        user_id: User ID
+        name: List name
+        description: Optional description
+
+    Returns:
+        List dict if created, None if name already exists
+    """
+    name = name.lower().replace(" ", "-")
+    now = int(time.time())
+    conn = get_db_connection()
+    try:
+        cursor = conn.execute(
+            """INSERT INTO user_saved_lists (user_id, name, description, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (user_id, name, description, now, now)
+        )
+        conn.commit()
+        return {
+            "id": cursor.lastrowid,
+            "name": name,
+            "description": description,
+            "created_at": now,
+            "updated_at": now,
+        }
+    except sqlite3.IntegrityError:
+        return None
+    finally:
+        conn.close()
+
+
+def user_get_lists(user_id: int) -> list[dict]:
+    """Get all saved lists for a user with item counts."""
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            """SELECT
+                l.id,
+                l.name,
+                l.description,
+                l.created_at,
+                l.updated_at,
+                COUNT(i.id) as item_count
+               FROM user_saved_lists l
+               LEFT JOIN user_saved_list_items i ON l.id = i.list_id
+               WHERE l.user_id = ?
+               GROUP BY l.id
+               ORDER BY l.updated_at DESC""",
+            (user_id,)
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def user_get_list(user_id: int, name: str) -> dict | None:
+    """Get a specific list by name."""
+    name = name.lower().replace(" ", "-")
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            """SELECT id, name, description, created_at, updated_at
+               FROM user_saved_lists WHERE user_id = ? AND name = ?""",
+            (user_id, name)
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def user_delete_list(user_id: int, name: str) -> bool:
+    """Delete a saved list."""
+    name = name.lower().replace(" ", "-")
+    conn = get_db_connection()
+    try:
+        cursor = conn.execute(
+            "DELETE FROM user_saved_lists WHERE user_id = ? AND name = ?",
+            (user_id, name)
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
+def user_add_to_list(
+    user_id: int, list_name: str, ticker: str, notes: str | None = None
+) -> bool:
+    """
+    Add a ticker to a user's saved list.
+
+    Args:
+        user_id: User ID
+        list_name: Name of the list
+        ticker: Stock ticker
+        notes: Optional notes
+
+    Returns:
+        True if added, False if list not found or ticker already in list
+    """
+    list_name = list_name.lower().replace(" ", "-")
+    conn = get_db_connection()
+    try:
+        # Get the list
+        list_row = conn.execute(
+            "SELECT id FROM user_saved_lists WHERE user_id = ? AND name = ?",
+            (user_id, list_name)
+        ).fetchone()
+
+        if not list_row:
+            return False
+
+        now = int(time.time())
+        conn.execute(
+            """INSERT OR IGNORE INTO user_saved_list_items (list_id, ticker, added_at, notes)
+               VALUES (?, ?, ?, ?)""",
+            (list_row["id"], ticker.upper(), now, notes)
+        )
+        conn.execute(
+            "UPDATE user_saved_lists SET updated_at = ? WHERE id = ?",
+            (now, list_row["id"])
+        )
+        conn.commit()
+        return conn.total_changes > 0
+    finally:
+        conn.close()
+
+
+def user_remove_from_list(user_id: int, list_name: str, ticker: str) -> bool:
+    """Remove a ticker from a user's saved list."""
+    list_name = list_name.lower().replace(" ", "-")
+    conn = get_db_connection()
+    try:
+        # Get the list
+        list_row = conn.execute(
+            "SELECT id FROM user_saved_lists WHERE user_id = ? AND name = ?",
+            (user_id, list_name)
+        ).fetchone()
+
+        if not list_row:
+            return False
+
+        cursor = conn.execute(
+            "DELETE FROM user_saved_list_items WHERE list_id = ? AND ticker = ?",
+            (list_row["id"], ticker.upper())
+        )
+        if cursor.rowcount > 0:
+            conn.execute(
+                "UPDATE user_saved_lists SET updated_at = ? WHERE id = ?",
+                (int(time.time()), list_row["id"])
+            )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
+def user_get_list_items(user_id: int, list_name: str) -> list[dict] | None:
+    """
+    Get all items in a user's saved list.
+
+    Returns:
+        List of item dicts, or None if list not found
+    """
+    list_name = list_name.lower().replace(" ", "-")
+    conn = get_db_connection()
+    try:
+        # Get the list
+        list_row = conn.execute(
+            "SELECT id FROM user_saved_lists WHERE user_id = ? AND name = ?",
+            (user_id, list_name)
+        ).fetchone()
+
+        if not list_row:
+            return None
+
+        rows = conn.execute(
+            """SELECT ticker, added_at, notes FROM user_saved_list_items
+               WHERE list_id = ? ORDER BY added_at DESC""",
+            (list_row["id"],)
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def user_update_list_item_notes(
+    user_id: int, list_name: str, ticker: str, notes: str
+) -> bool:
+    """Update notes for an item in a user's saved list."""
+    list_name = list_name.lower().replace(" ", "-")
+    conn = get_db_connection()
+    try:
+        # Get the list
+        list_row = conn.execute(
+            "SELECT id FROM user_saved_lists WHERE user_id = ? AND name = ?",
+            (user_id, list_name)
+        ).fetchone()
+
+        if not list_row:
+            return False
+
+        cursor = conn.execute(
+            "UPDATE user_saved_list_items SET notes = ? WHERE list_id = ? AND ticker = ?",
+            (notes, list_row["id"], ticker.upper())
+        )
         conn.commit()
         return cursor.rowcount > 0
     finally:
