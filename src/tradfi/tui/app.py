@@ -32,6 +32,13 @@ ACTION_MENU_ITEMS = {
         ("industry", "f", "Filter by industry"),
         ("clear", "c", "Clear all filters"),
     ],
+    "Discovery": [
+        ("preset_fallen", "F", "Fallen Angels (quality down 30%+)"),
+        ("preset_hidden", "H", "Hidden Gems (small/mid quality)"),
+        ("preset_turnaround", "T", "Turnaround Candidates"),
+        ("preset_momentum", "M", "Momentum + Value"),
+        ("preset_dividend", "D", "Dividend Growers"),
+    ],
     "Sort By": [
         ("sort_pe", "6", "P/E ratio (value)"),
         ("sort_mos", "-", "Margin of Safety"),
@@ -142,7 +149,9 @@ class ActionMenuScreen(ModalScreen):
 from tradfi.core.screener import (
     AVAILABLE_UNIVERSES,
     PRESET_SCREENS,
+    PRESET_DESCRIPTIONS,
     ScreenCriteria,
+    find_similar_stocks,
     get_universe_categories,
     load_tickers,
     load_tickers_by_categories,
@@ -184,6 +193,7 @@ class StockDetailScreen(Screen):
         Binding("x", "add_to_short", "Add to Short"),
         Binding("d", "deep_research", "Deep Research"),
         Binding("q", "quarterly_data", "Quarterly"),
+        Binding("m", "find_similar", "More Like This"),
     ]
 
     def __init__(self, stock: Stock, remote_provider: RemoteDataProvider) -> None:
@@ -192,6 +202,7 @@ class StockDetailScreen(Screen):
         self.remote_provider = remote_provider
         self.research_report = None
         self.quarterly_data = None
+        self.similar_stocks = None
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -215,6 +226,7 @@ class StockDetailScreen(Screen):
                 id="buyback-panel",
             ),
             Static("", id="quarterly-panel"),
+            Static("", id="similar-panel"),
             Static("", id="research-panel"),
             id="detail-container",
         )
@@ -722,6 +734,90 @@ class StockDetailScreen(Screen):
             lines.append(f"{q.quarter}   {rev_str:>10}  {inc_str:>10}  {nm_str:>6}")
 
         quarterly_panel.update("\n".join(lines))
+
+    def action_find_similar(self) -> None:
+        """Find stocks similar to the current stock."""
+        similar_panel = self.query_one("#similar-panel", Static)
+        similar_panel.update(
+            "[bold yellow]More Like This[/]\n\n"
+            f"[dim]Finding stocks similar to {self.stock.ticker}...[/]"
+        )
+
+        # Run in background thread
+        self.run_worker(self._fetch_similar, thread=True)
+
+    def _fetch_similar(self) -> None:
+        """Background worker to find similar stocks."""
+        # Fetch all stocks from cache to compare against
+        all_tickers = []
+        for name in AVAILABLE_UNIVERSES.keys():
+            try:
+                all_tickers.extend(load_tickers(name))
+            except FileNotFoundError:
+                pass
+
+        # Remove duplicates and limit to reasonable size
+        unique_tickers = list(set(all_tickers))
+
+        # Fetch stock data in batch
+        all_stocks = self.remote_provider.fetch_stocks_batch(unique_tickers)
+        candidates = list(all_stocks.values())
+
+        # Find similar stocks
+        similar = find_similar_stocks(self.stock, candidates, limit=8, min_score=20)
+
+        self.call_from_thread(self._display_similar, similar)
+
+    def _display_similar(self, similar: list) -> None:
+        """Display similar stocks in the panel."""
+        similar_panel = self.query_one("#similar-panel", Static)
+
+        if not similar:
+            similar_panel.update(
+                "[bold cyan]More Like This[/]\n\n"
+                "[dim]No similar stocks found in the universe.[/]"
+            )
+            return
+
+        lines = [
+            f"[bold cyan]More Like This[/] [dim]({len(similar)} similar stocks)[/]",
+            "",
+            "[dim]Ticker   Score  P/E    ROE    RSI  Why[/]",
+        ]
+
+        for stock, score, reasons in similar:
+            ticker = f"{stock.ticker:<8}"
+            score_str = f"{score:.0f}"
+
+            pe = stock.valuation.pe_trailing
+            pe_str = f"{pe:.1f}" if pe and isinstance(pe, (int, float)) and pe > 0 else "-"
+
+            roe = stock.profitability.roe
+            roe_str = f"{roe:.0f}%" if roe else "-"
+
+            rsi = stock.technical.rsi_14
+            rsi_str = f"{rsi:.0f}" if rsi else "-"
+
+            reason_str = ", ".join(reasons[:3]) if reasons else ""
+
+            # Color code by score
+            if score >= 60:
+                score_color = "green"
+            elif score >= 40:
+                score_color = "yellow"
+            else:
+                score_color = "dim"
+
+            lines.append(
+                f"{ticker} [{score_color}]{score_str:>3}[/]    "
+                f"{pe_str:>5}  {roe_str:>5}  {rsi_str:>3}  [dim]{reason_str}[/]"
+            )
+
+        lines.append("")
+        lines.append("[dim]Similar based on: industry, size, valuation,[/]")
+        lines.append("[dim]profitability, dividend, and momentum.[/]")
+
+        similar_panel.update("\n".join(lines))
 
 
 class ScreenerApp(App):
@@ -1635,6 +1731,13 @@ class ScreenerApp(App):
                 "clear_cache": self.action_clear_cache,
                 "resync": self.action_resync_universes,
                 "help": self.action_help,
+                # Discovery presets
+                "preset_fallen": self.action_preset_fallen_angels,
+                "preset_hidden": self.action_preset_hidden_gems,
+                "preset_turnaround": self.action_preset_turnaround,
+                "preset_momentum": self.action_preset_momentum_value,
+                "preset_dividend": self.action_preset_dividend_growers,
+                # Sort options
                 "sort_pe": self.action_sort_pe,
                 "sort_mos": self.action_sort_mos,
                 "sort_rsi": self.action_sort_rsi,
@@ -1662,10 +1765,38 @@ class ScreenerApp(App):
             "\n"
             "In action menu, press any key to execute that action.\n"
             "\n"
-            "Detail view: l=Long x=Short w=Watchlist d=Research",
+            "Detail view: l=Long x=Short w=Watchlist d=Research m=Similar",
             title="Help",
             timeout=10,
         )
+
+    # === Discovery Preset Actions ===
+    def _run_discovery_preset(self, preset_name: str) -> None:
+        """Run a discovery preset screen."""
+        self.current_preset = preset_name
+        desc = PRESET_DESCRIPTIONS.get(preset_name, preset_name)
+        self.notify(f"Running: {desc}", title=f"Discovery: {preset_name}", timeout=3)
+        self._run_screen()
+
+    def action_preset_fallen_angels(self) -> None:
+        """Screen for fallen angels - quality stocks down 30%+."""
+        self._run_discovery_preset("fallen-angels")
+
+    def action_preset_hidden_gems(self) -> None:
+        """Screen for hidden gems - small/mid cap quality stocks."""
+        self._run_discovery_preset("hidden-gems")
+
+    def action_preset_turnaround(self) -> None:
+        """Screen for turnaround candidates."""
+        self._run_discovery_preset("turnaround")
+
+    def action_preset_momentum_value(self) -> None:
+        """Screen for momentum + value stocks."""
+        self._run_discovery_preset("momentum-value")
+
+    def action_preset_dividend_growers(self) -> None:
+        """Screen for sustainable dividend payers."""
+        self._run_discovery_preset("dividend-growers")
 
     def action_clear_cache(self) -> None:
         """Clear all cached stock data on the server."""
