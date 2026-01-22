@@ -247,12 +247,123 @@ PRESET_INFO: dict[str, dict[str, str]] = {
 
 # Available universes with descriptions
 AVAILABLE_UNIVERSES: dict[str, str] = {
+    # US Markets
     "sp500": "S&P 500 (~500 large-cap US stocks)",
     "dow30": "Dow Jones Industrial Average (30 stocks)",
     "nasdaq100": "NASDAQ-100 (100 largest NASDAQ stocks)",
     "russell2000": "Russell 2000 sample (~200 small-cap stocks)",
     "etf": "ETFs (REITs, Commodities, Sectors, International)",
+    # Regional Groupings
+    "europe": "Major European markets (UK, DE, FR, CH, NL, ES, IT)",
+    "asia": "Major Asian markets (JP, HK, CN, KR, TW, IN, SG, AU)",
+    "emerging": "Emerging markets (BR, MX, ZA, IN, ID, TH, MY)",
+    # Western Europe
+    "uk": "London Stock Exchange - FTSE (GBP)",
+    "germany": "Frankfurt/XETRA - DAX (EUR)",
+    "france": "Euronext Paris - CAC 40 (EUR)",
+    "switzerland": "SIX Swiss Exchange - SMI (CHF)",
+    "netherlands": "Euronext Amsterdam - AEX (EUR)",
+    "spain": "Bolsa de Madrid - IBEX 35 (EUR)",
+    "italy": "Borsa Italiana - FTSE MIB (EUR)",
+    "belgium": "Euronext Brussels - BEL 20 (EUR)",
+    "austria": "Vienna Stock Exchange - ATX (EUR)",
+    "portugal": "Euronext Lisbon - PSI 20 (EUR)",
+    # Nordics
+    "sweden": "Nasdaq Stockholm - OMX 30 (SEK)",
+    "norway": "Oslo Bors - OBX (NOK)",
+    "denmark": "Nasdaq Copenhagen - OMXC25 (DKK)",
+    "finland": "Nasdaq Helsinki - OMXH25 (EUR)",
+    # Asia-Pacific Developed
+    "japan": "Tokyo Stock Exchange - Nikkei/TOPIX (JPY)",
+    "hongkong": "Hong Kong Exchange - Hang Seng (HKD)",
+    "australia": "ASX - ASX 200 (AUD)",
+    "singapore": "Singapore Exchange - STI (SGD)",
+    "newzealand": "NZX - NZX 50 (NZD)",
+    # Asia-Pacific Emerging
+    "china": "Shanghai & Shenzhen - CSI 300 (CNY)",
+    "korea": "Korea Exchange - KOSPI (KRW)",
+    "taiwan": "Taiwan Stock Exchange - TWSE (TWD)",
+    "india": "National Stock Exchange - NIFTY 50 (INR)",
+    "indonesia": "Indonesia Stock Exchange - LQ45 (IDR)",
+    "malaysia": "Bursa Malaysia - KLCI (MYR)",
+    "thailand": "Stock Exchange of Thailand - SET50 (THB)",
+    # Americas
+    "canada": "Toronto Stock Exchange - TSX 60 (CAD)",
+    "brazil": "B3 Sao Paulo - Ibovespa (BRL)",
+    "mexico": "Bolsa Mexicana - IPC (MXN)",
+    # Middle East & Africa
+    "southafrica": "Johannesburg Stock Exchange - JSE Top 40 (ZAR)",
+    "israel": "Tel Aviv Stock Exchange - TA-35 (ILS)",
+    "turkey": "Borsa Istanbul - BIST 30 (TRY)",
 }
+
+
+# Market currency mapping for international universes
+MARKET_CURRENCIES: dict[str, str] = {
+    # US Markets
+    "sp500": "USD",
+    "dow30": "USD",
+    "nasdaq100": "USD",
+    "russell2000": "USD",
+    "sweetspot": "USD",
+    "etf": "USD",
+    "dividends": "USD",
+    "value": "USD",
+    # Regional (mixed currencies)
+    "europe": "EUR",  # Default to EUR for Europe
+    "asia": "USD",    # Default to USD for cross-region
+    "emerging": "USD",
+    # Western Europe
+    "uk": "GBP",
+    "germany": "EUR",
+    "france": "EUR",
+    "switzerland": "CHF",
+    "netherlands": "EUR",
+    "spain": "EUR",
+    "italy": "EUR",
+    "belgium": "EUR",
+    "austria": "EUR",
+    "portugal": "EUR",
+    # Nordics
+    "sweden": "SEK",
+    "norway": "NOK",
+    "denmark": "DKK",
+    "finland": "EUR",
+    # Asia-Pacific Developed
+    "japan": "JPY",
+    "hongkong": "HKD",
+    "australia": "AUD",
+    "singapore": "SGD",
+    "newzealand": "NZD",
+    # Asia-Pacific Emerging
+    "china": "CNY",
+    "korea": "KRW",
+    "taiwan": "TWD",
+    "india": "INR",
+    "indonesia": "IDR",
+    "malaysia": "MYR",
+    "thailand": "THB",
+    # Americas
+    "canada": "CAD",
+    "brazil": "BRL",
+    "mexico": "MXN",
+    # Middle East & Africa
+    "southafrica": "ZAR",
+    "israel": "ILS",
+    "turkey": "TRY",
+}
+
+
+def get_market_currency(universe: str) -> str:
+    """Get the primary currency for a market/universe.
+
+    Args:
+        universe: Name of the universe
+
+    Returns:
+        Currency code (e.g., "USD", "GBP", "EUR")
+    """
+    return MARKET_CURRENCIES.get(universe, "USD")
 
 
 def get_data_dir() -> Path:

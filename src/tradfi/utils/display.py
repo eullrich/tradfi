@@ -10,6 +10,12 @@ from rich import box
 
 from tradfi.models.stock import Stock
 from tradfi.core.technical import interpret_rsi
+from tradfi.core.currency import (
+    get_currency_symbol,
+    convert_currency,
+    CURRENCY_SYMBOLS,
+)
+from tradfi.utils.cache import get_display_currency
 
 console = Console()
 
@@ -29,19 +35,92 @@ def format_pct(value: float | None, decimals: int = 1) -> str:
     return f"{sign}{value:.{decimals}f}%"
 
 
-def format_large_number(value: float | None) -> str:
-    """Format large numbers with B/M/K suffixes."""
+def format_large_number(
+    value: float | None,
+    currency: str = "USD",
+    display_currency: str | None = None,
+) -> str:
+    """Format large numbers with B/M/K suffixes and currency symbol.
+
+    Args:
+        value: The value to format
+        currency: Original currency of the value (default USD)
+        display_currency: Target display currency (None = use config default)
+
+    Returns:
+        Formatted string like "$1.23B" or "£45.67M"
+    """
     if value is None:
         return "N/A"
+
+    # Get display currency from config if not specified
+    if display_currency is None:
+        display_currency = get_display_currency()
+
+    # Convert if needed (skip for now if currencies match or no conversion available)
+    if currency != display_currency:
+        converted = convert_currency(value, currency, display_currency)
+        if converted is not None:
+            value = converted
+            currency = display_currency
+
+    symbol = get_currency_symbol(currency)
+
+    # Special handling for gold (XAU)
+    if currency == "XAU":
+        if abs(value) >= 1000:
+            return f"XAU {value:,.0f}"
+        return f"XAU {value:.2f}"
+
     if abs(value) >= 1e12:
-        return f"${value / 1e12:.2f}T"
+        return f"{symbol}{value / 1e12:.2f}T"
     if abs(value) >= 1e9:
-        return f"${value / 1e9:.2f}B"
+        return f"{symbol}{value / 1e9:.2f}B"
     if abs(value) >= 1e6:
-        return f"${value / 1e6:.2f}M"
+        return f"{symbol}{value / 1e6:.2f}M"
     if abs(value) >= 1e3:
-        return f"${value / 1e3:.2f}K"
-    return f"${value:.2f}"
+        return f"{symbol}{value / 1e3:.2f}K"
+    return f"{symbol}{value:.2f}"
+
+
+def format_price(
+    value: float | None,
+    currency: str = "USD",
+    display_currency: str | None = None,
+    decimals: int = 2,
+) -> str:
+    """Format a price value with currency symbol.
+
+    Args:
+        value: The price to format
+        currency: Original currency of the value (default USD)
+        display_currency: Target display currency (None = use config default)
+        decimals: Number of decimal places
+
+    Returns:
+        Formatted string like "$123.45" or "£89.12"
+    """
+    if value is None:
+        return "N/A"
+
+    # Get display currency from config if not specified
+    if display_currency is None:
+        display_currency = get_display_currency()
+
+    # Convert if needed
+    if currency != display_currency:
+        converted = convert_currency(value, currency, display_currency)
+        if converted is not None:
+            value = converted
+            currency = display_currency
+
+    symbol = get_currency_symbol(currency)
+
+    # Special handling for gold (XAU)
+    if currency == "XAU":
+        return f"XAU {value:.{decimals}f}"
+
+    return f"{symbol}{value:,.{decimals}f}"
 
 
 def get_signal_display(signal: str) -> Text:
@@ -118,14 +197,17 @@ def display_stock_analysis(stock: Stock) -> None:
     ))
 
     # Price info line
+    stock_currency = stock.currency or "USD"
     price_line = Text()
     price_line.append("Price: ", style="dim")
-    price_line.append(f"${stock.current_price:.2f}" if stock.current_price else "N/A", style="bold")
+    price_line.append(format_price(stock.current_price, currency=stock_currency) if stock.current_price else "N/A", style="bold")
     price_line.append("    Market Cap: ", style="dim")
-    price_line.append(format_large_number(stock.valuation.market_cap))
+    price_line.append(format_large_number(stock.valuation.market_cap, currency=stock_currency))
     price_line.append("    52W Range: ", style="dim")
     if stock.technical.low_52w and stock.technical.high_52w:
-        price_line.append(f"${stock.technical.low_52w:.2f} - ${stock.technical.high_52w:.2f}")
+        low = format_price(stock.technical.low_52w, currency=stock_currency)
+        high = format_price(stock.technical.high_52w, currency=stock_currency)
+        price_line.append(f"{low} - {high}")
     else:
         price_line.append("N/A")
 
@@ -153,12 +235,12 @@ def display_stock_analysis(stock: Stock) -> None:
     )
     val_table.add_row("", "", "", "")
     val_table.add_row(
-        "Graham Number", format_number(stock.fair_value.graham_number, prefix="$"),
-        "DCF Fair Value", format_number(stock.fair_value.dcf_value, prefix="$"),
+        "Graham Number", format_price(stock.fair_value.graham_number, currency=stock_currency),
+        "DCF Fair Value", format_price(stock.fair_value.dcf_value, currency=stock_currency),
     )
     val_table.add_row(
-        "P/E Fair Value", format_number(stock.fair_value.pe_fair_value, prefix="$"),
-        "Current Price", format_number(stock.current_price, prefix="$"),
+        "P/E Fair Value", format_price(stock.fair_value.pe_fair_value, currency=stock_currency),
+        "Current Price", format_price(stock.current_price, currency=stock_currency),
     )
     val_table.add_row(
         "Margin of Safety", get_margin_of_safety_display(stock.fair_value.margin_of_safety_pct),
@@ -208,7 +290,7 @@ def display_stock_analysis(stock: Stock) -> None:
     )
     health_table.add_row(
         "Quick Ratio", format_number(stock.financial_health.quick_ratio),
-        "Free Cash Flow", format_large_number(stock.financial_health.free_cash_flow),
+        "Free Cash Flow", format_large_number(stock.financial_health.free_cash_flow, currency=stock_currency),
     )
 
     console.print(health_table)
@@ -265,7 +347,7 @@ def display_stock_analysis(stock: Stock) -> None:
             "Payout Ratio", format_pct(stock.dividends.payout_ratio),
         )
         div_table.add_row(
-            "Annual Dividend", format_number(stock.dividends.dividend_rate, prefix="$"),
+            "Annual Dividend", format_price(stock.dividends.dividend_rate, currency=stock_currency),
             "", "",
         )
 

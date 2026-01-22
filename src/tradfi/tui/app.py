@@ -237,6 +237,7 @@ ACTION_MENU_ITEMS = {
         ("help", "?", "Show all shortcuts"),
         ("heatmap", "h", "Sector Heatmap"),
         ("scatter", "p", "Scatter Plot"),
+        ("currency", "$", "Toggle display currency"),
     ],
 }
 
@@ -1613,6 +1614,12 @@ class ScreenerApp(App):
         padding: 0 2;
         text-align: center;
     }
+
+    #currency-indicator {
+        width: auto;
+        padding: 0 2;
+        text-align: center;
+    }
     """
 
     # Simplified bindings - most actions now in action menu (Space)
@@ -1641,6 +1648,7 @@ class ScreenerApp(App):
         Binding("9", "sort_div", "Sort: Div", show=False),
         Binding("0", "sort_rsi", "Sort: RSI", show=False),
         Binding("-", "sort_mos", "Sort: MoS", show=False),
+        Binding("$", "toggle_currency", "Currency", show=False),
     ]
 
     # Sort options: (attribute_getter, reverse_default, display_name)
@@ -1679,6 +1687,12 @@ class ScreenerApp(App):
         # Remote API provider (required - TUI always uses remote API)
         self.api_url = api_url
         self.remote_provider = RemoteDataProvider(api_url)
+
+        # Currency display settings
+        from tradfi.core.currency import DEFAULT_CURRENCY_CYCLE, get_currency_symbol
+        from tradfi.utils.cache import get_display_currency
+        self._currency_cycle = DEFAULT_CURRENCY_CYCLE
+        self._display_currency = get_display_currency()  # Load from config
 
     def _get_stock(self, ticker: str) -> Stock | None:
         """Fetch a stock from the remote API."""
@@ -1763,6 +1777,7 @@ class ScreenerApp(App):
         yield Horizontal(
             Static("[dim]Ready.[/] Press [bold]Space[/] for actions, [bold]/[/] to search, [bold]r[/] to scan.", id="status-bar"),
             Static("[cyan]Sort: P/E ↓[/]", id="sort-indicator"),
+            Static(f"[yellow]{self._display_currency}[/]", id="currency-indicator"),
             Static("[dim]Connecting...[/]", id="api-status"),
             id="bottom-bar",
         )
@@ -2631,10 +2646,17 @@ class ScreenerApp(App):
         sorted_stocks = sorted(self.stocks, key=sort_key, reverse=reverse)
 
         # Add rows - simplified 9 columns for cleaner view
+        from tradfi.utils.display import format_price
         for stock in sorted_stocks:
-            # Format key values
+            # Format key values with currency support
             sector = _truncate_sector(stock.sector) if stock.sector else "-"
-            price = f"${stock.current_price:.0f}" if stock.current_price else "-"
+            stock_currency = stock.currency or "USD"
+            price = format_price(
+                stock.current_price,
+                currency=stock_currency,
+                display_currency=self._display_currency,
+                decimals=0,
+            ) if stock.current_price else "-"
             pe = f"{stock.valuation.pe_trailing:.1f}" if stock.valuation.pe_trailing and isinstance(stock.valuation.pe_trailing, (int, float)) else "-"
             roe = f"{stock.profitability.roe:.0f}%" if stock.profitability.roe else "-"
             rsi = f"{stock.technical.rsi_14:.0f}" if stock.technical.rsi_14 else "-"
@@ -2781,6 +2803,7 @@ class ScreenerApp(App):
                 # Visualizations
                 "heatmap": self.action_show_heatmap,
                 "scatter": self.action_show_scatter,
+                "currency": self.action_toggle_currency,
                 # Sort options
                 "sort_pe": self.action_sort_pe,
                 "sort_mos": self.action_sort_mos,
@@ -2810,10 +2833,41 @@ class ScreenerApp(App):
             "In action menu, press any key to execute that action.\n"
             "\n"
             "Detail view: l=Long x=Short w=Watchlist d=Research m=Similar\n"
-            "Visualizations: h=Heatmap p=Scatter",
+            "Visualizations: h=Heatmap p=Scatter | $=Currency",
             title="Help",
             timeout=10,
         )
+
+    def action_toggle_currency(self) -> None:
+        """Toggle display currency (USD -> EUR -> GBP -> JPY -> AUD -> ZAR -> XAU)."""
+        from tradfi.core.currency import get_currency_symbol
+
+        # Cycle to next currency
+        try:
+            current_idx = self._currency_cycle.index(self._display_currency)
+            next_idx = (current_idx + 1) % len(self._currency_cycle)
+        except ValueError:
+            next_idx = 0
+        self._display_currency = self._currency_cycle[next_idx]
+
+        # Update the currency indicator
+        try:
+            indicator = self.query_one("#currency-indicator", Static)
+            symbol = get_currency_symbol(self._display_currency)
+            indicator.update(f"[yellow]{self._display_currency}[/]")
+        except Exception:
+            pass
+
+        # Notify user
+        self.notify(
+            f"Display currency: {self._display_currency}",
+            title="Currency Changed",
+            timeout=2,
+        )
+
+        # Refresh the table to show prices in new currency
+        if self.stocks:
+            self._populate_table()
 
     # === Visualization Actions ===
     def action_show_heatmap(self) -> None:

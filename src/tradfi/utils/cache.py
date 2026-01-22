@@ -30,6 +30,8 @@ class CacheConfig:
     rate_limit_delay: float = DEFAULT_RATE_LIMIT_DELAY  # seconds
     cache_enabled: bool = True
     offline_mode: bool = False  # If True, only load from DB, never from API
+    display_currency: str = "USD"  # Default display currency for prices
+    currency_rate_ttl: int = 3600  # TTL for cached exchange rates (1 hour)
 
 
 def load_config() -> CacheConfig:
@@ -43,6 +45,8 @@ def load_config() -> CacheConfig:
                     rate_limit_delay=data.get("rate_limit_delay", DEFAULT_RATE_LIMIT_DELAY),
                     cache_enabled=data.get("cache_enabled", True),
                     offline_mode=data.get("offline_mode", False),
+                    display_currency=data.get("display_currency", "USD"),
+                    currency_rate_ttl=data.get("currency_rate_ttl", 3600),
                 )
         except Exception:
             pass
@@ -58,6 +62,8 @@ def save_config(config: CacheConfig) -> None:
             "rate_limit_delay": config.rate_limit_delay,
             "cache_enabled": config.cache_enabled,
             "offline_mode": config.offline_mode,
+            "display_currency": config.display_currency,
+            "currency_rate_ttl": config.currency_rate_ttl,
         }, f, indent=2)
 
 
@@ -99,6 +105,119 @@ def set_offline_mode(enabled: bool) -> None:
     config = get_config()
     config.offline_mode = enabled
     save_config(config)
+
+
+def get_display_currency() -> str:
+    """Get the configured display currency."""
+    return get_config().display_currency
+
+
+def set_display_currency(currency: str) -> None:
+    """Set the default display currency."""
+    config = get_config()
+    config.display_currency = currency.upper()
+    save_config(config)
+
+
+def get_currency_rate_ttl() -> int:
+    """Get the TTL for cached exchange rates in seconds."""
+    return get_config().currency_rate_ttl
+
+
+def set_currency_rate_ttl(seconds: int) -> None:
+    """Set the TTL for cached exchange rates in seconds."""
+    config = get_config()
+    config.currency_rate_ttl = seconds
+    save_config(config)
+
+
+# ============================================================================
+# CURRENCY RATE CACHING (Database)
+# ============================================================================
+
+
+def cache_currency_rate(currency: str, rate: float) -> None:
+    """Cache an exchange rate in the database."""
+    conn = get_db_connection()
+    try:
+        conn.execute(
+            """INSERT OR REPLACE INTO currency_rates (currency, rate_to_usd, updated_at)
+               VALUES (?, ?, ?)""",
+            (currency.upper(), rate, int(time.time()))
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_cached_currency_rate(currency: str, ttl: int | None = None) -> tuple[float, int] | None:
+    """
+    Get a cached exchange rate from the database.
+
+    Args:
+        currency: Currency code
+        ttl: Max age in seconds (uses config default if None)
+
+    Returns:
+        Tuple of (rate, timestamp) or None if not found/stale
+    """
+    if ttl is None:
+        ttl = get_currency_rate_ttl()
+
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT rate_to_usd, updated_at FROM currency_rates WHERE currency = ?",
+            (currency.upper(),)
+        ).fetchone()
+
+        if row is None:
+            return None
+
+        # Check if stale
+        age = time.time() - row["updated_at"]
+        if age > ttl:
+            return None
+
+        return (row["rate_to_usd"], row["updated_at"])
+    finally:
+        conn.close()
+
+
+def get_all_cached_currency_rates(ttl: int | None = None) -> dict[str, float]:
+    """
+    Get all cached exchange rates that are still fresh.
+
+    Args:
+        ttl: Max age in seconds (uses config default if None)
+
+    Returns:
+        Dict mapping currency code to rate
+    """
+    if ttl is None:
+        ttl = get_currency_rate_ttl()
+
+    now = int(time.time())
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            "SELECT currency, rate_to_usd FROM currency_rates WHERE ? - updated_at <= ?",
+            (now, ttl)
+        ).fetchall()
+        return {row["currency"]: row["rate_to_usd"] for row in rows}
+    finally:
+        conn.close()
+
+
+def clear_currency_rates() -> int:
+    """Clear all cached currency rates. Returns number cleared."""
+    conn = get_db_connection()
+    try:
+        cursor = conn.execute("DELETE FROM currency_rates")
+        conn.commit()
+        return cursor.rowcount
+    finally:
+        conn.close()
 
 
 def get_db_connection() -> sqlite3.Connection:
@@ -242,6 +361,13 @@ def _init_db(conn: sqlite3.Connection) -> None:
             notes TEXT,
             UNIQUE(list_id, ticker),
             FOREIGN KEY (list_id) REFERENCES user_saved_lists(id) ON DELETE CASCADE
+        );
+
+        -- Currency exchange rates cache
+        CREATE TABLE IF NOT EXISTS currency_rates (
+            currency TEXT PRIMARY KEY,
+            rate_to_usd REAL NOT NULL,
+            updated_at INTEGER NOT NULL
         );
     """)
     conn.commit()
