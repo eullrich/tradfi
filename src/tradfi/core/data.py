@@ -181,14 +181,35 @@ def fetch_stock_from_api(ticker_symbol: str) -> Stock | None:
             except (ValueError, TypeError, OSError):
                 last_div_str = None
 
+        # Calculate dividend yield from rate and price (more reliable than yfinance's dividendYield
+        # which can be returned in inconsistent formats)
+        dividend_rate = info.get("dividendRate")
+        dividend_yield = None
+        if dividend_rate and current_price and current_price > 0:
+            dividend_yield = (dividend_rate / current_price) * 100
+
+        # Calculate 5-year average dividend yield from historical data if available
+        # yfinance's fiveYearAvgDividendYield can also be inconsistent
+        five_year_avg_yield_raw = info.get("fiveYearAvgDividendYield")
+        five_year_avg_yield = None
+        if five_year_avg_yield_raw is not None:
+            # Check if value is likely already a percentage (> 1) or decimal (< 1)
+            # Real dividend yields are typically < 20% (0.20 as decimal)
+            if five_year_avg_yield_raw > 1:
+                # Already a percentage
+                five_year_avg_yield = five_year_avg_yield_raw
+            else:
+                # Decimal format, convert to percentage
+                five_year_avg_yield = five_year_avg_yield_raw * 100
+
         stock.dividends = DividendInfo(
-            dividend_yield=_to_pct(info.get("dividendYield")),
-            dividend_rate=info.get("dividendRate"),
+            dividend_yield=dividend_yield,
+            dividend_rate=dividend_rate,
             payout_ratio=_to_pct(info.get("payoutRatio")),
             ex_dividend_date=ex_div_str,
             dividend_frequency=_detect_dividend_frequency(ticker),
             trailing_annual_dividend_rate=info.get("trailingAnnualDividendRate"),
-            five_year_avg_dividend_yield=_to_pct(info.get("fiveYearAvgDividendYield")),
+            five_year_avg_dividend_yield=five_year_avg_yield,
             last_dividend_value=info.get("lastDividendValue"),
             last_dividend_date=last_div_str,
         )
