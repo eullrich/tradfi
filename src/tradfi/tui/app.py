@@ -22,7 +22,7 @@ from textual.widgets import (
     TabbedContent,
     TabPane,
 )
-from textual.worker import Worker
+from textual.worker import Worker, WorkerState
 
 # Filter pill types for color coding
 FILTER_PILL_COLORS = {
@@ -2165,11 +2165,37 @@ class ScreenerApp(App):
         # Set initial filter section visibility (default: show Sectors)
         self._update_filter_section_visibility()
 
-        # Populate sector selection list (default view)
-        self._populate_sectors()
+        # Populate sector selection list in background (avoid blocking startup)
+        self.run_worker(self._fetch_sectors_async, thread=True)
 
         # Fetch API status in background
         self.run_worker(self._fetch_api_status, thread=True)
+
+    def _fetch_sectors_async(self) -> list[tuple[str, int]] | None:
+        """Fetch sectors from API in background thread."""
+        try:
+            return self.remote_provider.get_sectors(None)
+        except Exception:
+            return None
+
+    def _update_sectors_ui(self, sectors: list[tuple[str, int]]) -> None:
+        """Update sector UI with fetched data."""
+        try:
+            sector_select = self.query_one("#sector-select", SelectionList)
+
+            # Store full list for filtering
+            self._all_sectors = sorted(sectors, key=lambda x: x[0].lower())
+
+            # Clear any previously selected sectors that are no longer available
+            available_sectors = {sec for sec, _ in sectors}
+            self.selected_sectors = self.selected_sectors & available_sectors
+
+            # Display all sectors
+            self._display_filtered_sectors("")
+
+            self._sectors_loaded = True
+        except Exception:
+            pass
 
     def _fetch_api_status(self) -> dict | None:
         """Fetch cache stats from the API."""
@@ -2961,6 +2987,11 @@ class ScreenerApp(App):
             # Check if this is the API status worker
             if event.worker.name == "_fetch_api_status":
                 self._update_api_status(event.worker.result)
+            elif event.worker.name == "_fetch_sectors_async":
+                # Sector fetch completed - update sector list
+                sectors = event.worker.result
+                if sectors:
+                    self._update_sectors_ui(sectors)
             elif event.worker.name == "_resync_all_universes":
                 # Resync completed
                 result = event.worker.result or {"triggered": 0, "failed": 0, "universes": []}
