@@ -230,6 +230,7 @@ ACTION_MENU_ITEMS = {
     "Actions": [
         ("refresh", "r", "Refresh / Run screen"),
         ("save", "s", "Save current list"),
+        ("cache_manage", "K", "Cache Manager"),
         ("clear_cache", "C", "Clear cache"),
         ("resync", "R", "Resync all universes"),
     ],
@@ -726,6 +727,285 @@ class ScatterPlotScreen(ModalScreen):
             self.y_metric = self.METRIC_KEYS[(idx + 2) % len(self.METRIC_KEYS)]
         self._render_plot()
         self.notify(f"Y axis: {VISUALIZATION_METRICS[self.y_metric][0]}", timeout=2)
+
+
+class CacheManagementScreen(ModalScreen):
+    """Modal for managing cache and viewing universe refresh status."""
+
+    BINDINGS = [
+        Binding("escape", "dismiss", "Close"),
+        Binding("q", "dismiss", "Close"),
+        Binding("r", "refresh_selected", "Refresh Selected"),
+        Binding("a", "refresh_all", "Refresh All"),
+    ]
+
+    CSS = """
+    CacheManagementScreen {
+        align: center middle;
+    }
+
+    #cache-container {
+        width: 90;
+        height: 85%;
+        background: $surface;
+        border: thick $primary;
+        padding: 1 2;
+    }
+
+    #cache-title {
+        text-align: center;
+        text-style: bold;
+        color: $secondary;
+        padding-bottom: 1;
+    }
+
+    #cache-status {
+        height: auto;
+        padding: 1;
+        background: $surface-darken-1;
+        margin-bottom: 1;
+    }
+
+    #cache-table {
+        height: 1fr;
+    }
+
+    #cache-footer {
+        height: auto;
+        padding-top: 1;
+        border-top: solid $primary;
+    }
+
+    #cache-buttons {
+        height: auto;
+        padding: 1 0;
+    }
+
+    .cache-button {
+        margin: 0 1;
+    }
+    """
+
+    def __init__(self, remote_provider: RemoteDataProvider) -> None:
+        super().__init__()
+        self.remote_provider = remote_provider
+        self.universe_stats: list[dict] = []
+        self.refresh_status: dict = {}
+        self.health_info: dict = {}
+
+    def compose(self) -> ComposeResult:
+        with Container(id="cache-container"):
+            yield Static("[bold cyan]Cache Manager[/]", id="cache-title")
+            yield Static("Loading...", id="cache-status")
+            yield DataTable(id="cache-table")
+            with Container(id="cache-footer"):
+                yield Static(
+                    "[dim]Select universe and press [green]r[/] to refresh, "
+                    "[green]a[/] to refresh all, [green]Esc[/] to close[/]"
+                )
+                with Horizontal(id="cache-buttons"):
+                    yield Button("Refresh Selected", id="btn-refresh", variant="primary", classes="cache-button")
+                    yield Button("Refresh All US", id="btn-refresh-us", variant="warning", classes="cache-button")
+                    yield Button("Clear Cache", id="btn-clear", variant="error", classes="cache-button")
+
+    def on_mount(self) -> None:
+        """Load cache data when mounted."""
+        self._setup_table()
+        self.run_worker(self._load_cache_data())
+
+    def _setup_table(self) -> None:
+        """Set up the data table columns."""
+        table = self.query_one("#cache-table", DataTable)
+        table.cursor_type = "row"
+        table.add_columns(
+            "Universe",
+            "Description",
+            "Total",
+            "Cached",
+            "Missing",
+            "Coverage",
+            "Est. Refresh",
+        )
+
+    async def _load_cache_data(self) -> None:
+        """Load cache statistics from the API."""
+        try:
+            # Fetch data in parallel
+            import asyncio
+
+            def get_universe_stats():
+                return self.remote_provider.get_universe_stats()
+
+            def get_refresh_status():
+                return self.remote_provider.get_refresh_status()
+
+            def get_health():
+                return self.remote_provider.get_refresh_health()
+
+            # Run sync calls in thread pool
+            loop = asyncio.get_event_loop()
+            self.universe_stats, self.refresh_status, self.health_info = await asyncio.gather(
+                loop.run_in_executor(None, get_universe_stats),
+                loop.run_in_executor(None, get_refresh_status),
+                loop.run_in_executor(None, get_health),
+            )
+
+            self._update_display()
+        except Exception as e:
+            status = self.query_one("#cache-status", Static)
+            status.update(f"[red]Error loading cache data: {e}[/]")
+
+    def _update_display(self) -> None:
+        """Update the display with loaded data."""
+        # Update status panel
+        status = self.query_one("#cache-status", Static)
+        status_lines = []
+
+        # Show scheduler info
+        scheduler = self.health_info.get("scheduler", {})
+        if scheduler.get("enabled"):
+            schedule = scheduler.get("schedule_display", "Unknown")
+            status_lines.append(f"[green]Scheduled:[/] {schedule}")
+        else:
+            status_lines.append("[yellow]Scheduled refresh: Disabled[/]")
+
+        # Show next refresh
+        next_refresh = self.health_info.get("next_scheduled_refresh")
+        if next_refresh:
+            # Parse and format the time
+            try:
+                from datetime import datetime
+                dt = datetime.fromisoformat(next_refresh.replace("Z", "+00:00"))
+                formatted = dt.strftime("%Y-%m-%d %H:%M UTC")
+                status_lines.append(f"[cyan]Next refresh:[/] {formatted}")
+            except Exception:
+                status_lines.append(f"[cyan]Next refresh:[/] {next_refresh}")
+        else:
+            status_lines.append("[dim]Next refresh: Not scheduled[/]")
+
+        # Show last refresh
+        last_refresh = self.health_info.get("last_refresh")
+        if last_refresh:
+            try:
+                from datetime import datetime
+                dt = datetime.fromisoformat(last_refresh.replace("Z", "+00:00"))
+                formatted = dt.strftime("%Y-%m-%d %H:%M UTC")
+                status_lines.append(f"[dim]Last refresh:[/] {formatted}")
+            except Exception:
+                status_lines.append(f"[dim]Last refresh:[/] {last_refresh}")
+
+        # Show if refresh is currently running
+        if self.refresh_status.get("is_running"):
+            universe = self.refresh_status.get("current_universe", "?")
+            progress = self.refresh_status.get("progress", {})
+            completed = progress.get("completed", 0)
+            total = progress.get("total", 0)
+            status_lines.append(f"[yellow bold]REFRESHING:[/] {universe} ({completed}/{total})")
+
+        # Show cache stats summary
+        cache_stats = self.health_info.get("cache_stats", {})
+        if cache_stats:
+            total = cache_stats.get("total_stocks", 0)
+            status_lines.append(f"[dim]Total cached stocks:[/] {total}")
+
+        status.update("\n".join(status_lines))
+
+        # Update table
+        table = self.query_one("#cache-table", DataTable)
+        table.clear()
+
+        for u in self.universe_stats:
+            name = u.get("name", "?")
+            desc = u.get("description", "")
+            # Truncate long descriptions
+            if len(desc) > 35:
+                desc = desc[:33] + ".."
+
+            total = u.get("total", 0)
+            cached = u.get("cached", 0)
+            missing = u.get("missing", 0)
+
+            # Calculate coverage percentage
+            coverage_pct = (cached / total * 100) if total > 0 else 0
+            if coverage_pct >= 90:
+                coverage = f"[green]{coverage_pct:.0f}%[/]"
+            elif coverage_pct >= 50:
+                coverage = f"[yellow]{coverage_pct:.0f}%[/]"
+            else:
+                coverage = f"[red]{coverage_pct:.0f}%[/]"
+
+            est_minutes = u.get("est_refresh_minutes", 0)
+
+            table.add_row(
+                name,
+                desc,
+                str(total),
+                str(cached),
+                str(missing),
+                coverage,
+                f"{est_minutes:.1f}m",
+                key=name,
+            )
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button presses."""
+        button_id = event.button.id
+
+        if button_id == "btn-refresh":
+            self._trigger_refresh_selected()
+        elif button_id == "btn-refresh-us":
+            self._trigger_refresh_us()
+        elif button_id == "btn-clear":
+            self._clear_cache()
+
+    def action_refresh_selected(self) -> None:
+        """Refresh the selected universe."""
+        self._trigger_refresh_selected()
+
+    def action_refresh_all(self) -> None:
+        """Refresh all US universes."""
+        self._trigger_refresh_us()
+
+    def _trigger_refresh_selected(self) -> None:
+        """Trigger refresh for selected universe."""
+        table = self.query_one("#cache-table", DataTable)
+        if table.cursor_row is not None and table.row_count > 0:
+            row_key = table.get_row_at(table.cursor_row)
+            universe = row_key[0] if row_key else None
+
+            if universe:
+                result = self.remote_provider.trigger_refresh(universe)
+                if "error" in result:
+                    self.notify(f"Error: {result['error']}", severity="error")
+                else:
+                    est = result.get("estimated_duration_minutes", 0)
+                    self.notify(f"Refresh started for {universe} (~{est:.0f}m)", severity="information")
+                    # Reload data after a moment
+                    self.run_worker(self._load_cache_data())
+
+    def _trigger_refresh_us(self) -> None:
+        """Trigger refresh for all US universes."""
+        us_universes = ["dow30", "nasdaq100", "sp500"]
+        triggered = []
+
+        for universe in us_universes:
+            result = self.remote_provider.trigger_refresh(universe)
+            if "error" not in result:
+                triggered.append(universe)
+            else:
+                # If one fails (likely already running), stop
+                self.notify(f"Could not start all: {result.get('error', 'Unknown')}", severity="warning")
+                break
+
+        if triggered:
+            self.notify(f"Triggered refresh for: {', '.join(triggered)}", severity="information")
+            self.run_worker(self._load_cache_data())
+
+    def _clear_cache(self) -> None:
+        """Clear all cached data."""
+        count = self.remote_provider.clear_cache()
+        self.notify(f"Cleared {count} cached entries", severity="warning")
+        self.run_worker(self._load_cache_data())
 
 
 def _truncate_sector(sector: str) -> str:
@@ -1649,6 +1929,7 @@ class ScreenerApp(App):
         Binding("0", "sort_rsi", "Sort: RSI", show=False),
         Binding("-", "sort_mos", "Sort: MoS", show=False),
         Binding("$", "toggle_currency", "Currency", show=False),
+        Binding("K", "cache_manage", "Cache Manager", show=False),
     ]
 
     # Sort options: (attribute_getter, reverse_default, display_name)
@@ -2791,6 +3072,7 @@ class ScreenerApp(App):
                 "clear": self.action_clear_filters,
                 "refresh": self.action_refresh,
                 "save": self.action_save_list,
+                "cache_manage": self.action_cache_manage,
                 "clear_cache": self.action_clear_cache,
                 "resync": self.action_resync_universes,
                 "help": self.action_help,
@@ -2921,6 +3203,10 @@ class ScreenerApp(App):
     def action_preset_dividend_growers(self) -> None:
         """Screen for sustainable dividend payers."""
         self._run_discovery_preset("dividend-growers")
+
+    def action_cache_manage(self) -> None:
+        """Open the cache management screen."""
+        self.push_screen(CacheManagementScreen(self.remote_provider))
 
     def action_clear_cache(self) -> None:
         """Clear all cached stock data on the server."""

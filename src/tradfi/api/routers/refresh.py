@@ -5,7 +5,12 @@ from __future__ import annotations
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from pydantic import BaseModel
 
-from tradfi.api.scheduler import get_refresh_state, refresh_universe
+from tradfi.api.scheduler import (
+    get_refresh_state,
+    refresh_universe,
+    get_next_scheduled_refresh,
+    get_scheduler_config,
+)
 from tradfi.core.screener import AVAILABLE_UNIVERSES, load_tickers
 from tradfi.utils.cache import get_cached_stock_data, get_cache_stats
 
@@ -129,13 +134,17 @@ async def refresh_health():
     """
     Health check for the refresh system.
 
-    Returns cache stats and scheduler status.
+    Returns cache stats, scheduler status, and next scheduled refresh.
     """
     state = get_refresh_state()
     cache_stats = get_cache_stats()
+    scheduler_config = get_scheduler_config()
 
     return {
         "scheduler_running": not state["is_running"],  # Not blocked by a refresh
         "last_refresh": state["last_refresh"],
+        "last_refresh_stats": state.get("last_refresh_stats"),
+        "next_scheduled_refresh": get_next_scheduled_refresh(),
+        "scheduler": scheduler_config,
         "cache_stats": cache_stats,
     }

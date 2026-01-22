@@ -173,6 +173,31 @@ def setup_scheduler():
     logger.info(f"Scheduler started. Daily refresh scheduled at {hour:02d}:{minute:02d} UTC")
 
 
+def get_next_scheduled_refresh() -> str | None:
+    """Get the next scheduled refresh time as ISO string."""
+    try:
+        job = scheduler.get_job("daily_refresh")
+        if job and job.next_run_time:
+            return job.next_run_time.isoformat()
+    except Exception:
+        pass
+    return None
+
+
+def get_scheduler_config() -> dict:
+    """Get scheduler configuration info."""
+    enabled = os.environ.get("TRADFI_REFRESH_ENABLED", "true").lower() != "false"
+    hour = int(os.environ.get("TRADFI_REFRESH_HOUR", "5"))
+    minute = int(os.environ.get("TRADFI_REFRESH_MINUTE", "0"))
+
+    return {
+        "enabled": enabled,
+        "schedule_hour_utc": hour,
+        "schedule_minute": minute,
+        "schedule_display": f"{hour:02d}:{minute:02d} UTC daily",
+    }
+
+
 def shutdown_scheduler():
     """Shutdown the scheduler gracefully."""
     if scheduler.running:

@@ -595,3 +595,36 @@ class RemoteDataProvider:
             return {"error": f"Status {response.status_code}"}
         except httpx.RequestError as e:
             return {"error": str(e)}
+
+    def get_refresh_status(self) -> dict:
+        """Get current refresh status (running job info)."""
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.get(f"{self.api_url}/api/v1/refresh/status")
+            if response.status_code == 200:
+                return response.json()
+            return {}
+        except (httpx.RequestError, json.JSONDecodeError):
+            return {}
+
+    def get_universe_stats(self) -> list[dict]:
+        """Get cache statistics for all universes."""
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.get(f"{self.api_url}/api/v1/refresh/universes")
+            if response.status_code == 200:
+                return response.json()
+            return []
+        except (httpx.RequestError, json.JSONDecodeError):
+            return []
+
+    def get_refresh_health(self) -> dict:
+        """Get refresh system health and next scheduled time."""
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.get(f"{self.api_url}/api/v1/refresh/health")
+            if response.status_code == 200:
+                return response.json()
+            return {}
+        except (httpx.RequestError, json.JSONDecodeError):
+            return {}
