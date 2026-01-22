@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import asdict
+from datetime import datetime
 
 import yfinance as yf
 import pandas as pd
@@ -162,10 +163,19 @@ def fetch_stock_from_api(ticker_symbol: str) -> Stock | None:
         )
 
         # Dividend info
+        ex_div_date = info.get("exDividendDate")
+        ex_div_str = None
+        if ex_div_date:
+            # yfinance returns this as a Unix timestamp
+            try:
+                ex_div_str = datetime.fromtimestamp(ex_div_date).strftime("%Y-%m-%d")
+            except (ValueError, TypeError, OSError):
+                ex_div_str = None
         stock.dividends = DividendInfo(
             dividend_yield=info.get("dividendYield"),
             dividend_rate=info.get("dividendRate"),
             payout_ratio=_to_pct(info.get("payoutRatio")),
+            ex_dividend_date=ex_div_str,
         )
 
         # Technical indicators
