@@ -975,7 +975,7 @@ class CacheManagementScreen(ModalScreen):
 
             if universe:
                 self.notify(f"Triggering refresh for {universe}...", severity="information")
-                self.run_worker(self._do_trigger_refresh(universe), exclusive=True, thread=True)
+                self.run_worker(lambda u=universe: self._do_trigger_refresh(u), exclusive=True, thread=True)
 
     def _do_trigger_refresh(self, universe: str) -> None:
         """Worker to trigger refresh for a universe."""
@@ -991,7 +991,7 @@ class CacheManagementScreen(ModalScreen):
     def _trigger_refresh_us(self) -> None:
         """Trigger refresh for all US universes."""
         self.notify("Triggering refresh for US universes...", severity="information")
-        self.run_worker(self._do_trigger_refresh_us(), exclusive=True, thread=True)
+        self.run_worker(self._do_trigger_refresh_us, exclusive=True, thread=True)
 
     def _do_trigger_refresh_us(self) -> None:
         """Worker to trigger refresh for all US universes."""
@@ -1022,7 +1022,7 @@ class CacheManagementScreen(ModalScreen):
     def _clear_cache(self) -> None:
         """Clear all cached data."""
         self.notify("Clearing cache...", severity="information")
-        self.run_worker(self._do_clear_cache(), exclusive=True, thread=True)
+        self.run_worker(self._do_clear_cache, exclusive=True, thread=True)
 
     def _do_clear_cache(self) -> None:
         """Worker to clear all cached data."""
@@ -2303,7 +2303,7 @@ class ScreenerApp(App):
                      If not provided, shows all sectors from cache.
         """
         # Run the blocking API call in a worker thread
-        self.run_worker(self._fetch_and_populate_sectors(tickers), exclusive=True, thread=True)
+        self.run_worker(lambda t=tickers: self._fetch_and_populate_sectors(t), exclusive=True, thread=True)
 
     def _fetch_and_populate_sectors(self, tickers: list[str] | None = None) -> None:
         """Worker to fetch sectors and update UI."""
@@ -3370,7 +3370,7 @@ class ScreenerApp(App):
     def action_clear_cache(self) -> None:
         """Clear all cached stock data on the server."""
         self.notify("Clearing cache...", title="Cache")
-        self.run_worker(self._do_clear_cache_action(), exclusive=True, thread=True)
+        self.run_worker(self._do_clear_cache_action, exclusive=True, thread=True)
 
     def _do_clear_cache_action(self) -> None:
         """Worker to clear all cached stock data on the server."""
