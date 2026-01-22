@@ -186,10 +186,15 @@ class GrowthMetrics:
 class DividendInfo:
     """Dividend information for a stock."""
 
-    dividend_yield: Optional[float] = None
-    dividend_rate: Optional[float] = None
-    payout_ratio: Optional[float] = None
+    dividend_yield: Optional[float] = None  # As percentage (e.g., 3.5 for 3.5%)
+    dividend_rate: Optional[float] = None  # Annual dividend per share
+    payout_ratio: Optional[float] = None  # As percentage
     ex_dividend_date: Optional[str] = None
+    dividend_frequency: Optional[str] = None  # "monthly", "quarterly", "semi-annual", "annual"
+    trailing_annual_dividend_rate: Optional[float] = None  # Trailing 12-month dividend per share
+    five_year_avg_dividend_yield: Optional[float] = None  # 5-year average yield (as percentage)
+    last_dividend_value: Optional[float] = None  # Most recent dividend amount
+    last_dividend_date: Optional[str] = None  # Most recent payment date
 
 
 @dataclass

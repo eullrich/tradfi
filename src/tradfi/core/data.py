@@ -171,11 +171,26 @@ def fetch_stock_from_api(ticker_symbol: str) -> Stock | None:
                 ex_div_str = datetime.fromtimestamp(ex_div_date).strftime("%Y-%m-%d")
             except (ValueError, TypeError, OSError):
                 ex_div_str = None
+
+        # Parse lastDividendDate (Unix timestamp like exDividendDate)
+        last_div_date = info.get("lastDividendDate")
+        last_div_str = None
+        if last_div_date:
+            try:
+                last_div_str = datetime.fromtimestamp(last_div_date).strftime("%Y-%m-%d")
+            except (ValueError, TypeError, OSError):
+                last_div_str = None
+
         stock.dividends = DividendInfo(
-            dividend_yield=info.get("dividendYield"),
+            dividend_yield=_to_pct(info.get("dividendYield")),
             dividend_rate=info.get("dividendRate"),
             payout_ratio=_to_pct(info.get("payoutRatio")),
             ex_dividend_date=ex_div_str,
+            dividend_frequency=_detect_dividend_frequency(ticker),
+            trailing_annual_dividend_rate=info.get("trailingAnnualDividendRate"),
+            five_year_avg_dividend_yield=_to_pct(info.get("fiveYearAvgDividendYield")),
+            last_dividend_value=info.get("lastDividendValue"),
+            last_dividend_date=last_div_str,
         )
 
         # Technical indicators
@@ -275,6 +290,33 @@ def _to_pct(value: float | None) -> float | None:
     if value is None:
         return None
     return value * 100
+
+
+def _detect_dividend_frequency(ticker: yf.Ticker) -> str | None:
+    """Infer dividend frequency from historical payment intervals."""
+    try:
+        dividends = ticker.dividends
+        if dividends.empty or len(dividends) < 2:
+            return None
+
+        # Get intervals between last several dividends
+        recent = dividends.tail(6)  # Last ~1.5 years of data
+        if len(recent) < 2:
+            return None
+
+        intervals = recent.index[1:] - recent.index[:-1]
+        avg_days = intervals.mean().days
+
+        if avg_days <= 45:
+            return "monthly"
+        elif avg_days <= 100:
+            return "quarterly"
+        elif avg_days <= 200:
+            return "semi-annual"
+        else:
+            return "annual"
+    except Exception:
+        return None
 
 
 def _calculate_return(close_prices: pd.Series, days: int) -> float | None:
