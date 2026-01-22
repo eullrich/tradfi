@@ -1347,19 +1347,14 @@ class StockDetailScreen(Screen):
 
     def _get_dividend_info(self) -> str:
         d = self.stock.dividends
-        div_yield = d.dividend_yield
-        div_rate = d.dividend_rate
+        yield_pct = d.dividend_yield  # Already stored as percentage
         payout = d.payout_ratio
-        ex_date = d.ex_dividend_date
 
         # Check if this is a dividend-paying stock/ETF
-        has_dividend = div_yield is not None and div_yield > 0
+        has_dividend = yield_pct is not None and yield_pct > 0
 
         if not has_dividend:
             return "[dim]No dividend/distribution[/]"
-
-        # Convert yield from decimal to percentage for display
-        yield_pct = div_yield * 100 if div_yield else None
 
         # Color code based on yield quality
         if yield_pct:
@@ -1378,45 +1373,61 @@ class StockDetailScreen(Screen):
         if payout:
             if payout < 50:
                 payout_color = "green"
-                payout_status = "Sustainable"
             elif payout < 75:
                 payout_color = "yellow"
-                payout_status = "Moderate"
             elif payout < 100:
                 payout_color = "orange3"
-                payout_status = "High"
             else:
                 payout_color = "red"
-                payout_status = "Unsustainable"
         else:
             payout_color = "dim"
-            payout_status = None
 
+        # Core dividend info
         lines = [
             f"Yield: [{yield_color}]{yield_pct:.2f}%[/]" if yield_pct else "Yield: N/A",
-            f"Annual Rate: ${div_rate:.2f}/share" if div_rate else "Annual Rate: N/A",
+            f"Annual Rate: ${d.dividend_rate:.2f}/share" if d.dividend_rate else "Annual Rate: N/A",
         ]
 
+        # Payout ratio
         if payout is not None:
             lines.append(f"Payout Ratio: [{payout_color}]{payout:.0f}%[/]")
-        else:
-            lines.append("Payout Ratio: N/A")
 
-        if ex_date:
-            lines.append(f"Ex-Dividend: {ex_date}")
+        # Frequency
+        if d.dividend_frequency:
+            lines.append(f"Frequency: {d.dividend_frequency.capitalize()}")
+
+        # Last dividend payment
+        if d.last_dividend_value:
+            last_div_str = f"${d.last_dividend_value:.4f}"
+            if d.last_dividend_date:
+                last_div_str += f" ({d.last_dividend_date})"
+            lines.append(f"Last Payment: {last_div_str}")
+
+        # Ex-dividend date
+        if d.ex_dividend_date:
+            lines.append(f"Ex-Dividend: {d.ex_dividend_date}")
 
         lines.append("")
 
+        # Historical context
+        if d.trailing_annual_dividend_rate:
+            lines.append(f"Trailing 12M: ${d.trailing_annual_dividend_rate:.2f}/share")
+
+        if d.five_year_avg_dividend_yield:
+            # Compare current yield to 5-year average
+            if yield_pct and d.five_year_avg_dividend_yield > 0:
+                vs_avg = ((yield_pct / d.five_year_avg_dividend_yield) - 1) * 100
+                avg_color = "green" if vs_avg > 10 else "yellow" if vs_avg > -10 else "red"
+                lines.append(f"5Y Avg Yield: {d.five_year_avg_dividend_yield:.2f}% ([{avg_color}]{vs_avg:+.0f}%[/] vs now)")
+            else:
+                lines.append(f"5Y Avg Yield: {d.five_year_avg_dividend_yield:.2f}%")
+
         # Add contextual narrative
         if yield_pct and yield_pct >= 4:
+            lines.append("")
             lines.append("[green]High yield income opportunity.[/]")
             if payout and payout > 80:
                 lines.append("[yellow]Watch payout sustainability.[/]")
-        elif yield_pct and yield_pct >= 2:
-            lines.append("[dim]Decent dividend payer.[/]")
-
-        if payout_status:
-            lines.append(f"[dim]Payout: {payout_status}[/]")
 
         return "\n".join(lines)
 
