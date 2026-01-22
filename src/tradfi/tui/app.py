@@ -203,7 +203,7 @@ ACTION_MENU_ITEMS = {
     "Navigate": [
         ("search", "/", "Search ticker"),
         ("universe", "u", "Filter by universe"),
-        ("sector", "f", "Filter by sector"),
+        ("sector", "f", "Filter by sector/category"),
         ("clear", "c", "Clear all filters"),
     ],
     "Discovery": [
@@ -1773,16 +1773,16 @@ class ScreenerApp(App):
         table.display = False
         table.cursor_type = "row"
         # Simplified columns for cleaner view (9 instead of 14)
-        # Focus on key value metrics: Ticker, Industry, Price, P/E, ROE, RSI, MoS%, Div, Signal
-        table.add_columns("Ticker", "Industry", "Price", "P/E", "ROE", "RSI", "MoS%", "Div", "Signal")
+        # Focus on key value metrics: Ticker, Sector, Price, P/E, ROE, RSI, MoS%, Div, Signal
+        table.add_columns("Ticker", "Sector", "Price", "P/E", "ROE", "RSI", "MoS%", "Div", "Signal")
 
         # Populate universe selection list
         self._populate_universes()
 
-        # Initialize categories (shows hint when no universe selected)
-        self._update_categories_for_selection()
+        # Set initial filter section visibility (default: show Sectors)
+        self._update_filter_section_visibility()
 
-        # Populate sector selection list
+        # Populate sector selection list (default view)
         self._populate_sectors()
 
         # Fetch API status in background
@@ -1916,6 +1916,60 @@ class ScreenerApp(App):
         # Update sectors with the tickers from selected universes
         self._populate_sectors(tickers if tickers else None)
 
+    def _is_etf_only_selection(self) -> bool:
+        """Check if only 'etf' universe is selected.
+
+        Returns:
+            True if only 'etf' is selected, False otherwise.
+            No selection or mixed universes = False (show Sectors).
+        """
+        if not self.selected_universes:
+            return False  # No selection = show Sectors
+        return self.selected_universes == {"etf"}
+
+    def _update_filter_section_visibility(self) -> None:
+        """Toggle visibility between Categories and Sectors based on universe selection.
+
+        - ETF only: Show Categories, hide Sectors
+        - Stock universes or mixed: Show Sectors, hide Categories
+        """
+        try:
+            is_etf_only = self._is_etf_only_selection()
+
+            # Get UI elements
+            category_title = self.query_one("#category-title", Static)
+            category_select = self.query_one("#category-select", SelectionList)
+            sector_title = self.query_one("#sector-title", Static)
+            sector_search = self.query_one("#sector-search", Input)
+            sector_select = self.query_one("#sector-select", SelectionList)
+
+            if is_etf_only:
+                # Show Categories, hide Sectors
+                category_title.styles.display = "block"
+                category_select.styles.display = "block"
+                sector_title.styles.display = "none"
+                sector_search.styles.display = "none"
+                sector_select.styles.display = "none"
+
+                # Clear sector selections when hiding
+                if self.selected_sectors:
+                    sector_select.deselect_all()
+                    self.selected_sectors = set()
+            else:
+                # Show Sectors, hide Categories
+                category_title.styles.display = "none"
+                category_select.styles.display = "none"
+                sector_title.styles.display = "block"
+                sector_search.styles.display = "block"
+                sector_select.styles.display = "block"
+
+                # Clear category selections when hiding
+                if self.selected_categories:
+                    category_select.deselect_all()
+                    self.selected_categories = set()
+        except Exception:
+            pass
+
     def _display_filtered_sectors(self, search_term: str) -> None:
         """Display sectors filtered by search term."""
         try:
@@ -1966,7 +2020,11 @@ class ScreenerApp(App):
         return result
 
     def _update_categories_for_selection(self) -> None:
-        """Update the category list based on selected universes."""
+        """Update the category list based on selected universes.
+
+        Note: Visibility is handled by _update_filter_section_visibility().
+        This method only populates the category options.
+        """
         try:
             category_select = self.query_one("#category-select", SelectionList)
             category_title = self.query_one("#category-title", Static)
@@ -1975,49 +2033,33 @@ class ScreenerApp(App):
             category_select.clear_options()
             self.selected_categories = set()
 
+            # Only populate if ETF-only selection
+            if not self._is_etf_only_selection():
+                return
+
             # Get universes with categories
             universes_with_cats = self._get_universes_with_categories()
 
-            # Find which selected universes have categories
-            if self.selected_universes:
-                relevant_universes = self.selected_universes & set(universes_with_cats.keys())
-            else:
-                # No universes selected = all universes
-                relevant_universes = set(universes_with_cats.keys())
-
-            # Collect all categories from relevant universes
+            # Collect all categories from ETF universe
             all_categories = set()
-            for universe in relevant_universes:
+            for universe in self.selected_universes & set(universes_with_cats.keys()):
                 all_categories.update(universes_with_cats.get(universe, []))
 
-            # Always show the category section with appropriate content
-            category_select.styles.display = "block"
-            category_title.styles.display = "block"
-
             if not all_categories:
-                # No categories available - show hint
-                if self.selected_universes:
-                    hint = "No categories (try selecting etf)"
-                else:
-                    hint = "Categories available for: etf"
-                category_title.update(f"Categories [dim]({hint})[/]")
-                category_select.styles.display = "none"
-            else:
-                # Show category title with context
-                if len(relevant_universes) == 1:
-                    universe = list(relevant_universes)[0]
-                    category_title.update(f"Categories [dim]({universe})[/]")
-                else:
-                    category_title.update(f"Categories [dim]({len(relevant_universes)} universes)[/]")
+                category_title.update("Categories [dim](none available)[/]")
+                return
 
-                # Add "ALL" option at the top
-                category_select.add_option(("★ ALL", "__all__", False))
+            # Update title
+            category_title.update("Categories [dim](toggle)[/]")
 
-                # Add each category with icon if available
-                for cat in sorted(all_categories):
-                    icon = ETF_CATEGORY_ICONS.get(cat, "")
-                    display_name = f"{icon} {cat}" if icon else cat
-                    category_select.add_option((display_name, cat, False))
+            # Add "ALL" option at the top
+            category_select.add_option(("★ ALL", "__all__", False))
+
+            # Add each category with icon if available
+            for cat in sorted(all_categories):
+                icon = ETF_CATEGORY_ICONS.get(cat, "")
+                display_name = f"{icon} {cat}" if icon else cat
+                category_select.add_option((display_name, cat, False))
 
         except Exception:
             pass
@@ -2039,10 +2081,13 @@ class ScreenerApp(App):
                 self.selected_universes = set()
             else:
                 self.selected_universes = selected
-            # Always update categories based on current universe selection
-            self._update_categories_for_selection()
-            # Update sectors to show only those in selected universes
-            self._update_sectors_for_selection()
+            # Toggle visibility between Categories and Sectors
+            self._update_filter_section_visibility()
+            # Update the visible filter section
+            if self._is_etf_only_selection():
+                self._update_categories_for_selection()
+            else:
+                self._update_sectors_for_selection()
             self._update_workflow_status()
             self._update_section_titles()
             self._update_filter_pills()
@@ -2142,19 +2187,24 @@ class ScreenerApp(App):
             else:
                 universe_title.update("Universes [dim](toggle)[/]")
 
-            # Update sector title
-            sector_title = self.query_one("#sector-title", Static)
-            if self.selected_sectors:
-                count = len(self.selected_sectors)
-                sector_title.update(f"Sectors [yellow]({count} selected)[/]")
-            else:
-                sector_title.update("Sectors [dim](toggle)[/]")
+            is_etf_only = self._is_etf_only_selection()
 
-            # Category title - add count here too
-            if self.selected_categories:
+            if is_etf_only:
+                # Update category title (only when visible)
                 category_title = self.query_one("#category-title", Static)
-                count = len(self.selected_categories)
-                category_title.update(f"Categories [magenta]({count} selected)[/]")
+                if self.selected_categories:
+                    count = len(self.selected_categories)
+                    category_title.update(f"Categories [magenta]({count} selected)[/]")
+                else:
+                    category_title.update("Categories [dim](toggle)[/]")
+            else:
+                # Update sector title (only when visible)
+                sector_title = self.query_one("#sector-title", Static)
+                if self.selected_sectors:
+                    count = len(self.selected_sectors)
+                    sector_title.update(f"Sectors [yellow]({count} selected)[/]")
+                else:
+                    sector_title.update("Sectors [dim](toggle)[/]")
         except Exception:
             pass
 
@@ -2182,7 +2232,12 @@ class ScreenerApp(App):
                 self.selected_universes.discard(filter_value)
                 universe_select = self.query_one("#universe-select", SelectionList)
                 universe_select.deselect(filter_value)
-                self._update_categories_for_selection()
+                # Toggle visibility and update visible filter section
+                self._update_filter_section_visibility()
+                if self._is_etf_only_selection():
+                    self._update_categories_for_selection()
+                else:
+                    self._update_sectors_for_selection()
             elif filter_type == "sector":
                 # Remove from selected sectors and deselect in list
                 self.selected_sectors.discard(filter_value)
@@ -2957,9 +3012,15 @@ class ScreenerApp(App):
         universe_select.focus()
 
     def action_focus_sector(self) -> None:
-        """Focus the sector selection list."""
-        sector_select = self.query_one("#sector-select", SelectionList)
-        sector_select.focus()
+        """Focus the sector or category selection list based on current universe."""
+        if self._is_etf_only_selection():
+            # ETF mode: focus categories
+            category_select = self.query_one("#category-select", SelectionList)
+            category_select.focus()
+        else:
+            # Stock mode: focus sectors
+            sector_select = self.query_one("#sector-select", SelectionList)
+            sector_select.focus()
 
     def action_clear_filters(self) -> None:
         """Clear all universe, category, and sector selections."""
@@ -2968,10 +3029,12 @@ class ScreenerApp(App):
             universe_select.deselect_all()
             self.selected_universes = set()
 
-            # Clear and hide categories
-            self._hide_categories()
+            # Clear categories
+            category_select = self.query_one("#category-select", SelectionList)
+            category_select.deselect_all()
             self.selected_categories = set()
 
+            # Clear sectors
             sector_select = self.query_one("#sector-select", SelectionList)
             sector_select.deselect_all()
             self.selected_sectors = set()
@@ -2980,6 +3043,10 @@ class ScreenerApp(App):
             self.current_preset = None
             preset_list = self.query_one("#preset-list", OptionList)
             preset_list.highlighted = 0  # Select "None (Custom)"
+
+            # Reset visibility to default (show Sectors)
+            self._update_filter_section_visibility()
+            self._update_sectors_for_selection()
 
             # Update section titles and filter pills to reflect cleared state
             self._update_section_titles()
