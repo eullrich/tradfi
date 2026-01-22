@@ -186,7 +186,14 @@ def fetch_stock_from_api(ticker_symbol: str) -> Stock | None:
         dividend_rate = info.get("dividendRate")
         dividend_yield = None
         if dividend_rate and current_price and current_price > 0:
-            dividend_yield = (dividend_rate / current_price) * 100
+            raw_yield = dividend_rate / current_price
+            # Sanity check: real dividend yields are typically 0-20%, rarely above 50%
+            # If raw_yield > 0.50, it likely means there's a unit mismatch (e.g., rate in cents,
+            # price in dollars) and the value is already percentage-like
+            if raw_yield > 0.50:
+                dividend_yield = raw_yield  # Already percentage-like
+            else:
+                dividend_yield = raw_yield * 100  # Convert decimal to percentage
 
         # Calculate 5-year average dividend yield from historical data if available
         # yfinance's fiveYearAvgDividendYield can also be inconsistent
