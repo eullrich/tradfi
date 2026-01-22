@@ -974,17 +974,27 @@ class CacheManagementScreen(ModalScreen):
             universe = row_key[0] if row_key else None
 
             if universe:
-                result = self.remote_provider.trigger_refresh(universe)
-                if "error" in result:
-                    self.notify(f"Error: {result['error']}", severity="error")
-                else:
-                    est = result.get("estimated_duration_minutes", 0)
-                    self.notify(f"Refresh started for {universe} (~{est:.0f}m)", severity="information")
-                    # Reload data after a moment
-                    self.run_worker(self._load_cache_data())
+                self.notify(f"Triggering refresh for {universe}...", severity="information")
+                self.run_worker(self._do_trigger_refresh(universe), exclusive=True, thread=True)
+
+    def _do_trigger_refresh(self, universe: str) -> None:
+        """Worker to trigger refresh for a universe."""
+        result = self.remote_provider.trigger_refresh(universe)
+        if "error" in result:
+            self.app.call_from_thread(self.notify, f"Error: {result['error']}", severity="error")
+        else:
+            est = result.get("estimated_duration_minutes", 0)
+            self.app.call_from_thread(self.notify, f"Refresh started for {universe} (~{est:.0f}m)", severity="information")
+            # Reload data after triggering
+            self.run_worker(self._load_cache_data())
 
     def _trigger_refresh_us(self) -> None:
         """Trigger refresh for all US universes."""
+        self.notify("Triggering refresh for US universes...", severity="information")
+        self.run_worker(self._do_trigger_refresh_us(), exclusive=True, thread=True)
+
+    def _do_trigger_refresh_us(self) -> None:
+        """Worker to trigger refresh for all US universes."""
         us_universes = ["dow30", "nasdaq100", "sp500"]
         triggered = []
 
@@ -994,17 +1004,30 @@ class CacheManagementScreen(ModalScreen):
                 triggered.append(universe)
             else:
                 # If one fails (likely already running), stop
-                self.notify(f"Could not start all: {result.get('error', 'Unknown')}", severity="warning")
+                self.app.call_from_thread(
+                    self.notify,
+                    f"Could not start all: {result.get('error', 'Unknown')}",
+                    severity="warning"
+                )
                 break
 
         if triggered:
-            self.notify(f"Triggered refresh for: {', '.join(triggered)}", severity="information")
+            self.app.call_from_thread(
+                self.notify,
+                f"Triggered refresh for: {', '.join(triggered)}",
+                severity="information"
+            )
             self.run_worker(self._load_cache_data())
 
     def _clear_cache(self) -> None:
         """Clear all cached data."""
+        self.notify("Clearing cache...", severity="information")
+        self.run_worker(self._do_clear_cache(), exclusive=True, thread=True)
+
+    def _do_clear_cache(self) -> None:
+        """Worker to clear all cached data."""
         count = self.remote_provider.clear_cache()
-        self.notify(f"Cleared {count} cached entries", severity="warning")
+        self.app.call_from_thread(self.notify, f"Cleared {count} cached entries", severity="warning")
         self.run_worker(self._load_cache_data())
 
 
@@ -2279,11 +2302,24 @@ class ScreenerApp(App):
             tickers: Optional list of tickers to filter sectors by.
                      If not provided, shows all sectors from cache.
         """
-        try:
-            sector_select = self.query_one("#sector-select", SelectionList)
+        # Run the blocking API call in a worker thread
+        self.run_worker(self._fetch_and_populate_sectors(tickers), exclusive=True, thread=True)
 
+    def _fetch_and_populate_sectors(self, tickers: list[str] | None = None) -> None:
+        """Worker to fetch sectors and update UI."""
+        try:
             # Get sectors from remote API (filtered by tickers if provided)
             sectors = self.remote_provider.get_sectors(tickers)
+
+            # Update UI on main thread
+            self.app.call_from_thread(self._apply_sectors_to_ui, sectors)
+        except Exception:
+            pass
+
+    def _apply_sectors_to_ui(self, sectors: list[tuple[str, int]] | None) -> None:
+        """Apply fetched sectors to the UI (must run on main thread)."""
+        try:
+            sector_select = self.query_one("#sector-select", SelectionList)
 
             if not sectors:
                 sector_select.clear_options()
@@ -3333,8 +3369,13 @@ class ScreenerApp(App):
 
     def action_clear_cache(self) -> None:
         """Clear all cached stock data on the server."""
+        self.notify("Clearing cache...", title="Cache")
+        self.run_worker(self._do_clear_cache_action(), exclusive=True, thread=True)
+
+    def _do_clear_cache_action(self) -> None:
+        """Worker to clear all cached stock data on the server."""
         count = self.remote_provider.clear_cache()
-        self.notify(f"Cleared {count} cached entries on server", title="Cache Cleared")
+        self.call_from_thread(self.notify, f"Cleared {count} cached entries on server", title="Cache Cleared")
 
     def action_resync_universes(self) -> None:
         """Resync all universes by triggering server-side refresh."""
