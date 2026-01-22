@@ -343,11 +343,11 @@ def get_cache_age(ticker: str) -> float | None:
         conn.close()
 
 
-def get_all_cached_industries() -> list[tuple[str, int]]:
-    """Get all unique industries from cached stocks with counts.
+def get_all_cached_sectors() -> list[tuple[str, int]]:
+    """Get all unique sectors from cached stocks with counts.
 
     Returns:
-        List of (industry_name, count) tuples sorted by count descending.
+        List of (sector_name, count) tuples sorted by count descending.
     """
     from collections import Counter
 
@@ -355,34 +355,34 @@ def get_all_cached_industries() -> list[tuple[str, int]]:
     try:
         rows = conn.execute("SELECT data FROM stock_cache").fetchall()
 
-        industry_counts: Counter = Counter()
+        sector_counts: Counter = Counter()
         for row in rows:
             try:
                 data = json.loads(row["data"])
-                industry = data.get("industry")
-                if industry:
-                    industry_counts[industry] += 1
+                sector = data.get("sector")
+                if sector:
+                    sector_counts[sector] += 1
             except (json.JSONDecodeError, KeyError):
                 pass
 
-        return industry_counts.most_common()
+        return sector_counts.most_common()
     finally:
         conn.close()
 
 
-def get_industries_for_tickers(tickers: list[str]) -> list[tuple[str, int]]:
-    """Get unique industries from cached stocks for specific tickers.
+def get_sectors_for_tickers(tickers: list[str]) -> list[tuple[str, int]]:
+    """Get unique sectors from cached stocks for specific tickers.
 
     Args:
         tickers: List of ticker symbols to filter by.
 
     Returns:
-        List of (industry_name, count) tuples sorted by count descending.
+        List of (sector_name, count) tuples sorted by count descending.
     """
     from collections import Counter
 
     if not tickers:
-        return get_all_cached_industries()
+        return get_all_cached_sectors()
 
     conn = get_db_connection()
     try:
@@ -391,17 +391,17 @@ def get_industries_for_tickers(tickers: list[str]) -> list[tuple[str, int]]:
         query = f"SELECT data FROM stock_cache WHERE ticker IN ({placeholders})"
         rows = conn.execute(query, tickers).fetchall()
 
-        industry_counts: Counter = Counter()
+        sector_counts: Counter = Counter()
         for row in rows:
             try:
                 data = json.loads(row["data"])
-                industry = data.get("industry")
-                if industry:
-                    industry_counts[industry] += 1
+                sector = data.get("sector")
+                if sector:
+                    sector_counts[sector] += 1
             except (json.JSONDecodeError, KeyError):
                 pass
 
-        return industry_counts.most_common()
+        return sector_counts.most_common()
     finally:
         conn.close()
 
