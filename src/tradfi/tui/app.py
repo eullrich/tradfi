@@ -1992,7 +1992,7 @@ class ScreenerApp(App):
     # Simplified bindings - most actions now in action menu (Space)
     BINDINGS = [
         Binding("q", "quit", "Quit"),
-        Binding("space", "show_actions", "Actions", show=True),
+        Binding("space", "show_actions", "Actions", show=True, priority=True),
         Binding("enter", "select", "Select", show=False),
         Binding("r", "refresh", "Refresh", show=True),
         Binding("/", "focus_search", "Search", show=True),
