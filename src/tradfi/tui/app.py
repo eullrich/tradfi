@@ -2070,7 +2070,7 @@ class ScreenerApp(App):
         table.cursor_type = "row"
         # Simplified columns for cleaner view (9 instead of 14)
         # Focus on key value metrics: Ticker, Sector, Price, P/E, ROE, RSI, MoS%, Div, Signal
-        table.add_columns("Ticker", "Sector", "Price", "P/E", "ROE", "RSI", "MoS%", "Div", "Signal")
+        table.add_columns("Company", "Sector", "Price", "P/E", "ROE", "RSI", "MoS%", "Div", "Signal")
 
         # Populate universe selection list
         self._populate_universes()
@@ -2910,7 +2910,7 @@ class ScreenerApp(App):
         # If we were in portfolio mode, restore normal columns
         if self._portfolio_mode or len(table.columns) != 9:
             table.clear(columns=True)
-            table.add_columns("Ticker", "Industry", "Price", "P/E", "ROE", "RSI", "MoS%", "Div", "Signal")
+            table.add_columns("Company", "Sector", "Price", "P/E", "ROE", "RSI", "MoS%", "Div", "Signal")
             self._portfolio_mode = False
         else:
             table.clear()
@@ -2929,6 +2929,11 @@ class ScreenerApp(App):
         # Add rows - simplified 9 columns for cleaner view
         from tradfi.utils.display import format_price
         for stock in sorted_stocks:
+            # Format company name with ticker
+            company_name = stock.name or stock.ticker
+            if len(company_name) > 25:
+                company_name = company_name[:22] + "..."
+            company = f"{company_name} ({stock.ticker})"
             # Format key values with currency support
             sector = _truncate_sector(stock.sector) if stock.sector else "-"
             stock_currency = stock.currency or "USD"
@@ -2953,7 +2958,7 @@ class ScreenerApp(App):
             signal = stock.signal
 
             table.add_row(
-                stock.ticker,
+                company,
                 sector,
                 price,
                 pe,
