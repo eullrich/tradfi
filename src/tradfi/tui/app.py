@@ -766,6 +766,29 @@ class CacheManagementScreen(ModalScreen):
         margin-bottom: 1;
     }
 
+    #refresh-progress {
+        height: auto;
+        padding: 1;
+        background: $warning-darken-3;
+        margin-bottom: 1;
+        display: none;
+    }
+
+    #refresh-progress.active {
+        display: block;
+    }
+
+    #progress-bar-container {
+        height: 1;
+        background: $surface-darken-2;
+        margin: 1 0;
+    }
+
+    #progress-bar {
+        height: 1;
+        background: $success;
+    }
+
     #cache-table {
         height: 1fr;
     }
@@ -786,17 +809,27 @@ class CacheManagementScreen(ModalScreen):
     }
     """
 
+    # Polling interval in seconds
+    POLL_INTERVAL = 2.0
+
     def __init__(self, remote_provider: RemoteDataProvider) -> None:
         super().__init__()
         self.remote_provider = remote_provider
         self.universe_stats: list[dict] = []
         self.refresh_status: dict = {}
         self.health_info: dict = {}
+        self._poll_timer = None
+        self._is_polling = False
 
     def compose(self) -> ComposeResult:
         with Container(id="cache-container"):
             yield Static("[bold cyan]Cache Manager[/]", id="cache-title")
             yield Static("Loading...", id="cache-status")
+            with Container(id="refresh-progress"):
+                yield Static("", id="progress-text")
+                with Container(id="progress-bar-container"):
+                    yield Static("", id="progress-bar")
+                yield Static("", id="progress-details")
             yield DataTable(id="cache-table")
             with Container(id="cache-footer"):
                 yield Static(
@@ -812,6 +845,45 @@ class CacheManagementScreen(ModalScreen):
         """Load cache data when mounted."""
         self._setup_table()
         self.run_worker(self._load_cache_data())
+
+    def on_unmount(self) -> None:
+        """Clean up timer when unmounted."""
+        self._stop_polling()
+
+    def _start_polling(self) -> None:
+        """Start polling for refresh status updates."""
+        if not self._is_polling:
+            self._is_polling = True
+            self._poll_timer = self.set_interval(self.POLL_INTERVAL, self._poll_refresh_status)
+
+    def _stop_polling(self) -> None:
+        """Stop polling for refresh status updates."""
+        self._is_polling = False
+        if self._poll_timer:
+            self._poll_timer.stop()
+            self._poll_timer = None
+
+    def _poll_refresh_status(self) -> None:
+        """Poll for refresh status updates."""
+        self.run_worker(self._fetch_refresh_status())
+
+    async def _fetch_refresh_status(self) -> None:
+        """Fetch just the refresh status (lightweight poll)."""
+        try:
+            import asyncio
+            loop = asyncio.get_event_loop()
+            self.refresh_status = await loop.run_in_executor(
+                None, self.remote_provider.get_refresh_status
+            )
+            self._update_progress_display()
+
+            # Stop polling if refresh completed
+            if not self.refresh_status.get("is_running"):
+                self._stop_polling()
+                # Reload full data to update cache stats
+                self.run_worker(self._load_cache_data())
+        except Exception:
+            pass  # Silently ignore polling errors
 
     def _setup_table(self) -> None:
         """Set up the data table columns."""
@@ -851,9 +923,54 @@ class CacheManagementScreen(ModalScreen):
             )
 
             self._update_display()
+
+            # Start polling if a refresh is running
+            if self.refresh_status.get("is_running"):
+                self._start_polling()
         except Exception as e:
             status = self.query_one("#cache-status", Static)
             status.update(f"[red]Error loading cache data: {e}[/]")
+
+    def _update_progress_display(self) -> None:
+        """Update just the progress section (for real-time updates)."""
+        progress_container = self.query_one("#refresh-progress", Container)
+
+        if self.refresh_status.get("is_running"):
+            progress_container.add_class("active")
+
+            universe = self.refresh_status.get("current_universe", "?")
+            progress = self.refresh_status.get("progress", {})
+            completed = progress.get("completed", 0)
+            total = progress.get("total", 1)
+            fetched = progress.get("fetched", 0)
+            failed = progress.get("failed", 0)
+
+            # Calculate percentage
+            pct = (completed / total * 100) if total > 0 else 0
+
+            # Update progress text
+            progress_text = self.query_one("#progress-text", Static)
+            progress_text.update(
+                f"[yellow bold]⟳ REFRESHING:[/] [cyan]{universe}[/] - "
+                f"[white]{completed}[/]/[white]{total}[/] ([green]{pct:.0f}%[/])"
+            )
+
+            # Update progress bar width
+            progress_bar = self.query_one("#progress-bar", Static)
+            bar_width = int(pct * 0.84)  # Scale to container width (~84 chars)
+            progress_bar.styles.width = max(1, bar_width)
+
+            # Update details
+            progress_details = self.query_one("#progress-details", Static)
+            eta_seconds = (total - completed) * 2  # Assume 2s per stock
+            eta_display = f"{eta_seconds // 60}m {eta_seconds % 60}s" if eta_seconds > 60 else f"{eta_seconds}s"
+            progress_details.update(
+                f"[green]✓ {fetched} fetched[/]  "
+                f"[red]✗ {failed} failed[/]  "
+                f"[dim]ETA: ~{eta_display}[/]"
+            )
+        else:
+            progress_container.remove_class("active")
 
     def _update_display(self) -> None:
         """Update the display with loaded data."""
@@ -865,9 +982,9 @@ class CacheManagementScreen(ModalScreen):
         scheduler = self.health_info.get("scheduler", {})
         if scheduler.get("enabled"):
             schedule = scheduler.get("schedule_display", "Unknown")
-            status_lines.append(f"[green]Scheduled:[/] {schedule}")
+            status_lines.append(f"[green]⏰ Scheduled:[/] {schedule}")
         else:
-            status_lines.append("[yellow]Scheduled refresh: Disabled[/]")
+            status_lines.append("[yellow]⏰ Scheduled refresh: Disabled[/]")
 
         # Show next refresh
         next_refresh = self.health_info.get("next_scheduled_refresh")
@@ -877,38 +994,40 @@ class CacheManagementScreen(ModalScreen):
                 from datetime import datetime
                 dt = datetime.fromisoformat(next_refresh.replace("Z", "+00:00"))
                 formatted = dt.strftime("%Y-%m-%d %H:%M UTC")
-                status_lines.append(f"[cyan]Next refresh:[/] {formatted}")
+                status_lines.append(f"[cyan]⏭ Next refresh:[/] {formatted}")
             except Exception:
-                status_lines.append(f"[cyan]Next refresh:[/] {next_refresh}")
+                status_lines.append(f"[cyan]⏭ Next refresh:[/] {next_refresh}")
         else:
-            status_lines.append("[dim]Next refresh: Not scheduled[/]")
+            status_lines.append("[dim]⏭ Next refresh: Not scheduled[/]")
 
         # Show last refresh
         last_refresh = self.health_info.get("last_refresh")
+        last_stats = self.health_info.get("last_refresh_stats")
         if last_refresh:
             try:
                 from datetime import datetime
                 dt = datetime.fromisoformat(last_refresh.replace("Z", "+00:00"))
                 formatted = dt.strftime("%Y-%m-%d %H:%M UTC")
-                status_lines.append(f"[dim]Last refresh:[/] {formatted}")
+                last_line = f"[dim]⏮ Last refresh:[/] {formatted}"
+                if last_stats:
+                    last_universe = last_stats.get("universe", "")
+                    last_fetched = last_stats.get("fetched", 0)
+                    last_failed = last_stats.get("failed", 0)
+                    last_line += f" ({last_universe}: {last_fetched}✓ {last_failed}✗)"
+                status_lines.append(last_line)
             except Exception:
-                status_lines.append(f"[dim]Last refresh:[/] {last_refresh}")
-
-        # Show if refresh is currently running
-        if self.refresh_status.get("is_running"):
-            universe = self.refresh_status.get("current_universe", "?")
-            progress = self.refresh_status.get("progress", {})
-            completed = progress.get("completed", 0)
-            total = progress.get("total", 0)
-            status_lines.append(f"[yellow bold]REFRESHING:[/] {universe} ({completed}/{total})")
+                status_lines.append(f"[dim]⏮ Last refresh:[/] {last_refresh}")
 
         # Show cache stats summary
         cache_stats = self.health_info.get("cache_stats", {})
         if cache_stats:
             total = cache_stats.get("total_stocks", 0)
-            status_lines.append(f"[dim]Total cached stocks:[/] {total}")
+            status_lines.append(f"[dim]📊 Total cached stocks:[/] {total}")
 
         status.update("\n".join(status_lines))
+
+        # Update progress display
+        self._update_progress_display()
 
         # Update table
         table = self.query_one("#cache-table", DataTable)
@@ -934,6 +1053,10 @@ class CacheManagementScreen(ModalScreen):
             else:
                 coverage = f"[red]{coverage_pct:.0f}%[/]"
 
+            # Mark currently refreshing universe
+            if self.refresh_status.get("is_running") and self.refresh_status.get("current_universe") == name:
+                name = f"[yellow bold]⟳ {name}[/]"
+
             est_minutes = u.get("est_refresh_minutes", 0)
 
             table.add_row(
@@ -944,7 +1067,7 @@ class CacheManagementScreen(ModalScreen):
                 str(missing),
                 coverage,
                 f"{est_minutes:.1f}m",
-                key=name,
+                key=u.get("name", "?"),  # Use original name as key
             )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -972,6 +1095,10 @@ class CacheManagementScreen(ModalScreen):
         if table.cursor_row is not None and table.row_count > 0:
             row_key = table.get_row_at(table.cursor_row)
             universe = row_key[0] if row_key else None
+            # Strip any markup from universe name
+            if universe and "⟳" in universe:
+                import re
+                universe = re.sub(r'\[.*?\]', '', universe).strip().replace("⟳", "").strip()
 
             if universe:
                 result = self.remote_provider.trigger_refresh(universe)
@@ -980,7 +1107,9 @@ class CacheManagementScreen(ModalScreen):
                 else:
                     est = result.get("estimated_duration_minutes", 0)
                     self.notify(f"Refresh started for {universe} (~{est:.0f}m)", severity="information")
-                    # Reload data after a moment
+                    # Start polling for real-time updates
+                    self._start_polling()
+                    # Reload data to show initial progress
                     self.run_worker(self._load_cache_data())
 
     def _trigger_refresh_us(self) -> None:
@@ -999,6 +1128,8 @@ class CacheManagementScreen(ModalScreen):
 
         if triggered:
             self.notify(f"Triggered refresh for: {', '.join(triggered)}", severity="information")
+            # Start polling for real-time updates
+            self._start_polling()
             self.run_worker(self._load_cache_data())
 
     def _clear_cache(self) -> None:
