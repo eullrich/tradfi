@@ -173,6 +173,11 @@ class RemoteDataProvider:
             dividend_rate=data.get("dividend_rate"),
             payout_ratio=data.get("payout_ratio"),
             ex_dividend_date=data.get("ex_dividend_date"),
+            dividend_frequency=data.get("dividend_frequency"),
+            trailing_annual_dividend_rate=data.get("trailing_annual_dividend_rate"),
+            five_year_avg_dividend_yield=data.get("five_year_avg_dividend_yield"),
+            last_dividend_value=data.get("last_dividend_value"),
+            last_dividend_date=data.get("last_dividend_date"),
         )
 
     def _parse_technical(self, data: dict) -> TechnicalIndicators:
