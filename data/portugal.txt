@@ -1,0 +1,19 @@
+# Portugal - Euronext Lisbon (EUR)
+# PSI 20 constituents
+# Use .LS suffix for yfinance
+
+## PSI 20
+ALTR.LS
+BCP.LS
+COR.LS
+CTT.LS
+EDP.LS
+EDPR.LS
+EGL.LS
+GALP.LS
+JMT.LS
+NOS.LS
+NVG.LS
+PHR.LS
+SON.LS
+SEM.LS

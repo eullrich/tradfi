@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from tradfi.api.routers import cache, lists, refresh, screening, stocks, watchlist
+from tradfi.api.routers import cache, currency, lists, refresh, screening, stocks, watchlist
 from tradfi.api.scheduler import setup_scheduler, shutdown_scheduler
 
 # Configure logging
@@ -77,6 +77,7 @@ app.include_router(lists.router, prefix="/api/v1")
 app.include_router(watchlist.router, prefix="/api/v1")
 app.include_router(cache.router, prefix="/api/v1")
 app.include_router(refresh.router, prefix="/api/v1")
+app.include_router(currency.router, prefix="/api/v1")
 
 
 @app.get("/")

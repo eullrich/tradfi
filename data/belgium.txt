@@ -1,0 +1,25 @@
+# Belgium - Euronext Brussels (EUR)
+# BEL 20 constituents
+# Use .BR suffix for yfinance
+
+## BEL 20
+ABI.BR
+KBC.BR
+UCB.BR
+SOFINA.BR
+SOLB.BR
+ACKB.BR
+AGS.BR
+APAM.BR
+ARGX.BR
+BEKB.BR
+COFB.BR
+DIE.BR
+ELI.BR
+EVS.BR
+GLPG.BR
+GBLB.BR
+MELB.BR
+PROX.BR
+UMI.BR
+WDP.BR

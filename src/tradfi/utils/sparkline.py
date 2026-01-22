@@ -1,7 +1,21 @@
 """ASCII sparkline generation for terminal trend visualization."""
 
+from __future__ import annotations
+
 # Unicode block characters for sparklines (increasing height)
 SPARK_CHARS = "▁▂▃▄▅▆▇█"
+
+
+# Import format_large_number from display module to avoid duplication
+# Use lazy import to avoid circular dependencies
+def format_large_number(value: float | None, currency: str = "USD") -> str:
+    """Format a large number with B/M/K suffix.
+
+    This is a wrapper that delegates to the display module's implementation.
+    Kept here for backward compatibility.
+    """
+    from tradfi.utils.display import format_large_number as _format_large_number
+    return _format_large_number(value, currency=currency)
 
 
 def sparkline(values: list[float], width: int = 10) -> str:
@@ -77,26 +91,6 @@ def sparkline_with_label(
         return f"{label}: {formatted}  {spark}"
 
     return f"{label}: {spark}"
-
-
-def format_large_number(value: float) -> str:
-    """Format a large number with B/M/K suffix."""
-    if value is None:
-        return "N/A"
-
-    abs_val = abs(value)
-    sign = "-" if value < 0 else ""
-
-    if abs_val >= 1_000_000_000_000:
-        return f"{sign}${abs_val / 1_000_000_000_000:.1f}T"
-    elif abs_val >= 1_000_000_000:
-        return f"{sign}${abs_val / 1_000_000_000:.1f}B"
-    elif abs_val >= 1_000_000:
-        return f"{sign}${abs_val / 1_000_000:.1f}M"
-    elif abs_val >= 1_000:
-        return f"{sign}${abs_val / 1_000:.1f}K"
-    else:
-        return f"{sign}${abs_val:.0f}"
 
 
 def trend_indicator(values: list[float]) -> str:
