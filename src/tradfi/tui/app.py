@@ -2312,7 +2312,7 @@ class ScreenerApp(App):
             sectors = self.remote_provider.get_sectors(tickers)
 
             # Update UI on main thread
-            self.app.call_from_thread(self._apply_sectors_to_ui, sectors)
+            self.call_from_thread(self._apply_sectors_to_ui, sectors)
         except Exception:
             pass
 
