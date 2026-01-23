@@ -2303,7 +2303,7 @@ class ScreenerApp(App):
                      If not provided, shows all sectors from cache.
         """
         # Run the blocking API call in a worker thread
-        self.run_worker(self._fetch_and_populate_sectors(tickers), exclusive=True, thread=True)
+        self.run_worker(lambda: self._fetch_and_populate_sectors(tickers), exclusive=True, thread=True)
 
     def _fetch_and_populate_sectors(self, tickers: list[str] | None = None) -> None:
         """Worker to fetch sectors and update UI."""
@@ -2312,7 +2312,7 @@ class ScreenerApp(App):
             sectors = self.remote_provider.get_sectors(tickers)
 
             # Update UI on main thread
-            self.app.call_from_thread(self._apply_sectors_to_ui, sectors)
+            self.call_from_thread(self._apply_sectors_to_ui, sectors)
         except Exception:
             pass
 
