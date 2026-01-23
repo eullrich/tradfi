@@ -210,8 +210,8 @@ ACTION_MENU_ITEMS = {
         ("preset_fallen", "F", "Fallen Angels (quality down 30%+)"),
         ("preset_hidden", "H", "Hidden Gems (small/mid quality)"),
         ("preset_turnaround", "T", "Turnaround Candidates"),
-        ("preset_momentum", "M", "Momentum + Value"),
-        ("preset_dividend", "D", "Dividend Growers"),
+        ("preset_oversold", "O", "Oversold (RSI<30, near lows)"),
+        ("preset_dividend", "D", "Dividend (yield>3%)"),
     ],
     "Sort By": [
         ("sort_pe", "6", "P/E ratio (value)"),
@@ -3372,8 +3372,8 @@ class ScreenerApp(App):
                 "preset_fallen": self.action_preset_fallen_angels,
                 "preset_hidden": self.action_preset_hidden_gems,
                 "preset_turnaround": self.action_preset_turnaround,
-                "preset_momentum": self.action_preset_momentum_value,
-                "preset_dividend": self.action_preset_dividend_growers,
+                "preset_oversold": self.action_preset_oversold,
+                "preset_dividend": self.action_preset_dividend,
                 # Visualizations
                 "heatmap": self.action_show_heatmap,
                 "scatter": self.action_show_scatter,
@@ -3488,13 +3488,13 @@ class ScreenerApp(App):
         """Screen for turnaround candidates."""
         self._run_discovery_preset("turnaround")
 
-    def action_preset_momentum_value(self) -> None:
-        """Screen for momentum + value stocks."""
-        self._run_discovery_preset("momentum-value")
+    def action_preset_oversold(self) -> None:
+        """Screen for technically oversold stocks."""
+        self._run_discovery_preset("oversold")
 
-    def action_preset_dividend_growers(self) -> None:
-        """Screen for sustainable dividend payers."""
-        self._run_discovery_preset("dividend-growers")
+    def action_preset_dividend(self) -> None:
+        """Screen for high-yield dividend stocks."""
+        self._run_discovery_preset("dividend")
 
     def action_cache_manage(self) -> None:
         """Open the cache management screen."""

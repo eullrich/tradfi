@@ -63,8 +63,11 @@ class ScreenCriteria:
 
 
 # Pre-built screen definitions
+# Streamlined to 7 focused presets - each with a distinct purpose
 PRESET_SCREENS: dict[str, ScreenCriteria] = {
+    # === VALUE PRESETS ===
     "graham": ScreenCriteria(
+        # Benjamin Graham's classic value criteria
         pe_max=15,
         pb_max=1.5,
         pe_pb_product_max=22.5,
@@ -72,95 +75,48 @@ PRESET_SCREENS: dict[str, ScreenCriteria] = {
         debt_equity_max=50,  # 0.5 ratio = 50%
     ),
     "buffett": ScreenCriteria(
+        # Warren Buffett's quality-at-fair-price approach
         roe_min=15,
         debt_equity_max=50,
         margin_min=10,
         pe_max=25,
     ),
-    "deep-value": ScreenCriteria(
-        pb_max=1.0,
-        pe_max=10,
-    ),
-    "oversold-value": ScreenCriteria(
-        pe_max=15,
-        roe_min=10,
-        rsi_max=35,
-        near_52w_low_pct=20,
-        debt_equity_max=100,
-    ),
+    # === INCOME PRESET ===
     "dividend": ScreenCriteria(
+        # High-yield income stocks with quality filters
         dividend_yield_min=3.0,
         debt_equity_max=100,
         roe_min=10,
     ),
-    "quality": ScreenCriteria(
-        roe_min=20,
-        margin_min=15,
-        debt_equity_max=50,
-    ),
-    "buyback": ScreenCriteria(
-        fcf_yield_min=3.0,  # Good free cash flow (3%+)
-        debt_equity_max=150,  # Moderate leverage OK
-        pct_from_52w_high_max=-10,  # Down at least 10% - management buys dips
-    ),
-    "short-candidates": ScreenCriteria(
-        pe_min=40,  # Very expensive valuation
-        roe_max=10,  # Weak profitability for the price
-        rsi_min=60,  # Overbought territory
-    ),
-    # === Thematic Discovery Screens ===
+    # === DISCOVERY PRESETS ===
     "fallen-angels": ScreenCriteria(
-        # Quality stocks that have fallen hard - potential turnaround plays
+        # Quality stocks that have fallen hard - contrarian opportunities
         roe_min=15,  # Still profitable (quality)
         margin_min=10,  # Decent margins
         pct_from_52w_high_max=-30,  # Down at least 30% from high
         debt_equity_max=100,  # Not overleveraged
     ),
-    "dividend-growers": ScreenCriteria(
-        # Sustainable dividends with room to grow
-        dividend_yield_min=2.5,  # Meaningful yield
-        roe_min=12,  # Profitable enough to sustain dividends
-        debt_equity_max=80,  # Conservative leverage
-    ),
-    "turnaround": ScreenCriteria(
-        # Beaten down stocks with recovery potential
-        pe_max=12,  # Cheap valuation
-        pct_from_52w_high_max=-25,  # Significant drawdown
-        rsi_max=40,  # Weak momentum (potential bottom)
-        current_ratio_min=1.5,  # Can survive
-    ),
     "hidden-gems": ScreenCriteria(
-        # Small/mid caps with strong fundamentals
+        # Small/mid caps with strong fundamentals - less analyst coverage
         market_cap_min=500_000_000,  # At least $500M
         market_cap_max=15_000_000_000,  # Under $15B (less covered)
         pe_max=18,  # Reasonable valuation
         roe_min=12,  # Quality business
         debt_equity_max=75,  # Conservative
     ),
-    "momentum-value": ScreenCriteria(
-        # Value stocks showing positive momentum
-        pe_max=20,
-        pb_max=2.5,
-        roe_min=10,
-        rsi_min=45,  # Not oversold - showing strength
-        rsi_max=65,  # Not overbought yet
+    # === CONTRARIAN PRESETS ===
+    "oversold": ScreenCriteria(
+        # Pure technical oversold - combine with value presets for best results
+        rsi_max=30,
+        near_52w_low_pct=15,  # Within 15% of 52-week low
+        below_200ma=True,  # Below 200-day moving average
     ),
-    # === Size-Based Screens ===
-    "sweetspot": ScreenCriteria(
-        # $2-12B mid-cap "sweet spot" - under-followed quality at reasonable prices
-        market_cap_min=2_000_000_000,  # At least $2B
-        market_cap_max=12_000_000_000,  # Under $12B (less analyst coverage)
-        pe_max=22,  # Reasonable valuation
-        roe_min=10,  # Quality business
-        debt_equity_max=100,  # Not overleveraged
-    ),
-    # === Income Screens ===
-    "income": ScreenCriteria(
-        # Dividend aristocrats-style: sustainable high-quality income
-        dividend_yield_min=2.0,  # Meaningful yield
-        roe_min=12,  # Strong profitability to sustain dividends
-        debt_equity_max=75,  # Conservative leverage for safety
-        margin_min=8,  # Decent margins
+    "turnaround": ScreenCriteria(
+        # Beaten down value stocks with recovery potential
+        pe_max=12,  # Cheap valuation
+        pct_from_52w_high_max=-25,  # Significant drawdown
+        rsi_max=40,  # Weak momentum (potential bottom)
+        current_ratio_min=1.5,  # Can survive
     ),
 }
 
@@ -177,70 +133,30 @@ PRESET_INFO: dict[str, dict[str, str]] = {
         "description": "Quality companies at fair prices",
         "criteria": "ROE>15%, Margin>10%, P/E<25",
     },
-    "deep-value": {
-        "name": "Deep Value",
-        "description": "Extremely cheap stocks",
-        "criteria": "P/B<1.0, P/E<10",
-    },
-    "oversold-value": {
-        "name": "Oversold Value",
-        "description": "Value stocks at technical lows",
-        "criteria": "P/E<15, RSI<35, near 52W low",
-    },
     "dividend": {
         "name": "Dividend",
         "description": "High-yield income stocks",
         "criteria": "Yield>3%, ROE>10%",
-    },
-    "quality": {
-        "name": "Quality",
-        "description": "High-margin, profitable businesses",
-        "criteria": "ROE>20%, Margin>15%",
-    },
-    "buyback": {
-        "name": "Buyback",
-        "description": "Cash-rich stocks buying back shares",
-        "criteria": "FCF Yield>3%, down 10%+ from high",
-    },
-    "short-candidates": {
-        "name": "Short Candidates",
-        "description": "Overvalued, weak stocks",
-        "criteria": "P/E>40, ROE<10%, RSI>60",
     },
     "fallen-angels": {
         "name": "Fallen Angels",
         "description": "Quality stocks down 30%+",
         "criteria": "ROE>15%, Margin>10%, down 30%+",
     },
-    "dividend-growers": {
-        "name": "Dividend Growers",
-        "description": "Sustainable dividend payers",
-        "criteria": "Yield>2.5%, ROE>12%, D/E<80%",
-    },
-    "turnaround": {
-        "name": "Turnaround",
-        "description": "Beaten down, recovery potential",
-        "criteria": "P/E<12, down 25%+, RSI<40",
-    },
     "hidden-gems": {
         "name": "Hidden Gems",
         "description": "Small/mid cap quality",
         "criteria": "$500M-$15B, P/E<18, ROE>12%",
     },
-    "momentum-value": {
-        "name": "Momentum Value",
-        "description": "Value with positive momentum",
-        "criteria": "P/E<20, P/B<2.5, RSI 45-65",
+    "oversold": {
+        "name": "Oversold",
+        "description": "Technical oversold signals",
+        "criteria": "RSI<30, near 52W low, below 200MA",
     },
-    "sweetspot": {
-        "name": "Sweet Spot",
-        "description": "$2-12B mid-cap quality at fair prices",
-        "criteria": "$2-12B cap, P/E<22, ROE>10%",
-    },
-    "income": {
-        "name": "Income",
-        "description": "Dividend aristocrats-style sustainable income",
-        "criteria": "Yield>2%, ROE>12%, Margin>8%",
+    "turnaround": {
+        "name": "Turnaround",
+        "description": "Beaten down, recovery potential",
+        "criteria": "P/E<12, down 25%+, RSI<40",
     },
 }
 
@@ -701,7 +617,7 @@ def get_preset_screen(name: str) -> ScreenCriteria:
     Get a pre-built screen by name.
 
     Args:
-        name: Screen name (graham, buffett, deep-value, oversold-value, dividend, quality)
+        name: Screen name (graham, buffett, dividend, fallen-angels, hidden-gems, oversold, turnaround)
 
     Returns:
         ScreenCriteria for the preset
@@ -721,19 +637,11 @@ def get_preset_screen(name: str) -> ScreenCriteria:
 PRESET_DESCRIPTIONS: dict[str, str] = {
     "graham": "Classic Ben Graham value criteria",
     "buffett": "Quality companies at fair prices",
-    "deep-value": "Very cheap stocks (contrarian)",
-    "oversold-value": "Value + technical oversold",
     "dividend": "Income-focused high yielders",
-    "quality": "High ROE, strong margins",
-    "buyback": "Buyback potential candidates",
-    "short-candidates": "Overvalued weakness",
     "fallen-angels": "Quality stocks down 30%+",
-    "dividend-growers": "Sustainable dividend payers",
-    "turnaround": "Beaten down, recovery potential",
     "hidden-gems": "Small/mid cap quality",
-    "momentum-value": "Value with positive momentum",
-    "sweetspot": "$2-12B mid-cap quality",
-    "income": "Dividend aristocrats-style income",
+    "oversold": "Technical oversold signals",
+    "turnaround": "Beaten down, recovery potential",
 }
 
 
