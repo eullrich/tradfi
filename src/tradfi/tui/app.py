@@ -1114,8 +1114,8 @@ class CacheManagementScreen(ModalScreen):
             self.app.call_from_thread(self.notify, f"Refresh started for {universe} (~{est:.0f}m)", severity="information")
             # Start polling for real-time updates
             self.app.call_from_thread(self._start_polling)
-            # Reload data after triggering
-            self.run_worker(self._load_cache_data())
+            # Reload data after triggering (must use call_from_thread since we're in a worker)
+            self.app.call_from_thread(lambda: self.run_worker(self._load_cache_data()))
 
     def _trigger_refresh_us(self) -> None:
         """Trigger refresh for all US universes."""
@@ -1148,7 +1148,8 @@ class CacheManagementScreen(ModalScreen):
             )
             # Start polling for real-time updates
             self.app.call_from_thread(self._start_polling)
-            self.run_worker(self._load_cache_data())
+            # Reload data after triggering (must use call_from_thread since we're in a worker)
+            self.app.call_from_thread(lambda: self.run_worker(self._load_cache_data()))
 
     def _clear_cache(self) -> None:
         """Clear all cached data."""
@@ -1159,7 +1160,8 @@ class CacheManagementScreen(ModalScreen):
         """Worker to clear all cached data."""
         count = self.remote_provider.clear_cache()
         self.app.call_from_thread(self.notify, f"Cleared {count} cached entries", severity="warning")
-        self.run_worker(self._load_cache_data())
+        # Reload data after clearing (must use call_from_thread since we're in a worker)
+        self.app.call_from_thread(lambda: self.run_worker(self._load_cache_data()))
 
 
 def _truncate_sector(sector: str) -> str:
