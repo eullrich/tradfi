@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import asdict
+from datetime import datetime
 
 import yfinance as yf
 import pandas as pd
@@ -162,10 +163,62 @@ def fetch_stock_from_api(ticker_symbol: str) -> Stock | None:
         )
 
         # Dividend info
+        ex_div_date = info.get("exDividendDate")
+        ex_div_str = None
+        if ex_div_date:
+            # yfinance returns this as a Unix timestamp
+            try:
+                ex_div_str = datetime.fromtimestamp(ex_div_date).strftime("%Y-%m-%d")
+            except (ValueError, TypeError, OSError):
+                ex_div_str = None
+
+        # Parse lastDividendDate (Unix timestamp like exDividendDate)
+        last_div_date = info.get("lastDividendDate")
+        last_div_str = None
+        if last_div_date:
+            try:
+                last_div_str = datetime.fromtimestamp(last_div_date).strftime("%Y-%m-%d")
+            except (ValueError, TypeError, OSError):
+                last_div_str = None
+
+        # Calculate dividend yield from rate and price (more reliable than yfinance's dividendYield
+        # which can be returned in inconsistent formats)
+        dividend_rate = info.get("dividendRate")
+        dividend_yield = None
+        if dividend_rate and current_price and current_price > 0:
+            raw_yield = dividend_rate / current_price
+            # Sanity check: real dividend yields are typically 0-20%, rarely above 50%
+            # If raw_yield > 0.50, it likely means there's a unit mismatch (e.g., rate in cents,
+            # price in dollars) and the value is already percentage-like
+            if raw_yield > 0.50:
+                dividend_yield = raw_yield  # Already percentage-like
+            else:
+                dividend_yield = raw_yield * 100  # Convert decimal to percentage
+
+        # Calculate 5-year average dividend yield from historical data if available
+        # yfinance's fiveYearAvgDividendYield can also be inconsistent
+        five_year_avg_yield_raw = info.get("fiveYearAvgDividendYield")
+        five_year_avg_yield = None
+        if five_year_avg_yield_raw is not None:
+            # Check if value is likely already a percentage (> 1) or decimal (< 1)
+            # Real dividend yields are typically < 20% (0.20 as decimal)
+            if five_year_avg_yield_raw > 1:
+                # Already a percentage
+                five_year_avg_yield = five_year_avg_yield_raw
+            else:
+                # Decimal format, convert to percentage
+                five_year_avg_yield = five_year_avg_yield_raw * 100
+
         stock.dividends = DividendInfo(
-            dividend_yield=info.get("dividendYield"),
-            dividend_rate=info.get("dividendRate"),
+            dividend_yield=dividend_yield,
+            dividend_rate=dividend_rate,
             payout_ratio=_to_pct(info.get("payoutRatio")),
+            ex_dividend_date=ex_div_str,
+            dividend_frequency=_detect_dividend_frequency(ticker),
+            trailing_annual_dividend_rate=info.get("trailingAnnualDividendRate"),
+            five_year_avg_dividend_yield=five_year_avg_yield,
+            last_dividend_value=info.get("lastDividendValue"),
+            last_dividend_date=last_div_str,
         )
 
         # Technical indicators
@@ -265,6 +318,33 @@ def _to_pct(value: float | None) -> float | None:
     if value is None:
         return None
     return value * 100
+
+
+def _detect_dividend_frequency(ticker: yf.Ticker) -> str | None:
+    """Infer dividend frequency from historical payment intervals."""
+    try:
+        dividends = ticker.dividends
+        if dividends.empty or len(dividends) < 2:
+            return None
+
+        # Get intervals between last several dividends
+        recent = dividends.tail(6)  # Last ~1.5 years of data
+        if len(recent) < 2:
+            return None
+
+        intervals = recent.index[1:] - recent.index[:-1]
+        avg_days = intervals.mean().days
+
+        if avg_days <= 45:
+            return "monthly"
+        elif avg_days <= 100:
+            return "quarterly"
+        elif avg_days <= 200:
+            return "semi-annual"
+        else:
+            return "annual"
+    except Exception:
+        return None
 
 
 def _calculate_return(close_prices: pd.Series, days: int) -> float | None:

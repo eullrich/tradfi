@@ -22,7 +22,7 @@ from textual.widgets import (
     TabbedContent,
     TabPane,
 )
-from textual.worker import Worker
+from textual.worker import Worker, WorkerState
 
 # Filter pill types for color coding
 FILTER_PILL_COLORS = {
@@ -1101,19 +1101,29 @@ class CacheManagementScreen(ModalScreen):
                 universe = re.sub(r'\[.*?\]', '', universe).strip().replace("⟳", "").strip()
 
             if universe:
-                result = self.remote_provider.trigger_refresh(universe)
-                if "error" in result:
-                    self.notify(f"Error: {result['error']}", severity="error")
-                else:
-                    est = result.get("estimated_duration_minutes", 0)
-                    self.notify(f"Refresh started for {universe} (~{est:.0f}m)", severity="information")
-                    # Start polling for real-time updates
-                    self._start_polling()
-                    # Reload data to show initial progress
-                    self.run_worker(self._load_cache_data())
+                self.notify(f"Triggering refresh for {universe}...", severity="information")
+                self.run_worker(self._do_trigger_refresh(universe), exclusive=True, thread=True)
+
+    def _do_trigger_refresh(self, universe: str) -> None:
+        """Worker to trigger refresh for a universe."""
+        result = self.remote_provider.trigger_refresh(universe)
+        if "error" in result:
+            self.app.call_from_thread(self.notify, f"Error: {result['error']}", severity="error")
+        else:
+            est = result.get("estimated_duration_minutes", 0)
+            self.app.call_from_thread(self.notify, f"Refresh started for {universe} (~{est:.0f}m)", severity="information")
+            # Start polling for real-time updates
+            self.app.call_from_thread(self._start_polling)
+            # Reload data after triggering
+            self.run_worker(self._load_cache_data())
 
     def _trigger_refresh_us(self) -> None:
         """Trigger refresh for all US universes."""
+        self.notify("Triggering refresh for US universes...", severity="information")
+        self.run_worker(self._do_trigger_refresh_us(), exclusive=True, thread=True)
+
+    def _do_trigger_refresh_us(self) -> None:
+        """Worker to trigger refresh for all US universes."""
         us_universes = ["dow30", "nasdaq100", "sp500"]
         triggered = []
 
@@ -1123,19 +1133,32 @@ class CacheManagementScreen(ModalScreen):
                 triggered.append(universe)
             else:
                 # If one fails (likely already running), stop
-                self.notify(f"Could not start all: {result.get('error', 'Unknown')}", severity="warning")
+                self.app.call_from_thread(
+                    self.notify,
+                    f"Could not start all: {result.get('error', 'Unknown')}",
+                    severity="warning"
+                )
                 break
 
         if triggered:
-            self.notify(f"Triggered refresh for: {', '.join(triggered)}", severity="information")
+            self.app.call_from_thread(
+                self.notify,
+                f"Triggered refresh for: {', '.join(triggered)}",
+                severity="information"
+            )
             # Start polling for real-time updates
-            self._start_polling()
+            self.app.call_from_thread(self._start_polling)
             self.run_worker(self._load_cache_data())
 
     def _clear_cache(self) -> None:
         """Clear all cached data."""
+        self.notify("Clearing cache...", severity="information")
+        self.run_worker(self._do_clear_cache(), exclusive=True, thread=True)
+
+    def _do_clear_cache(self) -> None:
+        """Worker to clear all cached data."""
         count = self.remote_provider.clear_cache()
-        self.notify(f"Cleared {count} cached entries", severity="warning")
+        self.app.call_from_thread(self.notify, f"Cleared {count} cached entries", severity="warning")
         self.run_worker(self._load_cache_data())
 
 
@@ -1190,8 +1213,9 @@ class StockDetailScreen(Screen):
                 id="bottom-panels",
             ),
             Horizontal(
+                self._create_panel("Dividends", self._get_dividend_info()),
                 self._create_panel("Buyback Potential", self._get_buyback_info()),
-                id="buyback-panel",
+                id="income-panels",
             ),
             Static("", id="quarterly-panel"),
             Static("", id="similar-panel"),
@@ -1472,6 +1496,92 @@ class StockDetailScreen(Screen):
         lines.append("[dim]Companies with high FCF, low debt,")
         lines.append("insider ownership, and depressed")
         lines.append("prices often announce buybacks.[/]")
+
+        return "\n".join(lines)
+
+    def _get_dividend_info(self) -> str:
+        d = self.stock.dividends
+        yield_pct = d.dividend_yield  # Already stored as percentage
+        payout = d.payout_ratio
+
+        # Check if this is a dividend-paying stock/ETF
+        has_dividend = yield_pct is not None and yield_pct > 0
+
+        if not has_dividend:
+            return "[dim]No dividend/distribution[/]"
+
+        # Color code based on yield quality
+        if yield_pct:
+            if yield_pct >= 4:
+                yield_color = "bold green"
+            elif yield_pct >= 2:
+                yield_color = "green"
+            elif yield_pct >= 1:
+                yield_color = "yellow"
+            else:
+                yield_color = "dim"
+        else:
+            yield_color = "dim"
+
+        # Color code payout ratio (sustainability)
+        if payout:
+            if payout < 50:
+                payout_color = "green"
+            elif payout < 75:
+                payout_color = "yellow"
+            elif payout < 100:
+                payout_color = "orange3"
+            else:
+                payout_color = "red"
+        else:
+            payout_color = "dim"
+
+        # Core dividend info
+        lines = [
+            f"Yield: [{yield_color}]{yield_pct:.2f}%[/]" if yield_pct else "Yield: N/A",
+            f"Annual Rate: ${d.dividend_rate:.2f}/share" if d.dividend_rate else "Annual Rate: N/A",
+        ]
+
+        # Payout ratio
+        if payout is not None:
+            lines.append(f"Payout Ratio: [{payout_color}]{payout:.0f}%[/]")
+
+        # Frequency
+        if d.dividend_frequency:
+            lines.append(f"Frequency: {d.dividend_frequency.capitalize()}")
+
+        # Last dividend payment
+        if d.last_dividend_value:
+            last_div_str = f"${d.last_dividend_value:.4f}"
+            if d.last_dividend_date:
+                last_div_str += f" ({d.last_dividend_date})"
+            lines.append(f"Last Payment: {last_div_str}")
+
+        # Ex-dividend date
+        if d.ex_dividend_date:
+            lines.append(f"Ex-Dividend: {d.ex_dividend_date}")
+
+        lines.append("")
+
+        # Historical context
+        if d.trailing_annual_dividend_rate:
+            lines.append(f"Trailing 12M: ${d.trailing_annual_dividend_rate:.2f}/share")
+
+        if d.five_year_avg_dividend_yield:
+            # Compare current yield to 5-year average
+            if yield_pct and d.five_year_avg_dividend_yield > 0:
+                vs_avg = ((yield_pct / d.five_year_avg_dividend_yield) - 1) * 100
+                avg_color = "green" if vs_avg > 10 else "yellow" if vs_avg > -10 else "red"
+                lines.append(f"5Y Avg Yield: {d.five_year_avg_dividend_yield:.2f}% ([{avg_color}]{vs_avg:+.0f}%[/] vs now)")
+            else:
+                lines.append(f"5Y Avg Yield: {d.five_year_avg_dividend_yield:.2f}%")
+
+        # Add contextual narrative
+        if yield_pct and yield_pct >= 4:
+            lines.append("")
+            lines.append("[green]High yield income opportunity.[/]")
+            if payout and payout > 80:
+                lines.append("[yellow]Watch payout sustainability.[/]")
 
         return "\n".join(lines)
 
@@ -2036,7 +2146,7 @@ class ScreenerApp(App):
     # Simplified bindings - most actions now in action menu (Space)
     BINDINGS = [
         Binding("q", "quit", "Quit"),
-        Binding("space", "show_actions", "Actions", show=True),
+        Binding("space", "show_actions", "Actions", show=True, priority=True),
         Binding("enter", "select", "Select", show=False),
         Binding("r", "refresh", "Refresh", show=True),
         Binding("/", "focus_search", "Search", show=True),
@@ -2201,7 +2311,7 @@ class ScreenerApp(App):
         table.cursor_type = "row"
         # Simplified columns for cleaner view (9 instead of 14)
         # Focus on key value metrics: Ticker, Sector, Price, P/E, ROE, RSI, MoS%, Div, Signal
-        table.add_columns("Ticker", "Sector", "Price", "P/E", "ROE", "RSI", "MoS%", "Div", "Signal")
+        table.add_columns("Company", "Sector", "Price", "P/E", "ROE", "RSI", "MoS%", "Div", "Signal")
 
         # Populate universe selection list
         self._populate_universes()
@@ -2209,11 +2319,37 @@ class ScreenerApp(App):
         # Set initial filter section visibility (default: show Sectors)
         self._update_filter_section_visibility()
 
-        # Populate sector selection list (default view)
-        self._populate_sectors()
+        # Populate sector selection list in background (avoid blocking startup)
+        self.run_worker(self._fetch_sectors_async, thread=True)
 
         # Fetch API status in background
         self.run_worker(self._fetch_api_status, thread=True)
+
+    def _fetch_sectors_async(self) -> list[tuple[str, int]] | None:
+        """Fetch sectors from API in background thread."""
+        try:
+            return self.remote_provider.get_sectors(None)
+        except Exception:
+            return None
+
+    def _update_sectors_ui(self, sectors: list[tuple[str, int]]) -> None:
+        """Update sector UI with fetched data."""
+        try:
+            sector_select = self.query_one("#sector-select", SelectionList)
+
+            # Store full list for filtering
+            self._all_sectors = sorted(sectors, key=lambda x: x[0].lower())
+
+            # Clear any previously selected sectors that are no longer available
+            available_sectors = {sec for sec, _ in sectors}
+            self.selected_sectors = self.selected_sectors & available_sectors
+
+            # Display all sectors
+            self._display_filtered_sectors("")
+
+            self._sectors_loaded = True
+        except Exception:
+            pass
 
     def _fetch_api_status(self) -> dict | None:
         """Fetch cache stats from the API."""
@@ -2297,11 +2433,24 @@ class ScreenerApp(App):
             tickers: Optional list of tickers to filter sectors by.
                      If not provided, shows all sectors from cache.
         """
-        try:
-            sector_select = self.query_one("#sector-select", SelectionList)
+        # Run the blocking API call in a worker thread
+        self.run_worker(self._fetch_and_populate_sectors(tickers), exclusive=True, thread=True)
 
+    def _fetch_and_populate_sectors(self, tickers: list[str] | None = None) -> None:
+        """Worker to fetch sectors and update UI."""
+        try:
             # Get sectors from remote API (filtered by tickers if provided)
             sectors = self.remote_provider.get_sectors(tickers)
+
+            # Update UI on main thread
+            self.app.call_from_thread(self._apply_sectors_to_ui, sectors)
+        except Exception:
+            pass
+
+    def _apply_sectors_to_ui(self, sectors: list[tuple[str, int]] | None) -> None:
+        """Apply fetched sectors to the UI (must run on main thread)."""
+        try:
+            sector_select = self.query_one("#sector-select", SelectionList)
 
             if not sectors:
                 sector_select.clear_options()
@@ -3005,6 +3154,11 @@ class ScreenerApp(App):
             # Check if this is the API status worker
             if event.worker.name == "_fetch_api_status":
                 self._update_api_status(event.worker.result)
+            elif event.worker.name == "_fetch_sectors_async":
+                # Sector fetch completed - update sector list
+                sectors = event.worker.result
+                if sectors:
+                    self._update_sectors_ui(sectors)
             elif event.worker.name == "_resync_all_universes":
                 # Resync completed
                 result = event.worker.result or {"triggered": 0, "failed": 0, "universes": []}
@@ -3041,7 +3195,7 @@ class ScreenerApp(App):
         # If we were in portfolio mode, restore normal columns
         if self._portfolio_mode or len(table.columns) != 9:
             table.clear(columns=True)
-            table.add_columns("Ticker", "Industry", "Price", "P/E", "ROE", "RSI", "MoS%", "Div", "Signal")
+            table.add_columns("Company", "Sector", "Price", "P/E", "ROE", "RSI", "MoS%", "Div", "Signal")
             self._portfolio_mode = False
         else:
             table.clear()
@@ -3060,6 +3214,11 @@ class ScreenerApp(App):
         # Add rows - simplified 9 columns for cleaner view
         from tradfi.utils.display import format_price
         for stock in sorted_stocks:
+            # Format company name with ticker
+            company_name = stock.name or stock.ticker
+            if len(company_name) > 25:
+                company_name = company_name[:22] + "..."
+            company = f"{company_name} ({stock.ticker})"
             # Format key values with currency support
             sector = _truncate_sector(stock.sector) if stock.sector else "-"
             stock_currency = stock.currency or "USD"
@@ -3084,7 +3243,7 @@ class ScreenerApp(App):
             signal = stock.signal
 
             table.add_row(
-                stock.ticker,
+                company,
                 sector,
                 price,
                 pe,
@@ -3341,8 +3500,13 @@ class ScreenerApp(App):
 
     def action_clear_cache(self) -> None:
         """Clear all cached stock data on the server."""
+        self.notify("Clearing cache...", title="Cache")
+        self.run_worker(self._do_clear_cache_action(), exclusive=True, thread=True)
+
+    def _do_clear_cache_action(self) -> None:
+        """Worker to clear all cached stock data on the server."""
         count = self.remote_provider.clear_cache()
-        self.notify(f"Cleared {count} cached entries on server", title="Cache Cleared")
+        self.call_from_thread(self.notify, f"Cleared {count} cached entries on server", title="Cache Cleared")
 
     def action_resync_universes(self) -> None:
         """Resync all universes by triggering server-side refresh."""
