@@ -975,23 +975,23 @@ class CacheManagementScreen(ModalScreen):
 
             if universe:
                 self.notify(f"Triggering refresh for {universe}...", severity="information")
-                self.run_worker(self._do_trigger_refresh(universe), exclusive=True, thread=True)
+                self.run_worker(lambda: self._do_trigger_refresh(universe), exclusive=True, thread=True)
 
     def _do_trigger_refresh(self, universe: str) -> None:
         """Worker to trigger refresh for a universe."""
         result = self.remote_provider.trigger_refresh(universe)
         if "error" in result:
-            self.app.call_from_thread(self.notify, f"Error: {result['error']}", severity="error")
+            self.call_from_thread(self.notify, f"Error: {result['error']}", severity="error")
         else:
             est = result.get("estimated_duration_minutes", 0)
-            self.app.call_from_thread(self.notify, f"Refresh started for {universe} (~{est:.0f}m)", severity="information")
-            # Reload data after triggering
-            self.run_worker(self._load_cache_data())
+            self.call_from_thread(self.notify, f"Refresh started for {universe} (~{est:.0f}m)", severity="information")
+            # Reload data after triggering - schedule on main thread
+            self.call_from_thread(self._schedule_cache_reload)
 
     def _trigger_refresh_us(self) -> None:
         """Trigger refresh for all US universes."""
         self.notify("Triggering refresh for US universes...", severity="information")
-        self.run_worker(self._do_trigger_refresh_us(), exclusive=True, thread=True)
+        self.run_worker(lambda: self._do_trigger_refresh_us(), exclusive=True, thread=True)
 
     def _do_trigger_refresh_us(self) -> None:
         """Worker to trigger refresh for all US universes."""
@@ -1004,7 +1004,7 @@ class CacheManagementScreen(ModalScreen):
                 triggered.append(universe)
             else:
                 # If one fails (likely already running), stop
-                self.app.call_from_thread(
+                self.call_from_thread(
                     self.notify,
                     f"Could not start all: {result.get('error', 'Unknown')}",
                     severity="warning"
@@ -1012,22 +1012,26 @@ class CacheManagementScreen(ModalScreen):
                 break
 
         if triggered:
-            self.app.call_from_thread(
+            self.call_from_thread(
                 self.notify,
                 f"Triggered refresh for: {', '.join(triggered)}",
                 severity="information"
             )
-            self.run_worker(self._load_cache_data())
+            self.call_from_thread(self._schedule_cache_reload)
 
     def _clear_cache(self) -> None:
         """Clear all cached data."""
         self.notify("Clearing cache...", severity="information")
-        self.run_worker(self._do_clear_cache(), exclusive=True, thread=True)
+        self.run_worker(lambda: self._do_clear_cache(), exclusive=True, thread=True)
 
     def _do_clear_cache(self) -> None:
         """Worker to clear all cached data."""
         count = self.remote_provider.clear_cache()
-        self.app.call_from_thread(self.notify, f"Cleared {count} cached entries", severity="warning")
+        self.call_from_thread(self.notify, f"Cleared {count} cached entries", severity="warning")
+        self.call_from_thread(self._schedule_cache_reload)
+
+    def _schedule_cache_reload(self) -> None:
+        """Schedule a cache data reload on the main thread."""
         self.run_worker(self._load_cache_data())
 
 
@@ -3370,7 +3374,7 @@ class ScreenerApp(App):
     def action_clear_cache(self) -> None:
         """Clear all cached stock data on the server."""
         self.notify("Clearing cache...", title="Cache")
-        self.run_worker(self._do_clear_cache_action(), exclusive=True, thread=True)
+        self.run_worker(self._do_clear_cache_action, exclusive=True, thread=True)
 
     def _do_clear_cache_action(self) -> None:
         """Worker to clear all cached stock data on the server."""
