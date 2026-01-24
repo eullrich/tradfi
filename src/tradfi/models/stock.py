@@ -220,8 +220,39 @@ class BuybackInfo:
 
 
 @dataclass
+class ETFMetrics:
+    """ETF-specific metrics."""
+
+    expense_ratio: Optional[float] = None  # As percentage (e.g., 0.03 for 0.03%)
+    aum: Optional[float] = None  # Assets under management (total assets)
+    avg_volume: Optional[float] = None  # Average daily volume
+    holdings_count: Optional[int] = None  # Number of holdings in fund
+    nav: Optional[float] = None  # Net asset value per share
+    premium_discount: Optional[float] = None  # Premium/discount to NAV (%)
+    inception_date: Optional[str] = None  # Fund inception date
+    fund_family: Optional[str] = None  # Issuer (Vanguard, iShares, etc.)
+    category: Optional[str] = None  # Fund category from data file
+    legal_type: Optional[str] = None  # Legal structure (ETF, Open-End Fund, etc.)
+    benchmark: Optional[str] = None  # Tracking index name
+    ytd_return: Optional[float] = None  # Year-to-date return (%)
+    return_3y: Optional[float] = None  # 3-year annualized return (%)
+    return_5y: Optional[float] = None  # 5-year annualized return (%)
+    beta_3y: Optional[float] = None  # 3-year beta vs market
+
+    @property
+    def is_low_cost(self) -> bool:
+        """Check if ETF has low expense ratio (< 0.20%)."""
+        return self.expense_ratio is not None and self.expense_ratio < 0.20
+
+    @property
+    def is_liquid(self) -> bool:
+        """Check if ETF has good liquidity (AUM > $100M)."""
+        return self.aum is not None and self.aum > 100_000_000
+
+
+@dataclass
 class Stock:
-    """Complete stock data model."""
+    """Complete stock/ETF data model."""
 
     ticker: str
     name: Optional[str] = None
@@ -229,6 +260,7 @@ class Stock:
     industry: Optional[str] = None
     current_price: Optional[float] = None
     currency: str = "USD"
+    asset_type: str = "stock"  # "stock" or "etf"
 
     valuation: ValuationMetrics = field(default_factory=ValuationMetrics)
     profitability: ProfitabilityMetrics = field(default_factory=ProfitabilityMetrics)
@@ -238,6 +270,7 @@ class Stock:
     technical: TechnicalIndicators = field(default_factory=TechnicalIndicators)
     fair_value: FairValueEstimates = field(default_factory=FairValueEstimates)
     buyback: BuybackInfo = field(default_factory=BuybackInfo)
+    etf: ETFMetrics = field(default_factory=ETFMetrics)  # ETF-specific metrics
 
     # Raw data for calculations
     eps: Optional[float] = None
@@ -247,7 +280,13 @@ class Stock:
 
     @property
     def signal(self) -> str:
-        """Generate buy/watch/neutral signal based on value + oversold."""
+        """Generate buy/watch/neutral signal based on asset type."""
+        if self.asset_type == "etf":
+            return self._etf_signal()
+        return self._stock_signal()
+
+    def _stock_signal(self) -> str:
+        """Generate signal for stocks based on value + oversold."""
         is_value = self._is_value_stock()
         is_oversold = self.technical.is_oversold
         is_strongly_oversold = self.technical.is_strongly_oversold
@@ -263,11 +302,32 @@ class Stock:
         else:
             return "NO_SIGNAL"
 
+    def _etf_signal(self) -> str:
+        """Generate signal for ETFs based on cost + performance + technicals."""
+        is_low_cost = self.etf.is_low_cost
+        is_liquid = self.etf.is_liquid
+        is_oversold = self.technical.is_oversold
+        is_strongly_oversold = self.technical.is_strongly_oversold
+
+        # Low cost + liquid + strongly oversold = strong opportunity
+        if is_low_cost and is_liquid and is_strongly_oversold:
+            return "STRONG_BUY"
+        # Low cost + oversold = opportunity
+        elif is_low_cost and is_oversold:
+            return "BUY"
+        # Low cost + near oversold or good performance dip
+        elif is_low_cost and self._is_near_oversold():
+            return "WATCH"
+        # Low cost fund with good liquidity
+        elif is_low_cost and is_liquid:
+            return "NEUTRAL"
+        else:
+            return "NO_SIGNAL"
+
     def _is_value_stock(self) -> bool:
         """Check if stock meets basic value criteria."""
         pe = self.valuation.pe_trailing
         pb = self.valuation.pb_ratio
-        roe = self.profitability.roe
 
         # Basic value check: reasonable P/E and P/B
         if pe is not None and pe > 0 and pe < 20:

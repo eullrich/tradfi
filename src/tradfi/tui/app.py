@@ -6,23 +6,18 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.message import Message
-from textual.screen import Screen, ModalScreen
+from textual.screen import ModalScreen, Screen
 from textual.widgets import (
     Button,
     DataTable,
     Footer,
     Header,
     Input,
-    Label,
-    ListItem,
-    ListView,
     OptionList,
     SelectionList,
     Static,
-    TabbedContent,
-    TabPane,
 )
-from textual.worker import Worker, WorkerState
+from textual.worker import Worker
 
 # Filter pill types for color coding
 FILTER_PILL_COLORS = {
@@ -39,6 +34,11 @@ ETF_CATEGORY_ICONS = {
     "Sectors": "📊",
     "International": "🌍",
 }
+
+# Column configurations for different asset types
+STOCK_COLUMNS = ("Company", "Sector", "Price", "P/E", "ROE", "RSI", "MoS%", "Div", "Signal")
+ETF_COLUMNS = ("Company", "Category", "Price", "ExpRatio", "AUM", "YTD", "1Y", "Yield", "Signal")
+MIXED_COLUMNS = ("Company", "Type", "Sector", "Price", "Yield", "1Y", "RSI", "Signal")
 
 
 class FilterPill(Static):
@@ -324,11 +324,12 @@ class ActionMenuScreen(ModalScreen):
                     self.dismiss(action_id)
                     return
 
+from tradfi.core.remote_provider import RemoteDataProvider
 from tradfi.core.screener import (
     AVAILABLE_UNIVERSES,
+    PRESET_DESCRIPTIONS,
     PRESET_INFO,
     PRESET_SCREENS,
-    PRESET_DESCRIPTIONS,
     ScreenCriteria,
     find_similar_stocks,
     get_universe_categories,
@@ -337,9 +338,7 @@ from tradfi.core.screener import (
     screen_stock,
 )
 from tradfi.models.stock import Stock
-from tradfi.core.remote_provider import RemoteDataProvider
 from tradfi.utils.sparkline import ascii_bar, ascii_scatter
-
 
 # Metrics available for heatmap and scatter plot
 VISUALIZATION_METRICS = {
@@ -1199,31 +1198,60 @@ class StockDetailScreen(Screen):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        yield Container(
-            Static(f"[bold cyan]{self.stock.ticker}[/] - {self.stock.name or 'N/A'}", id="stock-title"),
-            Static(f"[dim]{self.stock.sector or 'Unknown Sector'} | {self.stock.industry or 'Unknown Industry'}[/]", id="stock-subtitle"),
-            Horizontal(
-                self._create_panel("Price & Signal", self._get_price_info()),
-                self._create_panel("Valuation", self._get_valuation_info()),
-                self._create_panel("Profitability", self._get_profitability_info()),
-                id="top-panels",
-            ),
-            Horizontal(
-                self._create_panel("Financial Health", self._get_health_info()),
-                self._create_panel("Technical", self._get_technical_info()),
-                self._create_panel("Fair Value", self._get_fair_value_info()),
-                id="bottom-panels",
-            ),
-            Horizontal(
-                self._create_panel("Dividends", self._get_dividend_info()),
-                self._create_panel("Buyback Potential", self._get_buyback_info()),
-                id="income-panels",
-            ),
-            Static("", id="quarterly-panel"),
-            Static("", id="similar-panel"),
-            Static("", id="research-panel"),
-            id="detail-container",
-        )
+
+        # Determine if this is an ETF or stock
+        is_etf = getattr(self.stock, "asset_type", "stock") == "etf"
+
+        if is_etf:
+            # ETF-specific layout
+            subtitle = f"[dim]{self.stock.sector or 'Unknown Category'} | {self.stock.etf.fund_family or 'Unknown Issuer'}[/]"
+            yield Container(
+                Static(f"[bold cyan]{self.stock.ticker}[/] - {self.stock.name or 'N/A'} [yellow](ETF)[/]", id="stock-title"),
+                Static(subtitle, id="stock-subtitle"),
+                Horizontal(
+                    self._create_panel("Price & Signal", self._get_etf_price_info()),
+                    self._create_panel("Fund Info", self._get_etf_fund_info()),
+                    self._create_panel("Costs & Fees", self._get_etf_costs_info()),
+                    id="top-panels",
+                ),
+                Horizontal(
+                    self._create_panel("Performance", self._get_etf_performance_info()),
+                    self._create_panel("Technical", self._get_technical_info()),
+                    self._create_panel("Distributions", self._get_dividend_info()),
+                    id="bottom-panels",
+                ),
+                Static("", id="quarterly-panel"),
+                Static("", id="similar-panel"),
+                Static("", id="research-panel"),
+                id="detail-container",
+            )
+        else:
+            # Stock-specific layout (original)
+            yield Container(
+                Static(f"[bold cyan]{self.stock.ticker}[/] - {self.stock.name or 'N/A'}", id="stock-title"),
+                Static(f"[dim]{self.stock.sector or 'Unknown Sector'} | {self.stock.industry or 'Unknown Industry'}[/]", id="stock-subtitle"),
+                Horizontal(
+                    self._create_panel("Price & Signal", self._get_price_info()),
+                    self._create_panel("Valuation", self._get_valuation_info()),
+                    self._create_panel("Profitability", self._get_profitability_info()),
+                    id="top-panels",
+                ),
+                Horizontal(
+                    self._create_panel("Financial Health", self._get_health_info()),
+                    self._create_panel("Technical", self._get_technical_info()),
+                    self._create_panel("Fair Value", self._get_fair_value_info()),
+                    id="bottom-panels",
+                ),
+                Horizontal(
+                    self._create_panel("Dividends", self._get_dividend_info()),
+                    self._create_panel("Buyback Potential", self._get_buyback_info()),
+                    id="income-panels",
+                ),
+                Static("", id="quarterly-panel"),
+                Static("", id="similar-panel"),
+                Static("", id="research-panel"),
+                id="detail-container",
+            )
         yield Footer()
 
     def _create_panel(self, title: str, content: str) -> Static:
@@ -1593,6 +1621,151 @@ class StockDetailScreen(Screen):
     def _pct(self, val) -> str:
         return f"{val:+.1f}%" if val is not None else "N/A"
 
+    def _get_etf_fund_info(self) -> str:
+        """Get ETF fund information panel content."""
+        e = self.stock.etf
+
+        # Format AUM
+        aum_str = "N/A"
+        if e.aum:
+            if e.aum >= 1_000_000_000:
+                aum_str = f"${e.aum / 1_000_000_000:.1f}B"
+            elif e.aum >= 1_000_000:
+                aum_str = f"${e.aum / 1_000_000:.0f}M"
+            else:
+                aum_str = f"${e.aum / 1_000:.0f}K"
+
+        # Color code AUM (larger = more liquid)
+        aum_color = "green" if e.aum and e.aum > 1_000_000_000 else "yellow" if e.aum and e.aum > 100_000_000 else "red" if e.aum else "dim"
+
+        lines = [
+            f"Fund Family: [cyan]{e.fund_family or 'N/A'}[/]",
+            f"Category: {e.category or 'N/A'}",
+            f"AUM: [{aum_color}]{aum_str}[/]",
+            f"Holdings: {e.holdings_count or 'N/A'}",
+            f"Inception: {e.inception_date or 'N/A'}",
+            "",
+            "[dim]Larger AUM = more liquid.",
+            "More holdings = more",
+            "diversification. Older funds",
+            "have longer track records.[/]",
+        ]
+        return "\n".join(lines)
+
+    def _get_etf_costs_info(self) -> str:
+        """Get ETF costs and fees panel content."""
+        e = self.stock.etf
+
+        # Expense ratio color coding
+        exp_color = "green" if e.expense_ratio is not None and e.expense_ratio < 0.10 else \
+                    "yellow" if e.expense_ratio is not None and e.expense_ratio < 0.50 else \
+                    "red" if e.expense_ratio is not None else "dim"
+        exp_str = f"{e.expense_ratio:.2f}%" if e.expense_ratio is not None else "N/A"
+
+        # Premium/discount color coding
+        prem_disc = e.premium_discount
+        prem_color = "green" if prem_disc is not None and abs(prem_disc) < 0.1 else \
+                     "yellow" if prem_disc is not None and abs(prem_disc) < 0.5 else \
+                     "red" if prem_disc is not None else "dim"
+        prem_str = f"{prem_disc:+.2f}%" if prem_disc is not None else "N/A"
+
+        # NAV
+        nav_str = f"${e.nav:.2f}" if e.nav else "N/A"
+
+        lines = [
+            f"Expense Ratio: [{exp_color}]{exp_str}[/]",
+            f"NAV: {nav_str}",
+            f"Premium/Disc: [{prem_color}]{prem_str}[/]",
+            "",
+            "[dim]Lower expense = more of",
+            "your returns kept. Premium",
+            "means paying above NAV.",
+            "Discount = buying below NAV.[/]",
+        ]
+
+        # Cost comparison context
+        if e.expense_ratio is not None:
+            if e.expense_ratio < 0.05:
+                lines.append("")
+                lines.append("[green]Ultra-low cost fund.[/]")
+            elif e.expense_ratio < 0.20:
+                lines.append("")
+                lines.append("[yellow]Competitive expense ratio.[/]")
+            elif e.expense_ratio > 0.75:
+                lines.append("")
+                lines.append("[red]High cost - consider alternatives.[/]")
+
+        return "\n".join(lines)
+
+    def _get_etf_performance_info(self) -> str:
+        """Get ETF performance panel content."""
+        e = self.stock.etf
+        t = self.stock.technical
+
+        # YTD Return
+        ytd_color = "green" if e.ytd_return and e.ytd_return > 0 else "red" if e.ytd_return else "dim"
+        ytd_str = f"{e.ytd_return:+.1f}%" if e.ytd_return is not None else "N/A"
+
+        # 1Y Return (from technical)
+        ret_1y = t.return_1y
+        ret_1y_color = "green" if ret_1y and ret_1y > 0 else "red" if ret_1y else "dim"
+        ret_1y_str = f"{ret_1y:+.1f}%" if ret_1y is not None else "N/A"
+
+        # 3Y Return
+        ret_3y_color = "green" if e.return_3y and e.return_3y > 0 else "red" if e.return_3y else "dim"
+        ret_3y_str = f"{e.return_3y:+.1f}%" if e.return_3y is not None else "N/A"
+
+        # 5Y Return
+        ret_5y_color = "green" if e.return_5y and e.return_5y > 0 else "red" if e.return_5y else "dim"
+        ret_5y_str = f"{e.return_5y:+.1f}%" if e.return_5y is not None else "N/A"
+
+        # Beta
+        beta_str = f"{e.beta_3y:.2f}" if e.beta_3y is not None else "N/A"
+        beta_color = "yellow" if e.beta_3y and e.beta_3y > 1.2 else "green" if e.beta_3y else "dim"
+
+        lines = [
+            f"YTD: [{ytd_color}]{ytd_str}[/]",
+            f"1 Year: [{ret_1y_color}]{ret_1y_str}[/]",
+            f"3 Year (ann): [{ret_3y_color}]{ret_3y_str}[/]",
+            f"5 Year (ann): [{ret_5y_color}]{ret_5y_str}[/]",
+            f"Beta (3Y): [{beta_color}]{beta_str}[/]",
+            "",
+            "[dim]Multi-year returns show",
+            "consistency. Beta>1 means",
+            "more volatile than market.[/]",
+        ]
+        return "\n".join(lines)
+
+    def _get_etf_price_info(self) -> str:
+        """Get ETF price and signal panel content."""
+        s = self.stock
+        price = f"${s.current_price:.2f}" if s.current_price else "N/A"
+        signal = s.signal
+        signal_color = {
+            "STRONG_BUY": "bold green",
+            "BUY": "green",
+            "WATCH": "yellow",
+            "NEUTRAL": "dim",
+            "NO_SIGNAL": "dim",
+        }.get(signal, "dim")
+
+        # ETF-specific signal descriptions
+        signal_desc = {
+            "STRONG_BUY": "Low-cost fund with strong oversold signals - potential opportunity.",
+            "BUY": "Low expense ratio with oversold technicals worth investigating.",
+            "WATCH": "Good cost structure approaching oversold territory.",
+            "NEUTRAL": "Low-cost fund with no strong technical signals.",
+            "NO_SIGNAL": "Either high cost or insufficient data.",
+        }.get(signal, "")
+
+        lines = [
+            f"Price: [bold]{price}[/]",
+            f"Signal: [{signal_color}]{signal}[/]",
+            "",
+            f"[dim]{signal_desc}[/]",
+        ]
+        return "\n".join(lines)
+
     def action_add_to_watchlist(self) -> None:
         if self.remote_provider.add_to_watchlist(self.stock.ticker):
             self.notify(f"Added {self.stock.ticker} to watchlist")
@@ -1622,7 +1795,7 @@ class StockDetailScreen(Screen):
     def action_deep_research(self) -> None:
         """Fetch and analyze SEC filing with LLM (OpenRouter or Anthropic)."""
         import os
-        from tradfi.core.research import deep_research
+
 
         # Check for API key (OpenRouter preferred, Anthropic as fallback)
         has_openrouter = os.environ.get("OPENROUTER_API_KEY")
@@ -1759,7 +1932,7 @@ class StockDetailScreen(Screen):
 
     def _display_quarterly(self, trends) -> None:
         """Display quarterly trends in the panel."""
-        from tradfi.utils.sparkline import sparkline, format_large_number
+        from tradfi.utils.sparkline import format_large_number, sparkline
 
         try:
             quarterly_panel = self.query_one("#quarterly-panel", Static)
@@ -2190,6 +2363,10 @@ class ScreenerApp(App):
         "div": (lambda s: s.dividends.dividend_yield if s.dividends.dividend_yield else 0, True, "Div"),
         "rsi": (lambda s: s.technical.rsi_14 if s.technical.rsi_14 else float("inf"), False, "RSI"),
         "mos": (lambda s: s.fair_value.margin_of_safety_pct if s.fair_value.margin_of_safety_pct else float("-inf"), True, "MoS%"),
+        # ETF-specific sort options
+        "exp": (lambda s: s.etf.expense_ratio if s.etf.expense_ratio is not None else float("inf"), False, "ExpRatio"),
+        "aum": (lambda s: s.etf.aum if s.etf.aum else 0, True, "AUM"),
+        "ytd": (lambda s: s.etf.ytd_return if s.etf.ytd_return is not None else float("-inf"), True, "YTD"),
     }
 
     def __init__(self, api_url: str) -> None:
@@ -2213,7 +2390,7 @@ class ScreenerApp(App):
         self.remote_provider = RemoteDataProvider(api_url)
 
         # Currency display settings
-        from tradfi.core.currency import DEFAULT_CURRENCY_CYCLE, get_currency_symbol
+        from tradfi.core.currency import DEFAULT_CURRENCY_CYCLE
         from tradfi.utils.cache import get_display_currency
         self._currency_cycle = DEFAULT_CURRENCY_CYCLE
         self._display_currency = get_display_currency()  # Load from config
@@ -3187,6 +3364,171 @@ class ScreenerApp(App):
                 self.stocks = event.worker.result or []
                 self._populate_table()
 
+    def _get_view_mode(self, stocks: list) -> str:
+        """Determine view mode based on asset types in stock list.
+
+        Returns:
+            'stock', 'etf', or 'mixed'
+        """
+        if not stocks:
+            return "stock"
+
+        etf_count = sum(1 for s in stocks if getattr(s, "asset_type", "stock") == "etf")
+        stock_count = len(stocks) - etf_count
+
+        if etf_count == 0:
+            return "stock"
+        elif stock_count == 0:
+            return "etf"
+        else:
+            return "mixed"
+
+    def _get_columns_for_mode(self, mode: str) -> tuple:
+        """Get column headers for the given view mode."""
+        if mode == "etf":
+            return ETF_COLUMNS
+        elif mode == "mixed":
+            return MIXED_COLUMNS
+        else:
+            return STOCK_COLUMNS
+
+    def _format_etf_row(self, stock, format_price_func) -> tuple:
+        """Format a row for ETF display."""
+        # Company name with ticker
+        company_name = stock.name or stock.ticker
+        if len(company_name) > 25:
+            company_name = company_name[:22] + "..."
+        company = f"{company_name} ({stock.ticker})"
+
+        # Category (use sector field which stores category for ETFs)
+        category = _truncate_sector(stock.sector) if stock.sector else "-"
+
+        # Price
+        stock_currency = stock.currency or "USD"
+        price = format_price_func(
+            stock.current_price,
+            currency=stock_currency,
+            display_currency=self._display_currency,
+            decimals=0,
+        ) if stock.current_price else "-"
+
+        # Expense Ratio
+        exp_ratio = "-"
+        if stock.etf.expense_ratio is not None:
+            exp_ratio = f"{stock.etf.expense_ratio:.2f}%"
+
+        # AUM (format in billions/millions)
+        aum = "-"
+        if stock.etf.aum:
+            if stock.etf.aum >= 1_000_000_000:
+                aum = f"${stock.etf.aum / 1_000_000_000:.1f}B"
+            elif stock.etf.aum >= 1_000_000:
+                aum = f"${stock.etf.aum / 1_000_000:.0f}M"
+            else:
+                aum = f"${stock.etf.aum / 1_000:.0f}K"
+
+        # YTD Return
+        ytd = "-"
+        if stock.etf.ytd_return is not None:
+            ytd = f"{stock.etf.ytd_return:+.1f}%"
+
+        # 1Y Return (from technical indicators)
+        return_1y = "-"
+        if stock.technical.return_1y is not None:
+            return_1y = f"{stock.technical.return_1y:+.1f}%"
+
+        # Dividend yield
+        div_val = stock.dividends.dividend_yield
+        div = f"{div_val:.1f}%" if div_val else "-"
+
+        # Signal
+        signal = stock.signal
+
+        return (company, category, price, exp_ratio, aum, ytd, return_1y, div, signal)
+
+    def _format_stock_row(self, stock, format_price_func) -> tuple:
+        """Format a row for stock display."""
+        # Company name with ticker
+        company_name = stock.name or stock.ticker
+        if len(company_name) > 25:
+            company_name = company_name[:22] + "..."
+        company = f"{company_name} ({stock.ticker})"
+
+        # Sector
+        sector = _truncate_sector(stock.sector) if stock.sector else "-"
+
+        # Price
+        stock_currency = stock.currency or "USD"
+        price = format_price_func(
+            stock.current_price,
+            currency=stock_currency,
+            display_currency=self._display_currency,
+            decimals=0,
+        ) if stock.current_price else "-"
+
+        # P/E
+        pe = f"{stock.valuation.pe_trailing:.1f}" if stock.valuation.pe_trailing and isinstance(stock.valuation.pe_trailing, (int, float)) else "-"
+
+        # ROE
+        roe = f"{stock.profitability.roe:.0f}%" if stock.profitability.roe else "-"
+
+        # RSI
+        rsi = f"{stock.technical.rsi_14:.0f}" if stock.technical.rsi_14 else "-"
+
+        # Margin of Safety
+        mos_val = stock.fair_value.margin_of_safety_pct
+        mos = f"{mos_val:+.0f}%" if mos_val else "-"
+
+        # Dividend yield
+        div_val = stock.dividends.dividend_yield
+        div = f"{div_val:.1f}%" if div_val else "-"
+
+        # Signal
+        signal = stock.signal
+
+        return (company, sector, price, pe, roe, rsi, mos, div, signal)
+
+    def _format_mixed_row(self, stock, format_price_func) -> tuple:
+        """Format a row for mixed stock/ETF display."""
+        # Company name with ticker
+        company_name = stock.name or stock.ticker
+        if len(company_name) > 25:
+            company_name = company_name[:22] + "..."
+        company = f"{company_name} ({stock.ticker})"
+
+        # Type indicator
+        asset_type = getattr(stock, "asset_type", "stock")
+        type_str = "ETF" if asset_type == "etf" else "Stock"
+
+        # Sector/Category
+        sector = _truncate_sector(stock.sector) if stock.sector else "-"
+
+        # Price
+        stock_currency = stock.currency or "USD"
+        price = format_price_func(
+            stock.current_price,
+            currency=stock_currency,
+            display_currency=self._display_currency,
+            decimals=0,
+        ) if stock.current_price else "-"
+
+        # Dividend yield
+        div_val = stock.dividends.dividend_yield
+        div = f"{div_val:.1f}%" if div_val else "-"
+
+        # 1Y Return
+        return_1y = "-"
+        if stock.technical.return_1y is not None:
+            return_1y = f"{stock.technical.return_1y:+.1f}%"
+
+        # RSI
+        rsi = f"{stock.technical.rsi_14:.0f}" if stock.technical.rsi_14 else "-"
+
+        # Signal
+        signal = stock.signal
+
+        return (company, type_str, sector, price, div, return_1y, rsi, signal)
+
     def _populate_table(self) -> None:
         loading = self.query_one("#loading", Container)
         table = self.query_one("#results-table", DataTable)
@@ -3194,10 +3536,14 @@ class ScreenerApp(App):
         loading.display = False
         table.display = True
 
-        # If we were in portfolio mode, restore normal columns
-        if self._portfolio_mode or len(table.columns) != 9:
+        # Determine view mode based on asset types
+        view_mode = self._get_view_mode(self.stocks)
+        columns = self._get_columns_for_mode(view_mode)
+
+        # If we were in portfolio mode or columns changed, reconfigure
+        if self._portfolio_mode or len(table.columns) != len(columns):
             table.clear(columns=True)
-            table.add_columns("Company", "Sector", "Price", "P/E", "ROE", "RSI", "MoS%", "Div", "Signal")
+            table.add_columns(*columns)
             self._portfolio_mode = False
         else:
             table.clear()
@@ -3213,49 +3559,17 @@ class ScreenerApp(App):
         reverse = default_reverse != self.sort_reverse
         sorted_stocks = sorted(self.stocks, key=sort_key, reverse=reverse)
 
-        # Add rows - simplified 9 columns for cleaner view
+        # Add rows based on view mode
         from tradfi.utils.display import format_price
         for stock in sorted_stocks:
-            # Format company name with ticker
-            company_name = stock.name or stock.ticker
-            if len(company_name) > 25:
-                company_name = company_name[:22] + "..."
-            company = f"{company_name} ({stock.ticker})"
-            # Format key values with currency support
-            sector = _truncate_sector(stock.sector) if stock.sector else "-"
-            stock_currency = stock.currency or "USD"
-            price = format_price(
-                stock.current_price,
-                currency=stock_currency,
-                display_currency=self._display_currency,
-                decimals=0,
-            ) if stock.current_price else "-"
-            pe = f"{stock.valuation.pe_trailing:.1f}" if stock.valuation.pe_trailing and isinstance(stock.valuation.pe_trailing, (int, float)) else "-"
-            roe = f"{stock.profitability.roe:.0f}%" if stock.profitability.roe else "-"
-            rsi = f"{stock.technical.rsi_14:.0f}" if stock.technical.rsi_14 else "-"
+            if view_mode == "etf":
+                row = self._format_etf_row(stock, format_price)
+            elif view_mode == "mixed":
+                row = self._format_mixed_row(stock, format_price)
+            else:
+                row = self._format_stock_row(stock, format_price)
 
-            # Margin of Safety
-            mos_val = stock.fair_value.margin_of_safety_pct
-            mos = f"{mos_val:+.0f}%" if mos_val else "-"
-
-            # Dividend yield
-            div_val = stock.dividends.dividend_yield
-            div = f"{div_val:.1f}%" if div_val else "-"
-
-            signal = stock.signal
-
-            table.add_row(
-                company,
-                sector,
-                price,
-                pe,
-                roe,
-                rsi,
-                mos,
-                div,
-                signal,
-                key=stock.ticker,
-            )
+            table.add_row(*row, key=stock.ticker)
 
         # Update status with sort info and active filters
         direction = "↓" if reverse else "↑"
@@ -3718,7 +4032,7 @@ class ScreenerApp(App):
         table.display = False
 
         loading_text = self.query_one("#loading-text", Static)
-        loading_text.update(f"[cyan]SEARCHING[/]")
+        loading_text.update("[cyan]SEARCHING[/]")
 
         loading_detail = self.query_one("#loading-detail", Static)
         loading_detail.update(f"[bold]{ticker}[/]")
