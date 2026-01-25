@@ -56,7 +56,7 @@ def screen(
     preset: Optional[str] = typer.Option(
         None,
         "--preset", "-p",
-        help="Pre-built screen: graham, buffett, deep-value, oversold-value, dividend, quality, short-candidates",
+        help="Pre-built screen: graham, buffett, dividend, fallen-angels, hidden-gems, oversold, turnaround",
     ),
     # Valuation filters
     pe_max: Optional[float] = typer.Option(None, "--pe-max", help="Maximum P/E ratio"),
