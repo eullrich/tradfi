@@ -6,40 +6,110 @@ import time
 from dataclasses import asdict
 from datetime import datetime
 
-import yfinance as yf
 import pandas as pd
+import yfinance as yf
 
-from tradfi.models.stock import (
-    Stock,
-    ValuationMetrics,
-    ProfitabilityMetrics,
-    FinancialHealth,
-    GrowthMetrics,
-    DividendInfo,
-    TechnicalIndicators,
-    FairValueEstimates,
-    BuybackInfo,
-)
 from tradfi.core.technical import (
+    calculate_52w_metrics,
+    calculate_price_vs_ma_pct,
     calculate_rsi,
     calculate_sma,
-    calculate_price_vs_ma_pct,
-    calculate_52w_metrics,
 )
 from tradfi.core.valuation import (
-    calculate_graham_number,
     calculate_dcf_fair_value,
+    calculate_graham_number,
     calculate_pe_fair_value,
+)
+from tradfi.models.stock import (
+    BuybackInfo,
+    DividendInfo,
+    ETFMetrics,
+    FairValueEstimates,
+    FinancialHealth,
+    GrowthMetrics,
+    ProfitabilityMetrics,
+    Stock,
+    TechnicalIndicators,
+    ValuationMetrics,
 )
 from tradfi.utils.cache import (
     cache_stock_data,
-    get_cached_stock_data,
     get_batch_cached_stocks,
+    get_cached_stock_data,
     get_config,
 )
 
 # Track last request time for rate limiting
 _last_request_time: float = 0
+
+
+def _determine_asset_type(info: dict) -> str:
+    """Detect if ticker is ETF or stock from yfinance info.
+
+    Args:
+        info: yfinance Ticker.info dictionary
+
+    Returns:
+        "etf" or "stock"
+    """
+    quote_type = info.get("quoteType", "EQUITY")
+    return "etf" if quote_type == "ETF" else "stock"
+
+
+def _extract_etf_metrics(info: dict) -> ETFMetrics:
+    """Extract ETF-specific metrics from yfinance info.
+
+    Args:
+        info: yfinance Ticker.info dictionary
+
+    Returns:
+        ETFMetrics object with populated fields
+    """
+    # Parse inception date if available
+    inception_date = None
+    fund_inception = info.get("fundInceptionDate")
+    if fund_inception:
+        try:
+            inception_date = datetime.fromtimestamp(fund_inception).strftime("%Y-%m-%d")
+        except (ValueError, TypeError, OSError):
+            pass
+
+    # Expense ratio - yfinance returns as decimal (0.0003 for 0.03%)
+    expense_ratio_raw = info.get("annualReportExpenseRatio")
+    expense_ratio = None
+    if expense_ratio_raw is not None:
+        # Convert to percentage for display (0.0003 -> 0.03)
+        expense_ratio = expense_ratio_raw * 100
+
+    # YTD and multi-year returns - yfinance returns as decimals
+    ytd_return = _to_pct(info.get("ytdReturn"))
+    return_3y = _to_pct(info.get("threeYearAverageReturn"))
+    return_5y = _to_pct(info.get("fiveYearAverageReturn"))
+
+    # Calculate premium/discount to NAV
+    nav = info.get("navPrice")
+    current_price = info.get("currentPrice") or info.get("regularMarketPrice")
+    premium_discount = None
+    if nav and current_price and nav > 0:
+        premium_discount = ((current_price - nav) / nav) * 100
+
+    return ETFMetrics(
+        expense_ratio=expense_ratio,
+        aum=info.get("totalAssets"),
+        avg_volume=info.get("averageVolume"),
+        holdings_count=info.get("fundHoldings"),
+        nav=nav,
+        premium_discount=premium_discount,
+        inception_date=inception_date,
+        fund_family=info.get("fundFamily"),
+        category=info.get("category"),
+        legal_type=info.get("legalType"),
+        benchmark=info.get("benchmark"),
+        ytd_return=ytd_return,
+        return_3y=return_3y,
+        return_5y=return_5y,
+        beta_3y=info.get("beta3Year"),
+    )
 
 
 def fetch_stock(ticker_symbol: str, use_cache: bool = True, cache_only: bool = False) -> Stock | None:
@@ -113,19 +183,27 @@ def fetch_stock_from_api(ticker_symbol: str) -> Stock | None:
         if current_price is None and not history.empty:
             current_price = float(history["Close"].iloc[-1])
 
+        # Detect asset type (stock vs ETF)
+        asset_type = _determine_asset_type(info)
+
         # Build the Stock object
         stock = Stock(
             ticker=ticker_symbol.upper(),
             name=info.get("longName") or info.get("shortName"),
-            sector=info.get("sector"),
+            sector=info.get("sector") or info.get("category"),  # ETFs use category
             industry=info.get("industry"),
             current_price=current_price,
             currency=info.get("currency", "USD"),
+            asset_type=asset_type,
             eps=info.get("trailingEps"),
             book_value_per_share=info.get("bookValue"),
             shares_outstanding=info.get("sharesOutstanding"),
             operating_income=info.get("operatingIncome"),
         )
+
+        # Extract ETF-specific metrics if this is an ETF
+        if asset_type == "etf":
+            stock.etf = _extract_etf_metrics(info)
 
         # Valuation metrics
         stock.valuation = ValuationMetrics(
@@ -381,6 +459,7 @@ def _stock_to_dict(stock: Stock) -> dict:
         "industry": stock.industry,
         "current_price": stock.current_price,
         "currency": stock.currency,
+        "asset_type": stock.asset_type,
         "eps": stock.eps,
         "book_value_per_share": stock.book_value_per_share,
         "shares_outstanding": stock.shares_outstanding,
@@ -393,6 +472,7 @@ def _stock_to_dict(stock: Stock) -> dict:
         "technical": asdict(stock.technical),
         "fair_value": asdict(stock.fair_value),
         "buyback": asdict(stock.buyback),
+        "etf": asdict(stock.etf),
     }
 
 
@@ -405,6 +485,7 @@ def _dict_to_stock(data: dict) -> Stock:
         industry=data.get("industry"),
         current_price=data.get("current_price"),
         currency=data.get("currency", "USD"),
+        asset_type=data.get("asset_type", "stock"),
         eps=data.get("eps"),
         book_value_per_share=data.get("book_value_per_share"),
         shares_outstanding=data.get("shares_outstanding"),
@@ -417,4 +498,5 @@ def _dict_to_stock(data: dict) -> Stock:
         technical=TechnicalIndicators(**data.get("technical", {})),
         fair_value=FairValueEstimates(**data.get("fair_value", {})),
         buyback=BuybackInfo(**data.get("buyback", {})),
+        etf=ETFMetrics(**data.get("etf", {})),
     )
