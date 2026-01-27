@@ -167,6 +167,7 @@ AVAILABLE_UNIVERSES: dict[str, str] = {
     "sp500": "S&P 500 (~500 large-cap US stocks)",
     "dow30": "Dow Jones Industrial Average (30 stocks)",
     "nasdaq100": "NASDAQ-100 (100 largest NASDAQ stocks)",
+    "nasdaq": "NASDAQ Composite (~3,100 NASDAQ-listed stocks)",
     "russell2000": "Russell 2000 sample (~200 small-cap stocks)",
     "etf": "ETFs (REITs, Commodities, Sectors, International)",
     # Regional Groupings
@@ -220,6 +221,7 @@ MARKET_CURRENCIES: dict[str, str] = {
     "sp500": "USD",
     "dow30": "USD",
     "nasdaq100": "USD",
+    "nasdaq": "USD",
     "russell2000": "USD",
     "sweetspot": "USD",
     "etf": "USD",
