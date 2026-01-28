@@ -97,12 +97,14 @@ PRESET_SCREENS: dict[str, ScreenCriteria] = {
         debt_equity_max=100,  # Not overleveraged
     ),
     "hidden-gems": ScreenCriteria(
-        # Small/mid caps with strong fundamentals - less analyst coverage
-        market_cap_min=500_000_000,  # At least $500M
-        market_cap_max=15_000_000_000,  # Under $15B (less covered)
+        # Small/mid caps with strong fundamentals - beaten down, out of favor
+        market_cap_min=2_000_000_000,  # At least $2B
+        market_cap_max=10_000_000_000,  # Under $10B (less covered)
         pe_max=18,  # Reasonable valuation
         roe_min=12,  # Quality business
         debt_equity_max=75,  # Conservative
+        rsi_max=40,  # Weak momentum (out of favor)
+        below_200ma=True,  # Trading below 200-day MA
     ),
     # === CONTRARIAN PRESETS ===
     "oversold": ScreenCriteria(
@@ -145,8 +147,8 @@ PRESET_INFO: dict[str, dict[str, str]] = {
     },
     "hidden-gems": {
         "name": "Hidden Gems",
-        "description": "Small/mid cap quality",
-        "criteria": "$500M-$15B, P/E<18, ROE>12%",
+        "description": "Quality small/mid caps beaten down",
+        "criteria": "$2-10B, P/E<18, ROE>12%, RSI<40, below 200MA",
     },
     "oversold": {
         "name": "Oversold",
@@ -641,7 +643,7 @@ PRESET_DESCRIPTIONS: dict[str, str] = {
     "buffett": "Quality companies at fair prices",
     "dividend": "Income-focused high yielders",
     "fallen-angels": "Quality stocks down 30%+",
-    "hidden-gems": "Small/mid cap quality",
+    "hidden-gems": "Quality small/mid caps beaten down",
     "oversold": "Technical oversold signals",
     "turnaround": "Beaten down, recovery potential",
 }
