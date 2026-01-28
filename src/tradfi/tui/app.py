@@ -1021,7 +1021,7 @@ class CacheManagementScreen(ModalScreen):
         # Show cache stats summary
         cache_stats = self.health_info.get("cache_stats", {})
         if cache_stats:
-            total = cache_stats.get("total_stocks", 0)
+            total = cache_stats.get("total_cached", 0)
             status_lines.append(f"[dim]📊 Total cached stocks:[/] {total}")
 
         status.update("\n".join(status_lines))
