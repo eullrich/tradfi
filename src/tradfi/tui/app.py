@@ -5,6 +5,7 @@ from __future__ import annotations
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
+from textual.css.query import NoMatches
 from textual.message import Message
 from textual.screen import ModalScreen, Screen
 from textual.widgets import (
@@ -2722,8 +2723,8 @@ class ScreenerApp(App):
                 if self.selected_categories:
                     category_select.deselect_all()
                     self.selected_categories = set()
-        except Exception:
-            pass
+        except NoMatches:
+            pass  # Widgets not yet mounted
 
     def _display_filtered_sectors(self, search_term: str) -> None:
         """Display sectors filtered by search term."""
@@ -2762,8 +2763,8 @@ class ScreenerApp(App):
                 is_selected = sector in current_selections
                 sector_select.add_option((label, sector, is_selected))
 
-        except Exception:
-            pass
+        except NoMatches:
+            pass  # Widget not yet mounted
 
     def _get_universes_with_categories(self) -> dict[str, list[str]]:
         """Get all universes that have categories and their category lists."""
@@ -2816,8 +2817,8 @@ class ScreenerApp(App):
                 display_name = f"{icon} {cat}" if icon else cat
                 category_select.add_option((display_name, cat, False))
 
-        except Exception:
-            pass
+        except NoMatches:
+            pass  # Widget not yet mounted
 
     def _populate_categories(self, universe: str) -> None:
         """Populate the category selection list for a universe (legacy compatibility)."""
@@ -2846,6 +2847,7 @@ class ScreenerApp(App):
             self._update_workflow_status()
             self._update_section_titles()
             self._update_filter_pills()
+            self._run_screen()
         elif event.selection_list.id == "category-select":
             # Update selected categories (filter out __all__ marker)
             selected = set(event.selection_list.selected)
@@ -2858,6 +2860,7 @@ class ScreenerApp(App):
             self._update_workflow_status()
             self._update_section_titles()
             self._update_filter_pills()
+            self._run_screen()
         elif event.selection_list.id == "sector-select":
             # Update selected sectors (filter out __all__ marker)
             selected = set(event.selection_list.selected)
@@ -2868,6 +2871,7 @@ class ScreenerApp(App):
             self._update_workflow_status()
             self._update_section_titles()
             self._update_filter_pills()
+            self._run_screen()
 
     def _update_workflow_status(self) -> None:
         """Update status bar with contextual workflow guidance."""
@@ -2973,8 +2977,8 @@ class ScreenerApp(App):
                 categories=self.selected_categories,
                 preset=self.current_preset,
             )
-        except Exception:
-            pass
+        except NoMatches:
+            pass  # Widget not yet mounted
 
     def on_filter_pill_removed(self, event: FilterPill.Removed) -> None:
         """Handle removal of a filter pill."""
@@ -3014,8 +3018,9 @@ class ScreenerApp(App):
             self._update_section_titles()
             self._update_filter_pills()
             self._update_workflow_status()
-        except Exception:
-            pass
+            self._run_screen()
+        except (KeyError, AttributeError):
+            pass  # Selection list widget not found
 
     def on_clear_all_pill_clicked(self, event: ClearAllPill.Clicked) -> None:
         """Handle click on Clear All pill."""
@@ -4005,8 +4010,8 @@ class ScreenerApp(App):
 
             self.notify("All filters cleared", timeout=2)
             self._run_screen()
-        except Exception:
-            pass
+        except NoMatches:
+            pass  # Widget not yet mounted
 
     def on_input_changed(self, event: Input.Changed) -> None:
         """Handle input changes for real-time filtering."""
