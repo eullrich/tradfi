@@ -1921,11 +1921,9 @@ class StockDetailScreen(Screen):
         self.run_worker(self._fetch_quarterly, thread=True)
 
     def _fetch_quarterly(self) -> None:
-        """Background worker to fetch quarterly data."""
-        from tradfi.core.quarterly import fetch_quarterly_financials
-
+        """Background worker to fetch quarterly data from remote API."""
         try:
-            trends = fetch_quarterly_financials(self.stock.ticker, periods=8)
+            trends = self.remote_provider.fetch_quarterly(self.stock.ticker, periods=8)
             self.call_from_thread(self._display_quarterly, trends)
         except Exception:
             # Screen may have been dismissed, silently ignore

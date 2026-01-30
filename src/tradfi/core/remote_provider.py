@@ -14,6 +14,8 @@ from tradfi.models.stock import (
     FinancialHealth,
     GrowthMetrics,
     ProfitabilityMetrics,
+    QuarterlyData,
+    QuarterlyTrends,
     Stock,
     TechnicalIndicators,
     ValuationMetrics,
@@ -107,6 +109,49 @@ class RemoteDataProvider:
             return {}
         except (httpx.RequestError, json.JSONDecodeError):
             return {}
+
+    def fetch_quarterly(self, ticker: str, periods: int = 8) -> Optional[QuarterlyTrends]:
+        """Fetch quarterly financial data from the remote API.
+
+        Args:
+            ticker: Stock ticker symbol
+            periods: Number of quarters to fetch (default 8)
+
+        Returns:
+            QuarterlyTrends object or None if not found/error
+        """
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.get(
+                    f"{self.api_url}/api/v1/stocks/{ticker}/quarterly",
+                    params={"periods": periods}
+                )
+
+            if response.status_code == 200:
+                data = response.json()
+                return self._schema_to_quarterly_trends(data)
+            else:
+                return None
+        except (httpx.RequestError, json.JSONDecodeError):
+            return None
+
+    def _schema_to_quarterly_trends(self, data: dict) -> QuarterlyTrends:
+        """Convert API response schema to QuarterlyTrends dataclass."""
+        quarters = []
+        for q_data in data.get("quarters", []):
+            quarters.append(QuarterlyData(
+                quarter=q_data.get("quarter", ""),
+                revenue=q_data.get("revenue"),
+                net_income=q_data.get("net_income"),
+                gross_profit=q_data.get("gross_profit"),
+                operating_income=q_data.get("operating_income"),
+                gross_margin=q_data.get("gross_margin"),
+                operating_margin=q_data.get("operating_margin"),
+                net_margin=q_data.get("net_margin"),
+                eps=q_data.get("eps"),
+                free_cash_flow=q_data.get("free_cash_flow"),
+            ))
+        return QuarterlyTrends(quarters=quarters)
 
     def _schema_to_stock(self, data: dict) -> Stock:
         """Convert API response schema to Stock dataclass."""
