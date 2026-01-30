@@ -2,14 +2,25 @@
 
 from __future__ import annotations
 
+import gzip
 import json
 import os
 import re
 from dataclasses import dataclass
 from datetime import datetime
+from io import BytesIO
 from typing import Literal
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
+
+
+def _read_response(response) -> bytes:
+    """Read response, handling gzip compression if present."""
+    data = response.read()
+    # Check if gzip compressed (magic bytes 0x1f 0x8b)
+    if data[:2] == b'\x1f\x8b':
+        data = gzip.decompress(data)
+    return data
 
 # Supported LLM providers
 LLM_PROVIDER_ANTHROPIC = "anthropic"
@@ -90,7 +101,7 @@ def get_cik_for_ticker(ticker: str) -> str | None:
     try:
         req = Request(url, headers=SEC_HEADERS)
         with urlopen(req, timeout=10) as response:
-            data = json.loads(response.read().decode("utf-8"))
+            data = json.loads(_read_response(response).decode("utf-8"))
 
         # Search for ticker
         ticker_upper = ticker.upper()
@@ -123,7 +134,7 @@ def get_recent_filings(cik: str, form_type: str = "10-K", count: int = 5) -> lis
     try:
         req = Request(url, headers=SEC_HEADERS)
         with urlopen(req, timeout=15) as response:
-            data = json.loads(response.read().decode("utf-8"))
+            data = json.loads(_read_response(response).decode("utf-8"))
 
         filings = []
         recent = data.get("filings", {}).get("recent", {})
@@ -165,7 +176,7 @@ def fetch_filing_content(filing: Filing, max_chars: int = 100000) -> str | None:
     try:
         req = Request(filing.filing_url, headers=SEC_HEADERS)
         with urlopen(req, timeout=30) as response:
-            content = response.read().decode("utf-8", errors="ignore")
+            content = _read_response(response).decode("utf-8", errors="ignore")
 
         # Strip HTML tags for cleaner text
         content = re.sub(r'<style[^>]*>.*?</style>', '', content, flags=re.DOTALL | re.IGNORECASE)
