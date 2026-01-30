@@ -513,9 +513,11 @@ def get_sectors_for_tickers(tickers: list[str]) -> list[tuple[str, int]]:
     conn = get_db_connection()
     try:
         # Use parameterized query for the ticker list
-        placeholders = ",".join("?" * len(tickers))
+        # Uppercase tickers to match database storage format
+        upper_tickers = [t.upper() for t in tickers]
+        placeholders = ",".join("?" * len(upper_tickers))
         query = f"SELECT data FROM stock_cache WHERE ticker IN ({placeholders})"
-        rows = conn.execute(query, tickers).fetchall()
+        rows = conn.execute(query, upper_tickers).fetchall()
 
         sector_counts: Counter = Counter()
         for row in rows:

@@ -600,7 +600,8 @@ class RemoteDataProvider:
         """
         try:
             with httpx.Client(timeout=self.timeout) as client:
-                params = {"tickers": tickers} if tickers else None
+                # Check explicitly for None to handle empty list [] correctly
+                params = {"tickers": tickers} if tickers is not None else None
                 response = client.get(
                     f"{self.api_url}/api/v1/cache/sectors",
                     params=params,
