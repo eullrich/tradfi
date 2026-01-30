@@ -2386,6 +2386,10 @@ class ScreenerApp(App):
         self._sectors_loaded: bool = False  # Track if sectors list is populated
         self._all_sectors: list[tuple[str, int]] = []  # Full list for filtering
 
+        # Debounce timer for filter changes (avoids multiple API calls during rapid selection)
+        self._filter_debounce_timer: object | None = None
+        self._filter_debounce_delay: float = 0.4  # 400ms delay before running screen
+
         # Remote API provider (required - TUI always uses remote API)
         self.api_url = api_url
         self.remote_provider = RemoteDataProvider(api_url)
@@ -2847,7 +2851,7 @@ class ScreenerApp(App):
             self._update_workflow_status()
             self._update_section_titles()
             self._update_filter_pills()
-            self._run_screen()
+            self._schedule_run_screen()
         elif event.selection_list.id == "category-select":
             # Update selected categories (filter out __all__ marker)
             selected = set(event.selection_list.selected)
@@ -2860,7 +2864,7 @@ class ScreenerApp(App):
             self._update_workflow_status()
             self._update_section_titles()
             self._update_filter_pills()
-            self._run_screen()
+            self._schedule_run_screen()
         elif event.selection_list.id == "sector-select":
             # Update selected sectors (filter out __all__ marker)
             selected = set(event.selection_list.selected)
@@ -2871,7 +2875,7 @@ class ScreenerApp(App):
             self._update_workflow_status()
             self._update_section_titles()
             self._update_filter_pills()
-            self._run_screen()
+            self._schedule_run_screen()
 
     def _update_workflow_status(self) -> None:
         """Update status bar with contextual workflow guidance."""
@@ -3018,7 +3022,7 @@ class ScreenerApp(App):
             self._update_section_titles()
             self._update_filter_pills()
             self._update_workflow_status()
-            self._run_screen()
+            self._schedule_run_screen()
         except (KeyError, AttributeError):
             pass  # Selection list widget not found
 
@@ -3048,6 +3052,23 @@ class ScreenerApp(App):
                 self._load_position_list("_long", "Long List")
             elif "Short" in selected:
                 self._load_position_list("_short", "Short List")
+
+    def _schedule_run_screen(self) -> None:
+        """Schedule a debounced screen refresh.
+
+        Delays _run_screen() to batch rapid filter selections into a single API call.
+        If called multiple times within the debounce window, only the last call triggers.
+        """
+        # Cancel any pending timer
+        if self._filter_debounce_timer is not None:
+            self._filter_debounce_timer.stop()
+            self._filter_debounce_timer = None
+
+        # Schedule new timer
+        self._filter_debounce_timer = self.set_timer(
+            self._filter_debounce_delay,
+            self._run_screen,
+        )
 
     def _run_screen(self) -> None:
         # Clear position list view flags - we're now screening
