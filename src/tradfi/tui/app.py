@@ -1925,8 +1925,19 @@ class StockDetailScreen(Screen):
         try:
             trends = self.remote_provider.fetch_quarterly(self.stock.ticker, periods=8)
             self.call_from_thread(self._display_quarterly, trends)
+        except Exception as e:
+            # Show error instead of silently ignoring
+            self.call_from_thread(self._display_quarterly_error, str(e))
+
+    def _display_quarterly_error(self, error: str) -> None:
+        """Display error when quarterly fetch fails."""
+        try:
+            quarterly_panel = self.query_one("#quarterly-panel", Static)
+            quarterly_panel.update(
+                "[bold red]Quarterly Trends[/]\n\n"
+                f"[dim]Error fetching quarterly data: {error}[/]"
+            )
         except Exception:
-            # Screen may have been dismissed, silently ignore
             pass
 
     def _display_quarterly(self, trends) -> None:
@@ -1939,69 +1950,76 @@ class StockDetailScreen(Screen):
             # Screen was dismissed before callback ran
             return
 
-        if not trends or not trends.quarters:
+        try:
+            if not trends or not trends.quarters:
+                quarterly_panel.update(
+                    "[bold red]Quarterly Trends[/]\n\n"
+                    "[dim]Could not fetch quarterly financial data.[/]"
+                )
+                return
+
+            # Build formatted report
+            lines = [
+                f"[bold cyan]Quarterly Trends[/] [dim]({len(trends.quarters)} quarters)[/]",
+                "",
+            ]
+
+            # Revenue
+            revenues = trends.get_metric_values("revenue")
+            if revenues:
+                rev_spark = sparkline(list(reversed(revenues)), width=8)
+                latest_rev = format_large_number(revenues[0]) if revenues else "N/A"
+                qoq_rev = trends.latest_qoq_revenue_growth
+                qoq_str = f" [{'green' if qoq_rev and qoq_rev > 0 else 'red'}]({qoq_rev:+.1f}% QoQ)[/]" if qoq_rev is not None else ""
+                lines.append(f"[bold]Revenue:[/]  {latest_rev}  {rev_spark}{qoq_str}")
+                lines.append(f"  Trend: [dim]{trends.revenue_trend}[/]")
+
+            # Net Income
+            incomes = trends.get_metric_values("net_income")
+            if incomes:
+                inc_spark = sparkline(list(reversed(incomes)), width=8)
+                latest_inc = format_large_number(incomes[0]) if incomes else "N/A"
+                qoq_earn = trends.latest_qoq_earnings_growth
+                qoq_str = f" [{'green' if qoq_earn and qoq_earn > 0 else 'red'}]({qoq_earn:+.1f}% QoQ)[/]" if qoq_earn is not None else ""
+                lines.append(f"[bold]Earnings:[/] {latest_inc}  {inc_spark}{qoq_str}")
+
+            lines.append("")
+
+            # Margins
+            lines.append(f"[bold]Margins:[/] [dim]({trends.margin_trend})[/]")
+            gm = trends.get_metric_values("gross_margin")
+            if gm:
+                gm_spark = sparkline(list(reversed(gm)), width=8)
+                lines.append(f"  Gross:     {gm[0]:.1f}%  {gm_spark}")
+
+            om = trends.get_metric_values("operating_margin")
+            if om:
+                om_spark = sparkline(list(reversed(om)), width=8)
+                lines.append(f"  Operating: {om[0]:.1f}%  {om_spark}")
+
+            nm = trends.get_metric_values("net_margin")
+            if nm:
+                nm_spark = sparkline(list(reversed(nm)), width=8)
+                lines.append(f"  Net:       {nm[0]:.1f}%  {nm_spark}")
+
+            lines.append("")
+
+            # Recent quarters table
+            lines.append("[bold]Recent Quarters:[/]")
+            lines.append("[dim]Quarter   Revenue      Net Inc     Margin[/]")
+            for q in trends.quarters[:4]:
+                rev_str = format_large_number(q.revenue) if q.revenue else "N/A"
+                inc_str = format_large_number(q.net_income) if q.net_income else "N/A"
+                nm_str = f"{q.net_margin:.1f}%" if q.net_margin else "N/A"
+                lines.append(f"{q.quarter}   {rev_str:>10}  {inc_str:>10}  {nm_str:>6}")
+
+            quarterly_panel.update("\n".join(lines))
+
+        except Exception as e:
             quarterly_panel.update(
                 "[bold red]Quarterly Trends[/]\n\n"
-                "[dim]Could not fetch quarterly financial data.[/]"
+                f"[dim]Error displaying quarterly data: {e}[/]"
             )
-            return
-
-        # Build formatted report
-        lines = [
-            f"[bold cyan]Quarterly Trends[/] [dim]({len(trends.quarters)} quarters)[/]",
-            "",
-        ]
-
-        # Revenue
-        revenues = trends.get_metric_values("revenue")
-        if revenues:
-            rev_spark = sparkline(list(reversed(revenues)), width=8)
-            latest_rev = format_large_number(revenues[0]) if revenues else "N/A"
-            qoq_rev = trends.latest_qoq_revenue_growth
-            qoq_str = f" [{'green' if qoq_rev and qoq_rev > 0 else 'red'}]({qoq_rev:+.1f}% QoQ)[/]" if qoq_rev is not None else ""
-            lines.append(f"[bold]Revenue:[/]  {latest_rev}  {rev_spark}{qoq_str}")
-            lines.append(f"  Trend: [dim]{trends.revenue_trend}[/]")
-
-        # Net Income
-        incomes = trends.get_metric_values("net_income")
-        if incomes:
-            inc_spark = sparkline(list(reversed(incomes)), width=8)
-            latest_inc = format_large_number(incomes[0]) if incomes else "N/A"
-            qoq_earn = trends.latest_qoq_earnings_growth
-            qoq_str = f" [{'green' if qoq_earn and qoq_earn > 0 else 'red'}]({qoq_earn:+.1f}% QoQ)[/]" if qoq_earn is not None else ""
-            lines.append(f"[bold]Earnings:[/] {latest_inc}  {inc_spark}{qoq_str}")
-
-        lines.append("")
-
-        # Margins
-        lines.append(f"[bold]Margins:[/] [dim]({trends.margin_trend})[/]")
-        gm = trends.get_metric_values("gross_margin")
-        if gm:
-            gm_spark = sparkline(list(reversed(gm)), width=8)
-            lines.append(f"  Gross:     {gm[0]:.1f}%  {gm_spark}")
-
-        om = trends.get_metric_values("operating_margin")
-        if om:
-            om_spark = sparkline(list(reversed(om)), width=8)
-            lines.append(f"  Operating: {om[0]:.1f}%  {om_spark}")
-
-        nm = trends.get_metric_values("net_margin")
-        if nm:
-            nm_spark = sparkline(list(reversed(nm)), width=8)
-            lines.append(f"  Net:       {nm[0]:.1f}%  {nm_spark}")
-
-        lines.append("")
-
-        # Recent quarters table
-        lines.append("[bold]Recent Quarters:[/]")
-        lines.append("[dim]Quarter   Revenue      Net Inc     Margin[/]")
-        for q in trends.quarters[:4]:
-            rev_str = format_large_number(q.revenue) if q.revenue else "N/A"
-            inc_str = format_large_number(q.net_income) if q.net_income else "N/A"
-            nm_str = f"{q.net_margin:.1f}%" if q.net_margin else "N/A"
-            lines.append(f"{q.quarter}   {rev_str:>10}  {inc_str:>10}  {nm_str:>6}")
-
-        quarterly_panel.update("\n".join(lines))
 
     def action_find_similar(self) -> None:
         """Find stocks similar to the current stock."""
