@@ -112,7 +112,9 @@ def _extract_etf_metrics(info: dict) -> ETFMetrics:
     )
 
 
-def fetch_stock(ticker_symbol: str, use_cache: bool = True, cache_only: bool = False) -> Stock | None:
+def fetch_stock(
+    ticker_symbol: str, use_cache: bool = True, cache_only: bool = False
+) -> Stock | None:
     """
     Fetch stock data from cache only. Does not hit yfinance API.
 
@@ -132,18 +134,33 @@ def fetch_stock(ticker_symbol: str, use_cache: bool = True, cache_only: bool = F
     return None
 
 
-def fetch_stocks_batch(tickers: list[str] | None = None) -> dict[str, Stock]:
+def fetch_stocks_batch(
+    tickers: list[str] | None = None, fetch_missing: bool = False
+) -> dict[str, Stock]:
     """
     Fetch multiple stocks from cache in a single efficient query.
 
     Args:
         tickers: List of ticker symbols. If None, returns all cached stocks.
+        fetch_missing: If True, fetch missing stocks from yfinance API.
 
     Returns:
         Dict mapping ticker to Stock object.
     """
     cached_data = get_batch_cached_stocks(tickers)
-    return {ticker: _dict_to_stock(data) for ticker, data in cached_data.items()}
+    result = {ticker: _dict_to_stock(data) for ticker, data in cached_data.items()}
+
+    # Fetch missing stocks from yfinance if requested
+    if fetch_missing and tickers:
+        cached_tickers = set(result.keys())
+        missing_tickers = [t.upper() for t in tickers if t.upper() not in cached_tickers]
+
+        for ticker in missing_tickers:
+            stock = fetch_stock_from_api(ticker)
+            if stock:
+                result[ticker] = stock
+
+    return result
 
 
 def fetch_stock_from_api(ticker_symbol: str) -> Stock | None:

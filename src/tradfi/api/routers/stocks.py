@@ -18,7 +18,9 @@ router = APIRouter(prefix="/stocks", tags=["stocks"])
 async def get_stock(
     ticker: str,
     use_cache: bool = Query(default=True, description="Use cached data if available"),
-    cache_only: bool = Query(default=False, description="Only return cached data, never hit yfinance"),
+    cache_only: bool = Query(
+        default=False, description="Only return cached data, never hit yfinance"
+    ),
 ):
     """
     Get complete analysis for a single stock.
@@ -63,13 +65,20 @@ async def get_all_stocks():
 
 
 @router.post("/batch", response_model=dict[str, StockSchema])
-async def get_stocks_batch(tickers: list[str]):
+async def get_stocks_batch(
+    tickers: list[str],
+    fetch_missing: bool = Query(
+        default=True,
+        description="Fetch missing stocks from yfinance API (slower but complete)",
+    ),
+):
     """
     Get multiple stocks by ticker in a single request.
 
-    Returns dict mapping ticker to stock data. Missing tickers are omitted.
+    Returns dict mapping ticker to stock data. Missing tickers are omitted
+    unless fetch_missing=true (default), in which case they are fetched from yfinance.
     """
-    stocks = fetch_stocks_batch(tickers)
+    stocks = fetch_stocks_batch(tickers, fetch_missing=fetch_missing)
     return {ticker: stock_to_schema(stock) for ticker, stock in stocks.items()}
 
 
@@ -85,7 +94,5 @@ async def get_quarterly_data(
     """
     trends = fetch_quarterly_financials(ticker.upper(), periods=periods)
     if trends is None:
-        raise HTTPException(
-            status_code=404, detail=f"Quarterly data for {ticker} not found"
-        )
+        raise HTTPException(status_code=404, detail=f"Quarterly data for {ticker} not found")
     return quarterly_trends_to_schema(trends)
