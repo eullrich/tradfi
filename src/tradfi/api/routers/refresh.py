@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel
 
+from tradfi.api.auth import require_admin_key
 from tradfi.api.scheduler import (
     get_refresh_state,
     refresh_universe,
@@ -58,7 +59,11 @@ async def get_status():
     return RefreshStatusSchema(**state)
 
 
-@router.post("/{universe}", response_model=RefreshTriggerResponse)
+@router.post(
+    "/{universe}",
+    response_model=RefreshTriggerResponse,
+    dependencies=[Depends(require_admin_key)],
+)
 async def trigger_refresh(
     universe: str,
     background_tasks: BackgroundTasks,
@@ -66,6 +71,8 @@ async def trigger_refresh(
 ):
     """
     Trigger a background refresh for a specific universe.
+
+    Requires X-Admin-Key header with valid admin API key.
 
     The refresh runs in the background. Check /refresh/status for progress.
 

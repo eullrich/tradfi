@@ -1,7 +1,8 @@
 """Cache management endpoints."""
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
+from tradfi.api.auth import require_admin_key
 from tradfi.api.schemas import CacheStatsSchema, MessageSchema
 from tradfi.utils.cache import (
     clear_cache,
@@ -20,9 +21,12 @@ async def get_stats():
     return CacheStatsSchema(**stats)
 
 
-@router.post("/clear", response_model=MessageSchema)
+@router.post("/clear", response_model=MessageSchema, dependencies=[Depends(require_admin_key)])
 async def clear_cache_endpoint():
-    """Clear all cached stock data."""
+    """Clear all cached stock data.
+
+    Requires X-Admin-Key header with valid admin API key.
+    """
     count = clear_cache()
     return MessageSchema(message=f"Cleared {count} cached entries")
 
