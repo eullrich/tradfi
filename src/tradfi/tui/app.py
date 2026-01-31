@@ -2386,7 +2386,7 @@ class ScreenerApp(App):
         "ytd": (lambda s: s.etf.ytd_return if s.etf.ytd_return is not None else float("-inf"), True, "YTD"),
     }
 
-    def __init__(self, api_url: str) -> None:
+    def __init__(self, api_url: str, admin_key: str | None = None) -> None:
         super().__init__()
         self.current_preset = None
         self.stocks: list[Stock] = []
@@ -2408,7 +2408,8 @@ class ScreenerApp(App):
 
         # Remote API provider (required - TUI always uses remote API)
         self.api_url = api_url
-        self.remote_provider = RemoteDataProvider(api_url)
+        self.admin_key = admin_key
+        self.remote_provider = RemoteDataProvider(api_url, admin_key=admin_key)
 
         # Currency display settings
         from tradfi.core.currency import DEFAULT_CURRENCY_CYCLE
@@ -4098,12 +4099,14 @@ class ScreenerApp(App):
         return []
 
 
-def run_tui(api_url: str) -> None:
+def run_tui(api_url: str, admin_key: str | None = None) -> None:
     """Run the interactive TUI.
 
     Args:
         api_url: Remote API URL (required). All data is fetched from the
                  remote server - no local yfinance fetching.
+        admin_key: Optional admin API key for cache/refresh operations.
+                   Set via TRADFI_ADMIN_KEY environment variable.
     """
-    app = ScreenerApp(api_url=api_url)
+    app = ScreenerApp(api_url=api_url, admin_key=admin_key)
     app.run()

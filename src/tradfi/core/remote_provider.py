@@ -25,15 +25,23 @@ from tradfi.models.stock import (
 class RemoteDataProvider:
     """Fetches stock data from a remote TradFi API server."""
 
-    def __init__(self, api_url: str, timeout: float = 30.0):
+    def __init__(self, api_url: str, timeout: float = 30.0, admin_key: str | None = None):
         """Initialize the remote data provider.
 
         Args:
             api_url: Base URL of the TradFi API (e.g., https://deepvalue.up.railway.app)
             timeout: Request timeout in seconds
+            admin_key: Optional admin API key for cache/refresh operations
         """
         self.api_url = api_url.rstrip("/")
         self.timeout = timeout
+        self.admin_key = admin_key
+
+    def _admin_headers(self) -> dict[str, str]:
+        """Get headers for admin operations."""
+        if self.admin_key:
+            return {"X-Admin-Key": self.admin_key}
+        return {}
 
     def fetch_stock(self, ticker: str, cache_only: bool = True) -> Optional[Stock]:
         """Fetch stock data from the remote API.
@@ -619,10 +627,16 @@ class RemoteDataProvider:
             return []
 
     def clear_cache(self) -> int:
-        """Clear all cached stock data. Returns count of cleared entries."""
+        """Clear all cached stock data. Returns count of cleared entries.
+
+        Requires admin_key to be set if server has TRADFI_ADMIN_KEY configured.
+        """
         try:
             with httpx.Client(timeout=self.timeout) as client:
-                response = client.post(f"{self.api_url}/api/v1/cache/clear")
+                response = client.post(
+                    f"{self.api_url}/api/v1/cache/clear",
+                    headers=self._admin_headers(),
+                )
             if response.status_code == 200:
                 data = response.json()
                 if isinstance(data, dict):
@@ -637,12 +651,20 @@ class RemoteDataProvider:
             return 0
 
     def trigger_refresh(self, universe: str) -> dict:
-        """Trigger a refresh for a universe. Returns status dict."""
+        """Trigger a refresh for a universe. Returns status dict.
+
+        Requires admin_key to be set if server has TRADFI_ADMIN_KEY configured.
+        """
         try:
             with httpx.Client(timeout=self.timeout) as client:
-                response = client.post(f"{self.api_url}/api/v1/refresh/{universe}")
+                response = client.post(
+                    f"{self.api_url}/api/v1/refresh/{universe}",
+                    headers=self._admin_headers(),
+                )
             if response.status_code == 200:
                 return response.json()
+            elif response.status_code in (401, 403):
+                return {"error": "Admin key required or invalid"}
             return {"error": f"Status {response.status_code}"}
         except httpx.RequestError as e:
             return {"error": str(e)}

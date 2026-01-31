@@ -8,6 +8,8 @@ from tradfi import __version__
 
 # Default API URL - can be overridden via environment variable
 DEFAULT_API_URL = os.environ.get("TRADFI_API_URL", "https://deepv-production.up.railway.app")
+# Admin API key for cache/refresh operations
+ADMIN_KEY = os.environ.get("TRADFI_ADMIN_KEY")
 from tradfi.commands.analyze import analyze
 from tradfi.commands.screen import screen
 from tradfi.commands.quarterly import quarterly
@@ -59,7 +61,7 @@ def ui(
         raise typer.Exit(1)
 
     console.print(f"[dim]Connecting to API: {api_url}[/]")
-    run_tui(api_url=api_url)
+    run_tui(api_url=api_url, admin_key=ADMIN_KEY)
 
 
 @app.command()
@@ -142,7 +144,7 @@ def main_callback(
             raise typer.Exit(1)
 
         console.print(f"[dim]Connecting to API: {api_url}[/]")
-        run_tui(api_url=api_url)
+        run_tui(api_url=api_url, admin_key=ADMIN_KEY)
 
 
 if __name__ == "__main__":

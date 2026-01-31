@@ -1,6 +1,7 @@
 """FastAPI application for TradFi."""
 
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -61,14 +62,31 @@ Configure via environment variables:
     lifespan=lifespan,
 )
 
-# CORS middleware - allow all origins by default for development
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS middleware - configure via TRADFI_CORS_ORIGINS environment variable
+# Default is restrictive (no cross-origin requests allowed)
+# Set TRADFI_CORS_ORIGINS=* for development or specific origins comma-separated
+_cors_origins_env = os.environ.get("TRADFI_CORS_ORIGINS", "")
+if _cors_origins_env == "*":
+    # Explicitly allow all origins (development mode)
+    # Note: credentials are disabled when using wildcard
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "PUT", "DELETE"],
+        allow_headers=["*"],
+    )
+elif _cors_origins_env:
+    # Allow specific origins (production mode with web frontend)
+    _allowed_origins = [o.strip() for o in _cors_origins_env.split(",") if o.strip()]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_allowed_origins,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "DELETE"],
+        allow_headers=["*"],
+    )
+# If TRADFI_CORS_ORIGINS is not set, no CORS middleware is added (most secure)
 
 # Include routers
 app.include_router(stocks.router, prefix="/api/v1")
