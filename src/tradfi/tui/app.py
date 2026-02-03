@@ -37,7 +37,7 @@ ETF_CATEGORY_ICONS = {
 }
 
 # Column configurations for different asset types
-STOCK_COLUMNS = ("Company", "Sector", "Price", "P/E", "ROE", "RSI", "MoS%", "Div", "Signal")
+STOCK_COLUMNS = ("Company", "Sector", "Price", "P/E", "PEG", "ROE", "RSI", "MoS%", "Div", "Signal")
 ETF_COLUMNS = ("Company", "Category", "Price", "ExpRatio", "AUM", "YTD", "1Y", "Yield", "Signal")
 MIXED_COLUMNS = ("Company", "Type", "Sector", "Price", "Yield", "1Y", "RSI", "Signal")
 
@@ -2361,6 +2361,7 @@ class ScreenerApp(App):
         Binding("9", "sort_div", "Sort: Div", show=False),
         Binding("0", "sort_rsi", "Sort: RSI", show=False),
         Binding("-", "sort_mos", "Sort: MoS", show=False),
+        Binding("=", "sort_peg", "Sort: PEG", show=False),
         Binding("$", "toggle_currency", "Currency", show=False),
         Binding("K", "cache_manage", "Cache Manager", show=False),
     ]
@@ -2376,6 +2377,7 @@ class ScreenerApp(App):
         "1y": (lambda s: s.technical.return_1y if s.technical.return_1y is not None else float("-inf"), True, "1Y"),
         "pe": (lambda s: s.valuation.pe_trailing if s.valuation.pe_trailing and s.valuation.pe_trailing > 0 else float("inf"), False, "P/E"),
         "pb": (lambda s: s.valuation.pb_ratio if s.valuation.pb_ratio and s.valuation.pb_ratio > 0 else float("inf"), False, "P/B"),
+        "peg": (lambda s: s.valuation.peg_ratio if s.valuation.peg_ratio and s.valuation.peg_ratio > 0 else float("inf"), False, "PEG"),
         "roe": (lambda s: s.profitability.roe if s.profitability.roe else float("-inf"), True, "ROE"),
         "div": (lambda s: s.dividends.dividend_yield if s.dividends.dividend_yield else 0, True, "Div"),
         "rsi": (lambda s: s.technical.rsi_14 if s.technical.rsi_14 else float("inf"), False, "RSI"),
@@ -3512,6 +3514,9 @@ class ScreenerApp(App):
         # P/E
         pe = f"{stock.valuation.pe_trailing:.1f}" if stock.valuation.pe_trailing and isinstance(stock.valuation.pe_trailing, (int, float)) else "-"
 
+        # PEG
+        peg = f"{stock.valuation.peg_ratio:.2f}" if stock.valuation.peg_ratio and isinstance(stock.valuation.peg_ratio, (int, float)) and stock.valuation.peg_ratio > 0 else "-"
+
         # ROE
         roe = f"{stock.profitability.roe:.0f}%" if stock.profitability.roe else "-"
 
@@ -3529,7 +3534,7 @@ class ScreenerApp(App):
         # Signal
         signal = stock.signal
 
-        return (company, sector, price, pe, roe, rsi, mos, div, signal)
+        return (company, sector, price, pe, peg, roe, rsi, mos, div, signal)
 
     def _format_mixed_row(self, stock, format_price_func) -> tuple:
         """Format a row for mixed stock/ETF display."""
@@ -3748,6 +3753,7 @@ class ScreenerApp(App):
                 "sort_ticker": self.action_sort_ticker,
                 "sort_sector": self.action_sort_sector,
                 "sort_pb": self.action_sort_pb,
+                "sort_peg": self.action_sort_peg,
             }
             if action_id in action_map:
                 action_map[action_id]()
@@ -3962,6 +3968,9 @@ class ScreenerApp(App):
 
     def action_sort_mos(self) -> None:
         self._sort_by("mos")
+
+    def action_sort_peg(self) -> None:
+        self._sort_by("peg")
 
     def action_save_list(self) -> None:
         """Save current screen results to a named list."""
