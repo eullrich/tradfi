@@ -81,6 +81,14 @@ PRESET_SCREENS: dict[str, ScreenCriteria] = {
         margin_min=10,
         pe_max=25,
     ),
+    "garp": ScreenCriteria(
+        # Growth at Reasonable Price - Peter Lynch style
+        # PEG < 1 means growth is underpriced relative to P/E
+        peg_max=1.0,
+        earnings_growth_min=10,  # Must have meaningful growth
+        pe_max=25,  # Not too expensive
+        roe_min=10,  # Quality filter
+    ),
     # === INCOME PRESET ===
     "dividend": ScreenCriteria(
         # High-yield income stocks with quality filters
@@ -134,6 +142,11 @@ PRESET_INFO: dict[str, dict[str, str]] = {
         "name": "Buffett",
         "description": "Quality companies at fair prices",
         "criteria": "ROE>15%, Margin>10%, P/E<25",
+    },
+    "garp": {
+        "name": "GARP",
+        "description": "Growth at Reasonable Price (Peter Lynch)",
+        "criteria": "PEG<1, Growth>10%, P/E<25, ROE>10%",
     },
     "dividend": {
         "name": "Dividend",
@@ -476,6 +489,11 @@ def screen_stock(stock: Stock, criteria: ScreenCriteria) -> bool:
         if ps is None or not isinstance(ps, (int, float)) or ps <= 0 or ps > criteria.ps_max:
             return False
 
+    if criteria.peg_min is not None:
+        peg = stock.valuation.peg_ratio
+        if peg is None or not isinstance(peg, (int, float)) or peg <= 0 or peg < criteria.peg_min:
+            return False
+
     if criteria.peg_max is not None:
         peg = stock.valuation.peg_ratio
         if peg is None or not isinstance(peg, (int, float)) or peg <= 0 or peg > criteria.peg_max:
@@ -621,7 +639,7 @@ def get_preset_screen(name: str) -> ScreenCriteria:
     Get a pre-built screen by name.
 
     Args:
-        name: Screen name (graham, buffett, dividend, fallen-angels, hidden-gems, oversold, turnaround)
+        name: Screen name (graham, buffett, garp, dividend, fallen-angels, hidden-gems, oversold, turnaround)
 
     Returns:
         ScreenCriteria for the preset
@@ -641,6 +659,7 @@ def get_preset_screen(name: str) -> ScreenCriteria:
 PRESET_DESCRIPTIONS: dict[str, str] = {
     "graham": "Classic Ben Graham value criteria",
     "buffett": "Quality companies at fair prices",
+    "garp": "Growth at reasonable price (PEG<1)",
     "dividend": "Income-focused high yielders",
     "fallen-angels": "Quality stocks down 30%+",
     "hidden-gems": "Quality small/mid caps beaten down",
