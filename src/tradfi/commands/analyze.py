@@ -201,6 +201,19 @@ def display_comparison(stocks: list[Stock]) -> None:
     console.print()
 
 
+def _validate_output_path(output_path: str) -> str:
+    """Validate that output path doesn't escape the current working directory."""
+    from pathlib import Path
+
+    resolved = Path(output_path).resolve()
+    cwd = Path.cwd().resolve()
+    if not str(resolved).startswith(str(cwd)):
+        raise typer.BadParameter(
+            f"Output path must be within the current directory. Got: {output_path}"
+        )
+    return str(resolved)
+
+
 def export_stocks(stocks: list[Stock], format: str, output_path: Optional[str]) -> None:
     """Export stock data to JSON or CSV."""
     format = format.lower()
@@ -251,6 +264,9 @@ def export_stocks(stocks: list[Stock], format: str, output_path: Optional[str]) 
             output_path = f"{stocks[0].ticker.lower()}.{format}"
         else:
             output_path = f"comparison.{format}"
+
+    # Validate output path to prevent path traversal
+    output_path = _validate_output_path(output_path)
 
     # Export
     if format == "json":

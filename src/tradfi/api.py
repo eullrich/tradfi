@@ -4,9 +4,9 @@ import os
 from datetime import datetime
 from typing import Annotated
 
-# Development mode: returns magic link tokens in response for testing
-# In production, set TRADFI_PRODUCTION=1 to disable token exposure
-IS_PRODUCTION = os.getenv("TRADFI_PRODUCTION", "").lower() in ("1", "true", "yes")
+# Production mode by default: magic link tokens are NOT returned in responses.
+# Set TRADFI_DEV_MODE=1 to enable token exposure for local development/testing.
+IS_PRODUCTION = os.getenv("TRADFI_DEV_MODE", "").lower() not in ("1", "true", "yes")
 
 from fastapi import Depends, FastAPI, Header, HTTPException  # noqa: E402
 from fastapi.responses import JSONResponse  # noqa: E402

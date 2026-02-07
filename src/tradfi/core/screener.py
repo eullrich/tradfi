@@ -310,6 +310,17 @@ def list_available_universes() -> dict[str, tuple[str, int]]:
     return result
 
 
+def _validate_universe_name(universe: str) -> str:
+    """Validate universe name to prevent path traversal attacks."""
+    import re
+
+    # Only allow alphanumeric characters and hyphens
+    if not re.match(r"^[a-zA-Z0-9_-]+$", universe):
+        available = ", ".join(AVAILABLE_UNIVERSES.keys())
+        raise ValueError(f"Invalid universe name '{universe}'. Available: {available}")
+    return universe
+
+
 def load_tickers(universe: str = "sp500") -> list[str]:
     """
     Load ticker list for a given universe.
@@ -322,9 +333,15 @@ def load_tickers(universe: str = "sp500") -> list[str]:
 
     Raises:
         FileNotFoundError: If the universe file doesn't exist
+        ValueError: If the universe name contains invalid characters
     """
+    universe = _validate_universe_name(universe)
     data_dir = get_data_dir()
     ticker_file = data_dir / f"{universe}.txt"
+
+    # Ensure resolved path is under data_dir (defense in depth)
+    if not ticker_file.resolve().parent == data_dir.resolve():
+        raise ValueError(f"Invalid universe name '{universe}'")
 
     if not ticker_file.exists():
         available = ", ".join(AVAILABLE_UNIVERSES.keys())
@@ -349,6 +366,7 @@ def load_tickers_with_categories(universe: str) -> dict[str, list[str]]:
     Returns:
         Dict mapping category names to lists of tickers
     """
+    universe = _validate_universe_name(universe)
     data_dir = get_data_dir()
     ticker_file = data_dir / f"{universe}.txt"
 
