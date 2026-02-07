@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "command": "echo 'If this change was a correction or bug fix, update CLAUDE.md Learned Rules section to prevent this class of mistake. If you discovered a new codebase pattern, document it.'"
+      }
+    ],
+    "Stop": [
+      {
+        "command": "echo 'Before finishing: (1) If you learned something new about the codebase, update MEMORY.md. (2) If you were corrected, add a rule to CLAUDE.md Learned Rules section.'"
+      }
+    ]
+  }
+}

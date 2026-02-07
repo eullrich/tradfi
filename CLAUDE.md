@@ -210,6 +210,20 @@ SQLite at `~/.tradfi/cache.db`:
 - `user_saved_lists` - User-scoped lists
 - `user_saved_list_items` - User-scoped list items
 
+## Git Worktrees
+
+Three parallel worktrees for concurrent Claude sessions:
+
+| Path | Branch | Purpose |
+|------|--------|---------|
+| `/home/user/tradfi` | feature branches | Primary feature development |
+| `/home/user/tradfi-fix` | `fix` | Bug fixes & maintenance |
+| `/home/user/tradfi-lab` | `lab` | Experiments & prototypes (disposable) |
+
+**Shell aliases** (in `~/.bashrc`): `tw`/`tf`/`tl` to navigate, `cw`/`cf`/`cl` to launch Claude, `ts` for status across all.
+
+**Rules**: Never edit the same file in two worktrees simultaneously. Main worktree owns the push branch. Lab is disposable — reset freely.
+
 ## Development
 
 ```bash
@@ -239,3 +253,23 @@ export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
 Auto-detects provider based on available environment variables.
+
+## Self-Improvement Rules
+
+Claude must follow these rules to maintain and improve project knowledge automatically:
+
+- **On correction**: When you make a mistake and are corrected, immediately update this CLAUDE.md with a concise rule under a `## Learned Rules` section to prevent that class of mistake in the future.
+- **On pattern discovery**: When you discover a codebase pattern not documented here (e.g., naming conventions, error handling idioms, data flow patterns), add it to the relevant section of this file.
+- **On failure recovery**: When a command, test, or workflow fails and you find the fix, document it under `## Development` or a `## Gotchas` section.
+- **On reconnaissance**: Before implementing any non-trivial feature, find 2 similar examples in the repo and explain the pattern. Then follow that pattern.
+- **Keep it lean**: Rules should be concise and actionable. Delete rules that become outdated or redundant. This file should never exceed ~300 lines.
+
+## Memory
+
+- Maintain cross-session learnings in auto-memory at `/root/.claude/projects/-home-user-tradfi/memory/MEMORY.md`
+- After completing any non-trivial task, record what worked, what didn't, and codebase-specific insights in memory.
+- Create topic-specific files (e.g., `yfinance-gotchas.md`, `tui-patterns.md`) for detailed notes and link them from MEMORY.md.
+
+## Learned Rules
+
+_This section is auto-maintained by Claude. Rules are added when mistakes are corrected._
