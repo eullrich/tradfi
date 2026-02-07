@@ -85,10 +85,13 @@ class RemoteDataProvider:
             if response.status_code == 200:
                 data = response.json()
                 if isinstance(data, dict):
-                    return {
-                        ticker: self._schema_to_stock(stock_data)
-                        for ticker, stock_data in data.items()
-                    }
+                    result: dict[str, Stock] = {}
+                    for ticker, stock_data in data.items():
+                        try:
+                            result[ticker] = self._schema_to_stock(stock_data)
+                        except Exception:
+                            pass  # Skip stocks that fail deserialization
+                    return result
             return {}
         except (httpx.RequestError, json.JSONDecodeError):
             return {}
@@ -128,10 +131,13 @@ class RemoteDataProvider:
             if response.status_code == 200:
                 data = response.json()
                 if isinstance(data, dict):
-                    return {
-                        ticker: self._schema_to_stock(stock_data)
-                        for ticker, stock_data in data.items()
-                    }
+                    result: dict[str, Stock] = {}
+                    for ticker, stock_data in data.items():
+                        try:
+                            result[ticker] = self._schema_to_stock(stock_data)
+                        except Exception:
+                            pass  # Skip stocks that fail deserialization
+                    return result
             return {}
         except (httpx.RequestError, json.JSONDecodeError):
             return {}

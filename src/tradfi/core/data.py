@@ -145,7 +145,13 @@ def fetch_stocks_batch(tickers: list[str] | None = None) -> dict[str, Stock]:
         Dict mapping ticker to Stock object.
     """
     cached_data = get_batch_cached_stocks(tickers)
-    return {ticker: _dict_to_stock(data) for ticker, data in cached_data.items()}
+    result: dict[str, Stock] = {}
+    for ticker, data in cached_data.items():
+        try:
+            result[ticker] = _dict_to_stock(data)
+        except Exception:
+            pass  # Skip stocks with corrupt/incompatible cached data
+    return result
 
 
 def fetch_stock_from_api(ticker_symbol: str) -> Stock | None:
