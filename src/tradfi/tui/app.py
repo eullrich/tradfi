@@ -3534,30 +3534,41 @@ class ScreenerApp(App):
             Tuple of (all_stocks dict, ticker_list for iteration).
         """
         ticker_set: set[str] = set()
+        use_fetch_all = False
 
-        # When selected_universes is empty, it means "all" – load from all universe files
-        universes_to_load = (
-            self.selected_universes if self.selected_universes else set(AVAILABLE_UNIVERSES.keys())
-        )
-
-        for name in universes_to_load:
-            try:
-                if self.selected_categories:
+        if self.selected_universes:
+            for name in self.selected_universes:
+                try:
+                    if self.selected_categories:
+                        tickers = load_tickers_by_categories(name, self.selected_categories)
+                        ticker_set.update(tickers)
+                    else:
+                        ticker_set.update(load_tickers(name))
+                except FileNotFoundError:
+                    pass
+        elif self.selected_categories:
+            for name in AVAILABLE_UNIVERSES.keys():
+                try:
                     tickers = load_tickers_by_categories(name, self.selected_categories)
                     ticker_set.update(tickers)
-                else:
-                    ticker_set.update(load_tickers(name))
-            except FileNotFoundError:
-                pass
+                except FileNotFoundError:
+                    pass
+        else:
+            use_fetch_all = True
 
-        ticker_list = sorted(ticker_set)
-        if not ticker_list:
-            return {}, []
+        if use_fetch_all:
+            self.call_from_thread(self._update_progress_batch, "Loading all from cache...", 0, 0, 0)
+            all_stocks = self.remote_provider.fetch_all_stocks()
+            ticker_list = sorted(all_stocks.keys())
+        else:
+            ticker_list = sorted(ticker_set)
+            if not ticker_list:
+                return {}, []
 
-        self.call_from_thread(
-            self._update_progress_batch, "Loading from cache...", 0, len(ticker_list), 0
-        )
-        all_stocks = self.remote_provider.fetch_stocks_batch(ticker_list)
+            self.call_from_thread(
+                self._update_progress_batch, "Loading from cache...", 0, len(ticker_list), 0
+            )
+            all_stocks = self.remote_provider.fetch_stocks_batch(ticker_list)
 
         return all_stocks, ticker_list
 
