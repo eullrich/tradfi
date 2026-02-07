@@ -94,6 +94,9 @@ class RemoteDataProvider:
     def fetch_stocks_batch(self, tickers: list[str]) -> dict[str, Stock]:
         """Fetch multiple stocks by ticker in a single request.
 
+        For large ticker lists (>500), requests are chunked to avoid
+        server-side payload limits and SQLite parameter limits.
+
         Args:
             tickers: List of ticker symbols to fetch.
 
@@ -102,8 +105,22 @@ class RemoteDataProvider:
         """
         if not tickers:
             return {}
+
+        # Chunk large requests to avoid payload/SQL parameter limits
+        CHUNK_SIZE = 500
+        if len(tickers) <= CHUNK_SIZE:
+            return self._fetch_stocks_batch_single(tickers)
+
+        result: dict[str, Stock] = {}
+        for i in range(0, len(tickers), CHUNK_SIZE):
+            chunk = tickers[i:i + CHUNK_SIZE]
+            result.update(self._fetch_stocks_batch_single(chunk))
+        return result
+
+    def _fetch_stocks_batch_single(self, tickers: list[str]) -> dict[str, Stock]:
+        """Fetch a single batch of stocks (internal helper)."""
         try:
-            with httpx.Client(timeout=60.0) as client:  # Longer timeout for bulk
+            with httpx.Client(timeout=60.0) as client:
                 response = client.post(
                     f"{self.api_url}/api/v1/stocks/batch",
                     json=tickers

@@ -2406,6 +2406,11 @@ class ScreenerApp(App):
         self._filter_debounce_timer: object | None = None
         self._filter_debounce_delay: float = 0.4  # 400ms delay before running screen
 
+        # Client-side stock cache: avoids re-fetching when only sector/preset filters change
+        self._cached_stocks: dict[str, Stock] | None = None
+        self._cached_ticker_list: list[str] | None = None
+        self._stock_cache_key: tuple | None = None
+
         # Remote API provider (required - TUI always uses remote API)
         self.api_url = api_url
         self.admin_key = admin_key
@@ -3260,31 +3265,30 @@ class ScreenerApp(App):
 
         return stocks
 
+    def _invalidate_stock_cache(self) -> None:
+        """Invalidate cached stock data, forcing a re-fetch on next screen run."""
+        self._cached_stocks = None
+        self._cached_ticker_list = None
+        self._stock_cache_key = None
+
     def _fetch_stocks(self) -> list[Stock]:
-        # Build ticker list based on universe selection
-        ticker_set: set[str] = set()
+        # Check if cached stock data can be reused (only sector/preset changed)
+        cache_key = (frozenset(self.selected_universes), frozenset(self.selected_categories))
 
-        if self.selected_universes:
-            # Load from selected universes
-            for name in self.selected_universes:
-                try:
-                    # If categories are selected, filter by them
-                    if self.selected_categories:
-                        tickers = load_tickers_by_categories(name, self.selected_categories)
-                        ticker_set.update(tickers)
-                    else:
-                        ticker_set.update(load_tickers(name))
-                except FileNotFoundError:
-                    pass
+        if self._cached_stocks is not None and self._stock_cache_key == cache_key:
+            # Reuse cached data - only sector/preset filters changed
+            all_stocks = self._cached_stocks
+            ticker_list = self._cached_ticker_list
+            self.call_from_thread(
+                self._update_progress_batch, "Filtering cached data...", 0, 0, 0
+            )
         else:
-            # No universes selected - load all
-            for name in AVAILABLE_UNIVERSES.keys():
-                try:
-                    ticker_set.update(load_tickers(name))
-                except FileNotFoundError:
-                    pass
-
-        ticker_list = sorted(ticker_set)
+            # Universe/category selection changed - fetch from server
+            all_stocks, ticker_list = self._fetch_stock_data()
+            # Cache for subsequent filter-only changes
+            self._cached_stocks = all_stocks
+            self._cached_ticker_list = ticker_list
+            self._stock_cache_key = cache_key
 
         if not ticker_list:
             return []
@@ -3294,14 +3298,6 @@ class ScreenerApp(App):
             criteria = PRESET_SCREENS[self.current_preset]
         else:
             criteria = ScreenCriteria()  # No filter - show all stocks
-
-        # Update progress to show we're fetching
-        self.call_from_thread(
-            self._update_progress_batch, "Loading from cache...", 0, len(ticker_list), 0
-        )
-
-        # Fetch all stocks in a single batch request (MUCH faster than individual requests)
-        all_stocks = self.remote_provider.fetch_stocks_batch(ticker_list)
 
         # Filter stocks locally (fast in-memory operation)
         passing_stocks = []
@@ -3330,6 +3326,53 @@ class ScreenerApp(App):
                 passing_stocks.append(stock)
 
         return passing_stocks
+
+    def _fetch_stock_data(self) -> tuple[dict[str, Stock], list[str]]:
+        """Fetch stock data from the API based on current universe/category selection.
+
+        Returns:
+            Tuple of (all_stocks dict, ticker_list for iteration).
+        """
+        ticker_set: set[str] = set()
+        use_fetch_all = False
+
+        if self.selected_universes:
+            for name in self.selected_universes:
+                try:
+                    if self.selected_categories:
+                        tickers = load_tickers_by_categories(name, self.selected_categories)
+                        ticker_set.update(tickers)
+                    else:
+                        ticker_set.update(load_tickers(name))
+                except FileNotFoundError:
+                    pass
+        elif self.selected_categories:
+            for name in AVAILABLE_UNIVERSES.keys():
+                try:
+                    tickers = load_tickers_by_categories(name, self.selected_categories)
+                    ticker_set.update(tickers)
+                except FileNotFoundError:
+                    pass
+        else:
+            use_fetch_all = True
+
+        if use_fetch_all:
+            self.call_from_thread(
+                self._update_progress_batch, "Loading all from cache...", 0, 0, 0
+            )
+            all_stocks = self.remote_provider.fetch_all_stocks()
+            ticker_list = sorted(all_stocks.keys())
+        else:
+            ticker_list = sorted(ticker_set)
+            if not ticker_list:
+                return {}, []
+
+            self.call_from_thread(
+                self._update_progress_batch, "Loading from cache...", 0, len(ticker_list), 0
+            )
+            all_stocks = self.remote_provider.fetch_stocks_batch(ticker_list)
+
+        return all_stocks, ticker_list
 
     def _update_progress(self, ticker: str, current: int, total: int, found: int,
                          progress: float, fetched: int) -> None:
@@ -3391,6 +3434,7 @@ class ScreenerApp(App):
                     timeout=10,
                 )
                 # Refresh the screen to show updated data
+                self._invalidate_stock_cache()
                 self._run_screen()
             elif event.worker.name == "_fetch_portfolio":
                 # Portfolio fetch completed - display P&L view
@@ -3702,6 +3746,7 @@ class ScreenerApp(App):
                 break
 
     def action_refresh(self) -> None:
+        self._invalidate_stock_cache()
         self._run_screen()
 
     def action_back(self) -> None:
@@ -3865,6 +3910,7 @@ class ScreenerApp(App):
     def _do_clear_cache_action(self) -> None:
         """Worker to clear all cached stock data on the server."""
         count = self.remote_provider.clear_cache()
+        self._invalidate_stock_cache()
         self.call_from_thread(self.notify, f"Cleared {count} cached entries on server", title="Cache Cleared")
 
     def action_resync_universes(self) -> None:
