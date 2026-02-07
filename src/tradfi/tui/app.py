@@ -2471,6 +2471,12 @@ class ScreenerApp(App):
         padding: 0 2;
         text-align: center;
     }
+
+    #stock-count {
+        width: auto;
+        padding: 0 2;
+        text-align: center;
+    }
     """
 
     # Simplified bindings - most actions now in action menu (Space)
@@ -2700,6 +2706,7 @@ class ScreenerApp(App):
                 id="status-bar",
             ),
             Static("[cyan]Sort: P/E ↓[/]", id="sort-indicator"),
+            Static("", id="stock-count"),
             Static(f"[yellow]{self._display_currency}[/]", id="currency-indicator"),
             Static("[dim]Connecting...[/]", id="api-status"),
             id="bottom-bar",
@@ -3841,6 +3848,7 @@ class ScreenerApp(App):
 
         # Handle empty results with helpful feedback
         if not self.stocks:
+            self.query_one("#stock-count", Static).update("[dim]0[/] stocks")
             self._show_empty_results_feedback()
             return
 
@@ -3862,6 +3870,10 @@ class ScreenerApp(App):
                 row = self._format_stock_row(stock, format_price)
 
             table.add_row(*row, key=stock.ticker)
+
+        # Update stock count indicator
+        stock_count = self.query_one("#stock-count", Static)
+        stock_count.update(f"[bold cyan]{len(self.stocks)}[/] stocks")
 
         # Update status with sort info and active filters
         direction = "↓" if reverse else "↑"
