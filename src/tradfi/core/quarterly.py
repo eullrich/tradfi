@@ -86,6 +86,65 @@ def fetch_quarterly_financials(ticker_symbol: str, periods: int = 8) -> Optional
             )
             quarters.append(quarterly_data)
 
+        # Compute trailing P/E and PEG per quarter
+        # Fetch 2Y of historical prices for quarter-end lookups
+        try:
+            ticker_obj = yf.Ticker(ticker_symbol.upper())
+            price_history = ticker_obj.history(period="2y")
+            if not price_history.empty:
+                close_prices = price_history["Close"]
+
+                for i, q in enumerate(quarters):
+                    # Get quarter-end date approximation from quarter string (e.g., "2024Q3")
+                    year = int(q.quarter[:4])
+                    qtr = int(q.quarter[-1])
+                    # Quarter end months: Q1=Mar, Q2=Jun, Q3=Sep, Q4=Dec
+                    end_month = qtr * 3
+                    quarter_end = f"{year}-{end_month:02d}"
+
+                    # Find closest price to quarter end
+                    try:
+                        # Get prices for that month
+                        month_prices = close_prices[
+                            close_prices.index.strftime("%Y-%m") == quarter_end
+                        ]
+                        if not month_prices.empty:
+                            price_at_qend = float(month_prices.iloc[-1])
+                        else:
+                            continue
+                    except (IndexError, KeyError):
+                        continue
+
+                    # Compute trailing 4Q EPS (sum of this quarter + prior 3)
+                    eps_values = []
+                    for j in range(i, min(i + 4, len(quarters))):
+                        if quarters[j].eps is not None:
+                            eps_values.append(quarters[j].eps)
+
+                    if len(eps_values) == 4:
+                        trailing_eps = sum(eps_values)
+                        if trailing_eps > 0:
+                            q.pe_ratio = round(price_at_qend / trailing_eps, 2)
+
+                            # Compute YoY EPS growth for PEG
+                            # Need trailing EPS from 4 quarters ago
+                            yoy_eps_values = []
+                            for j in range(i + 4, min(i + 8, len(quarters))):
+                                if quarters[j].eps is not None:
+                                    yoy_eps_values.append(quarters[j].eps)
+
+                            if len(yoy_eps_values) == 4:
+                                prior_trailing_eps = sum(yoy_eps_values)
+                                if prior_trailing_eps > 0:
+                                    eps_growth = (
+                                        (trailing_eps - prior_trailing_eps)
+                                        / abs(prior_trailing_eps)
+                                    ) * 100
+                                    if eps_growth > 0:
+                                        q.peg_ratio = round(q.pe_ratio / eps_growth, 2)
+        except Exception:
+            pass  # P/E and PEG are nice-to-have, don't fail on them
+
         return QuarterlyTrends(quarters=quarters)
 
     except Exception as e:

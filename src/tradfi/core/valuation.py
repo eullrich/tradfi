@@ -164,3 +164,168 @@ def calculate_earnings_power_value(
     after_tax_earnings = operating_income * (1 - tax_rate)
     epv = after_tax_earnings / cost_of_capital
     return epv / shares_outstanding
+
+
+def calculate_piotroski_f_score(
+    net_income: float | None,
+    operating_cash_flow: float | None,
+    roa: float | None,
+    free_cash_flow: float | None,
+    debt_to_equity: float | None,
+    current_ratio: float | None,
+    gross_margin: float | None,
+    shares_outstanding: float | None,
+    shares_outstanding_prior: float | None,
+) -> tuple[int, list[str], list[str]]:
+    """
+    Calculate simplified Piotroski F-Score (0-9).
+
+    Returns (score, passing_criteria, failing_criteria).
+    Simplified version using single-period snapshot data.
+    """
+    score = 0
+    passing: list[str] = []
+    failing: list[str] = []
+
+    # 1. Positive net income
+    if net_income is not None and net_income > 0:
+        score += 1
+        passing.append("Net Income +")
+    else:
+        failing.append("Net Income -")
+
+    # 2. Positive operating cash flow
+    if operating_cash_flow is not None and operating_cash_flow > 0:
+        score += 1
+        passing.append("OCF +")
+    else:
+        failing.append("OCF -")
+
+    # 3. Positive ROA (proxy for increasing ROA)
+    if roa is not None and roa > 0:
+        score += 1
+        passing.append("ROA +")
+    else:
+        failing.append("ROA -")
+
+    # 4. OCF > Net Income (earnings quality / accruals)
+    if (operating_cash_flow is not None and net_income is not None
+            and operating_cash_flow > net_income):
+        score += 1
+        passing.append("OCF > NI")
+    else:
+        failing.append("OCF < NI")
+
+    # 5. Low leverage: D/E < 100 (stored as percentage in yfinance)
+    if debt_to_equity is not None and debt_to_equity < 100:
+        score += 1
+        passing.append("Low D/E")
+    else:
+        failing.append("High D/E")
+
+    # 6. Current ratio > 1
+    if current_ratio is not None and current_ratio > 1:
+        score += 1
+        passing.append("CR > 1")
+    else:
+        failing.append("CR < 1")
+
+    # 7. No dilution
+    if (shares_outstanding is not None and shares_outstanding_prior is not None
+            and shares_outstanding <= shares_outstanding_prior):
+        score += 1
+        passing.append("No dilution")
+    elif shares_outstanding is not None and shares_outstanding_prior is None:
+        score += 1
+        passing.append("No dilution data")
+    else:
+        failing.append("Diluted")
+
+    # 8. Positive gross margin (proxy for increasing)
+    if gross_margin is not None and gross_margin > 0:
+        score += 1
+        passing.append("GM +")
+    else:
+        failing.append("GM -")
+
+    # 9. Positive FCF (proxy for asset turnover)
+    if free_cash_flow is not None and free_cash_flow > 0:
+        score += 1
+        passing.append("FCF +")
+    else:
+        failing.append("FCF -")
+
+    return score, passing, failing
+
+
+def generate_forensic_flags(
+    fcf: float | None,
+    ocf: float | None,
+    net_income: float | None,
+    debt_to_equity: float | None,
+    margin_of_safety_pct: float | None,
+    rsi: float | None,
+    current_ratio: float | None,
+    interest_coverage: float | None,
+) -> tuple[list[str], list[str]]:
+    """
+    Generate green (positive) and red (negative) forensic flags.
+
+    Returns (green_flags, red_flags).
+    """
+    green: list[str] = []
+    red: list[str] = []
+
+    # Cash flow analysis
+    if fcf is not None:
+        if fcf > 0:
+            green.append("FCF positive")
+        else:
+            red.append("FCF negative")
+
+    # Earnings quality: OCF vs NI
+    if ocf is not None and net_income is not None and net_income != 0:
+        ratio = ocf / net_income
+        if ratio > 1.2:
+            green.append("Earnings quality: HIGH")
+        elif ratio > 0.8:
+            green.append("Earnings quality: OK")
+        else:
+            red.append("Earnings quality: POOR")
+
+    # Leverage
+    if debt_to_equity is not None:
+        de_ratio = debt_to_equity / 100  # stored as percentage
+        if de_ratio < 0.3:
+            green.append("Leverage: MINIMAL")
+        elif de_ratio < 0.5:
+            green.append("Leverage: LOW")
+        elif de_ratio < 1.0:
+            pass  # neutral, don't flag
+        elif de_ratio < 2.0:
+            red.append("Leverage: HIGH")
+        else:
+            red.append("Leverage: DANGEROUS")
+
+    # Liquidity
+    if current_ratio is not None:
+        if current_ratio < 1.0:
+            red.append("Liquidity risk (CR < 1)")
+
+    # Interest coverage
+    if interest_coverage is not None:
+        if interest_coverage < 2.0:
+            red.append("Weak interest coverage")
+
+    # Valuation
+    if margin_of_safety_pct is not None:
+        if margin_of_safety_pct > 30:
+            green.append(f"{margin_of_safety_pct:.0f}% below fair value")
+        elif margin_of_safety_pct > 0:
+            green.append(f"Modest discount ({margin_of_safety_pct:.0f}%)")
+        elif margin_of_safety_pct > -20:
+            red.append(f"Slightly overvalued ({abs(margin_of_safety_pct):.0f}%)")
+        else:
+            red.append(f"Overvalued ({abs(margin_of_safety_pct):.0f}% above fair value)")
+
+    return green, red

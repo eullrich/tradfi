@@ -1279,10 +1279,13 @@ class StockDetailScreen(Screen):
                 id="detail-container",
             )
         else:
-            # Stock-specific layout (original)
+            # Stock-specific layout (Burry redesign)
+            price_str = (
+                f"  [bold]${self.stock.current_price:.2f}[/]" if self.stock.current_price else ""
+            )
             yield Container(
                 Static(
-                    f"[bold cyan]{self.stock.ticker}[/] - {self.stock.name or 'N/A'}",
+                    f"[bold cyan]{self.stock.ticker}[/] - {self.stock.name or 'N/A'}{price_str}",
                     id="stock-title",
                 ),
                 Static(
@@ -1290,24 +1293,31 @@ class StockDetailScreen(Screen):
                     f" | {self.stock.industry or 'Unknown Industry'}[/]",
                     id="stock-subtitle",
                 ),
+                Static(self._get_forensic_summary(), id="forensic-summary"),
                 Horizontal(
-                    self._create_panel("Price & Signal", self._get_price_info()),
+                    self._create_panel("Cash Flow & Quality", self._get_cashflow_quality_info()),
                     self._create_panel("Valuation", self._get_valuation_info()),
-                    self._create_panel("Profitability", self._get_profitability_info()),
-                    id="top-panels",
-                ),
-                Horizontal(
-                    self._create_panel("Financial Health", self._get_health_info()),
-                    self._create_panel("Technical", self._get_technical_info()),
                     self._create_panel("Fair Value", self._get_fair_value_info()),
-                    id="bottom-panels",
+                    id="row1-panels",
                 ),
                 Horizontal(
-                    self._create_panel("Dividends", self._get_dividend_info()),
-                    self._create_panel("Buyback Potential", self._get_buyback_info()),
-                    id="income-panels",
+                    self._create_panel("Balance Sheet", self._get_balance_sheet_info()),
+                    self._create_panel("Profitability", self._get_profitability_info()),
+                    self._create_panel("Growth & Momentum", self._get_growth_momentum_info()),
+                    id="row2-panels",
                 ),
-                Static("", id="quarterly-panel"),
+                Horizontal(
+                    self._create_panel("Ownership & Capital", self._get_ownership_info()),
+                    self._create_panel("Technical", self._get_technical_info()),
+                    self._create_panel(
+                        "Dividends" if self._has_dividend() else "Piotroski Score",
+                        self._get_dividend_info()
+                        if self._has_dividend()
+                        else self._get_piotroski_info(),
+                    ),
+                    id="row3-panels",
+                ),
+                Static("[dim]Loading quarterly trends...[/]", id="quarterly-panel"),
                 Static("", id="similar-panel"),
                 Static("", id="research-panel"),
                 id="detail-container",
@@ -1316,6 +1326,312 @@ class StockDetailScreen(Screen):
 
     def _create_panel(self, title: str, content: str) -> Static:
         return Static(f"[bold magenta]{title}[/]\n{content}", classes="info-panel")
+
+    def on_mount(self) -> None:
+        """Eagerly load quarterly data on screen mount."""
+        if getattr(self.stock, "asset_type", "stock") != "etf":
+            self.run_worker(self._fetch_quarterly, thread=True)
+
+    def _fmt_large(self, value: float) -> str:
+        """Format large numbers with B/M/K suffix."""
+        abs_val = abs(value)
+        sign = "-" if value < 0 else ""
+        if abs_val >= 1e12:
+            return f"{sign}${abs_val / 1e12:.1f}T"
+        elif abs_val >= 1e9:
+            return f"{sign}${abs_val / 1e9:.1f}B"
+        elif abs_val >= 1e6:
+            return f"{sign}${abs_val / 1e6:.1f}M"
+        elif abs_val >= 1e3:
+            return f"{sign}${abs_val / 1e3:.0f}K"
+        else:
+            return f"{sign}${abs_val:.2f}"
+
+    def _has_dividend(self) -> bool:
+        """Check if stock pays dividends."""
+        d = self.stock.dividends
+        return d.dividend_yield is not None and d.dividend_yield > 0
+
+    def _get_forensic_summary(self) -> str:
+        """Generate compact forensic flags summary."""
+        from tradfi.core.valuation import generate_forensic_flags
+
+        h = self.stock.financial_health
+        green, red = generate_forensic_flags(
+            fcf=h.free_cash_flow,
+            ocf=h.operating_cash_flow,
+            net_income=h.net_income,
+            debt_to_equity=h.debt_to_equity,
+            margin_of_safety_pct=self.stock.fair_value.margin_of_safety_pct,
+            rsi=self.stock.technical.rsi_14,
+            current_ratio=h.current_ratio,
+            interest_coverage=h.interest_coverage,
+        )
+        parts = []
+        if green:
+            parts.append("[green]+ " + ", ".join(green) + "[/]")
+        if red:
+            parts.append("[red]- " + ", ".join(red) + "[/]")
+        return "\n".join(parts) if parts else "[dim]Insufficient data for forensic analysis[/]"
+
+    def _get_cashflow_quality_info(self) -> str:
+        """Cash Flow & Earnings Quality panel."""
+        h = self.stock.financial_health
+        b = self.stock.buyback
+        v = self.stock.valuation
+
+        lines = []
+
+        # FCF
+        fcf = h.free_cash_flow
+        if fcf is not None:
+            fcf_color = "green" if fcf > 0 else "red"
+            lines.append(f"FCF: [{fcf_color}]{self._fmt_large(fcf)}[/]")
+        else:
+            lines.append("FCF: [dim]N/A[/]")
+
+        # FCF per share
+        shares = self.stock.shares_outstanding or (b.shares_outstanding if b else None)
+        if fcf is not None and shares and shares > 0:
+            fcf_ps = fcf / shares
+            color = "green" if fcf_ps > 0 else "red"
+            lines.append(f"FCF/Share: [{color}]${fcf_ps:.2f}[/]")
+        else:
+            lines.append("FCF/Share: [dim]N/A[/]")
+
+        # FCF Yield
+        fcf_yield = b.fcf_yield_pct if b else None
+        if fcf_yield is not None:
+            color = "green" if fcf_yield > 8 else "yellow" if fcf_yield > 5 else "dim"
+            lines.append(f"FCF Yield: [{color}]{fcf_yield:.1f}%[/]")
+        else:
+            lines.append("FCF Yield: [dim]N/A[/]")
+
+        # EV/FCF
+        ev = v.enterprise_value
+        if ev and fcf and fcf > 0:
+            ev_fcf = ev / fcf
+            color = "green" if ev_fcf < 15 else "yellow" if ev_fcf < 25 else "red"
+            lines.append(f"EV/FCF: [{color}]{ev_fcf:.1f}x[/]")
+        else:
+            lines.append("EV/FCF: [dim]N/A[/]")
+
+        # OCF vs NI (earnings quality)
+        ocf = h.operating_cash_flow
+        ni = h.net_income
+        if ocf is not None and ni is not None and ni != 0:
+            ratio = ocf / ni
+            if ratio > 1.2:
+                label, color = "HIGH", "green"
+            elif ratio > 0.8:
+                label, color = "OK", "yellow"
+            else:
+                label, color = "POOR", "red"
+            lines.append(f"OCF vs NI: [{color}]{ratio:.2f}x ({label})[/]")
+        else:
+            lines.append("OCF vs NI: [dim]N/A[/]")
+
+        return "\n".join(lines)
+
+    def _get_balance_sheet_info(self) -> str:
+        """Balance Sheet panel (renamed from Financial Health)."""
+        h = self.stock.financial_health
+        lines = []
+
+        # D/E ratio (stored as percentage, display as ratio)
+        de = h.debt_to_equity
+        if de is not None:
+            de_ratio = de / 100
+            color = "green" if de_ratio < 0.5 else "yellow" if de_ratio < 1.0 else "red"
+            lines.append(f"D/E: [{color}]{de_ratio:.2f}[/]")
+        else:
+            lines.append("D/E: [dim]N/A[/]")
+
+        # D/A ratio
+        da = h.debt_to_assets
+        if da is not None:
+            color = "green" if da < 30 else "yellow" if da < 50 else "red"
+            lines.append(f"D/A: [{color}]{da:.1f}%[/]")
+        else:
+            lines.append("D/A: [dim]N/A[/]")
+
+        # Net Debt
+        td = h.total_debt
+        tc = h.total_cash
+        if td is not None and tc is not None:
+            net_debt = td - tc
+            if net_debt < 0:
+                lines.append(f"Net Debt: [green]{self._fmt_large(net_debt)}[/] (net cash)")
+            else:
+                lines.append(f"Net Debt: [red]{self._fmt_large(net_debt)}[/]")
+        else:
+            lines.append("Net Debt: [dim]N/A[/]")
+
+        # Net Debt / EBITDA
+        ebitda = h.ebitda
+        if td is not None and tc is not None and ebitda and ebitda > 0:
+            net_debt = td - tc
+            nd_ebitda = net_debt / ebitda
+            color = "green" if nd_ebitda < 2 else "yellow" if nd_ebitda < 4 else "red"
+            lines.append(f"ND/EBITDA: [{color}]{nd_ebitda:.1f}x[/]")
+        else:
+            lines.append("ND/EBITDA: [dim]N/A[/]")
+
+        # Interest coverage
+        ic = h.interest_coverage
+        if ic is not None:
+            color = "green" if ic > 5 else "yellow" if ic > 2 else "red"
+            lines.append(f"Int Cov: [{color}]{ic:.1f}x[/]")
+        else:
+            lines.append("Int Cov: [dim]N/A[/]")
+
+        # Current ratio
+        cr = h.current_ratio
+        if cr is not None:
+            color = "green" if cr > 2 else "yellow" if cr > 1 else "red"
+            lines.append(f"Current: [{color}]{cr:.2f}[/]")
+        else:
+            lines.append("Current: [dim]N/A[/]")
+
+        return "\n".join(lines)
+
+    def _get_growth_momentum_info(self) -> str:
+        """Growth & Momentum panel."""
+        g = self.stock.growth
+        t = self.stock.technical
+        lines = []
+
+        # Revenue growth
+        if g.revenue_growth_yoy is not None:
+            color = (
+                "green"
+                if g.revenue_growth_yoy > 10
+                else "yellow"
+                if g.revenue_growth_yoy > 0
+                else "red"
+            )
+            lines.append(f"Rev Growth YoY: [{color}]{self._pct(g.revenue_growth_yoy)}[/]")
+        else:
+            lines.append("Rev Growth YoY: [dim]N/A[/]")
+
+        # Earnings growth
+        if g.earnings_growth_yoy is not None:
+            color = (
+                "green"
+                if g.earnings_growth_yoy > 10
+                else "yellow"
+                if g.earnings_growth_yoy > 0
+                else "red"
+            )
+            lines.append(f"Earnings Growth: [{color}]{self._pct(g.earnings_growth_yoy)}[/]")
+        else:
+            lines.append("Earnings Growth: [dim]N/A[/]")
+
+        lines.append("")
+
+        # Period returns
+        for label, val, threshold in [
+            ("1M Return", t.return_1m, -10),
+            ("6M Return", t.return_6m, -20),
+            ("1Y Return", t.return_1y, -20),
+        ]:
+            if val is not None:
+                color = "green" if val > 0 else "yellow" if val > threshold else "red"
+                lines.append(f"{label}: [{color}]{self._pct(val)}[/]")
+            else:
+                lines.append(f"{label}: [dim]N/A[/]")
+
+        return "\n".join(lines)
+
+    def _get_ownership_info(self) -> str:
+        """Ownership & Capital Return panel."""
+        b = self.stock.buyback
+        v = self.stock.valuation
+        lines = []
+
+        # Insider ownership
+        insider = b.insider_ownership_pct if b else None
+        if insider is not None:
+            color = "green" if insider > 10 else "yellow" if insider > 5 else "dim"
+            lines.append(f"Insider Own: [{color}]{insider:.1f}%[/]")
+        else:
+            lines.append("Insider Own: [dim]N/A[/]")
+
+        # Institutional ownership
+        inst = b.institutional_ownership_pct if b else None
+        if inst is not None:
+            lines.append(f"Institutional: [dim]{inst:.1f}%[/]")
+        else:
+            lines.append("Institutional: [dim]N/A[/]")
+
+        lines.append("")
+
+        # Shares outstanding
+        shares = self.stock.shares_outstanding or (b.shares_outstanding if b else None)
+        if shares:
+            lines.append(f"Shares Out: {self._fmt_large(shares)}")
+        else:
+            lines.append("Shares Out: [dim]N/A[/]")
+
+        # Share count change (buyback/dilution detection)
+        prior = b.shares_outstanding_prior if b else None
+        current = b.shares_outstanding if b else None
+        if current and prior and prior > 0:
+            if current < prior:
+                lines.append("[green]BUYING BACK[/]")
+            elif current > prior * 1.01:
+                lines.append("[red]DILUTING[/]")
+            else:
+                lines.append("[dim]Shares stable[/]")
+
+        # Cash per share
+        cash_ps = b.cash_per_share if b else None
+        if cash_ps is not None:
+            lines.append(f"Cash/Share: ${cash_ps:.2f}")
+        else:
+            lines.append("Cash/Share: [dim]N/A[/]")
+
+        # Market cap
+        mc = v.market_cap
+        if mc:
+            lines.append(f"Market Cap: {self._fmt_large(mc)}")
+
+        return "\n".join(lines)
+
+    def _get_piotroski_info(self) -> str:
+        """Piotroski F-Score panel (shown when no dividends)."""
+        from tradfi.core.valuation import calculate_piotroski_f_score
+
+        h = self.stock.financial_health
+        b = self.stock.buyback
+
+        score, passing, failing = calculate_piotroski_f_score(
+            net_income=h.net_income,
+            operating_cash_flow=h.operating_cash_flow,
+            roa=self.stock.profitability.roa,
+            free_cash_flow=h.free_cash_flow,
+            debt_to_equity=h.debt_to_equity,
+            current_ratio=h.current_ratio,
+            gross_margin=self.stock.profitability.gross_margin,
+            shares_outstanding=self.stock.shares_outstanding
+            or (b.shares_outstanding if b else None),
+            shares_outstanding_prior=b.shares_outstanding_prior if b else None,
+        )
+
+        if score >= 7:
+            label, color = "STRONG", "green"
+        elif score >= 4:
+            label, color = "MODERATE", "yellow"
+        else:
+            label, color = "WEAK", "red"
+
+        lines = [f"Score: [{color}]{score}/9 ({label})[/]"]
+        if passing:
+            lines.append(f"[green]+ {', '.join(passing)}[/]")
+        if failing:
+            lines.append(f"[red]- {', '.join(failing)}[/]")
+
+        return "\n".join(lines)
 
     def _get_price_info(self) -> str:
         s = self.stock
@@ -1351,191 +1667,138 @@ class StockDetailScreen(Screen):
 
     def _get_valuation_info(self) -> str:
         v = self.stock.valuation
+        lines = []
 
-        # Color code based on value thresholds
+        # P/E TTM
         pe = v.pe_trailing
-        pe_color = (
-            "green" if pe and pe < 15 else "yellow" if pe and pe < 25 else "red" if pe else "dim"
-        )
-        pb = v.pb_ratio
-        pb_color = (
-            "green" if pb and pb < 1.5 else "yellow" if pb and pb < 3 else "red" if pb else "dim"
-        )
-        peg = v.peg_ratio
-        peg_color = (
-            "green" if peg and peg < 1 else "yellow" if peg and peg < 2 else "red" if peg else "dim"
-        )
+        if pe is not None:
+            color = "green" if pe < 15 else "yellow" if pe < 25 else "red"
+            lines.append(f"P/E (TTM): [{color}]{pe:.2f}[/]")
+        else:
+            lines.append("P/E (TTM): [dim]N/A[/]")
 
-        lines = [
-            f"P/E: [{pe_color}]{self._fmt(pe)}[/]",
-            f"P/B: [{pb_color}]{self._fmt(pb)}[/]",
-            f"P/S: {self._fmt(v.ps_ratio)}",
-            f"PEG: [{peg_color}]{self._fmt(peg)}[/]",
-            f"EV/EBITDA: {self._fmt(v.ev_ebitda)}",
-            "",
-            "[dim]Lower = cheaper. P/E<15 is",
-            "value territory. P/B<1.5 means",
-            "trading below book. PEG<1 is",
-            "growth at reasonable price.[/]",
-        ]
+        # P/E Forward
+        pe_fwd = v.pe_forward
+        if pe_fwd is not None:
+            color = "green" if pe_fwd < 15 else "yellow" if pe_fwd < 25 else "red"
+            lines.append(f"P/E (Fwd): [{color}]{pe_fwd:.2f}[/]")
+        else:
+            lines.append("P/E (Fwd): [dim]N/A[/]")
+
+        # P/B
+        pb = v.pb_ratio
+        if pb is not None:
+            color = "green" if pb < 1.5 else "yellow" if pb < 3 else "red"
+            lines.append(f"P/B: [{color}]{pb:.2f}[/]")
+        else:
+            lines.append("P/B: [dim]N/A[/]")
+
+        # EV/EBITDA
+        ev_ebitda = v.ev_ebitda
+        if ev_ebitda is not None:
+            color = "green" if ev_ebitda < 10 else "yellow" if ev_ebitda < 15 else "red"
+            lines.append(f"EV/EBITDA: [{color}]{ev_ebitda:.2f}[/]")
+        else:
+            lines.append("EV/EBITDA: [dim]N/A[/]")
+
+        # P/S
+        ps = v.ps_ratio
+        lines.append(f"P/S: {ps:.2f}" if ps is not None else "P/S: [dim]N/A[/]")
+
+        # Market Cap
+        mc = v.market_cap
+        if mc:
+            lines.append(f"Mkt Cap: {self._fmt_large(mc)}")
+
         return "\n".join(lines)
 
     def _get_profitability_info(self) -> str:
         p = self.stock.profitability
+        lines = []
 
-        # Color code based on quality thresholds
-        roe = p.roe
-        roe_color = (
-            "green"
-            if roe and roe > 15
-            else "yellow"
-            if roe and roe > 10
-            else "red"
-            if roe
-            else "dim"
-        )
-        roa = p.roa
-        roa_color = (
-            "green"
-            if roa and roa > 10
-            else "yellow"
-            if roa and roa > 5
-            else "red"
-            if roa
-            else "dim"
-        )
-        margin = p.net_margin
-        margin_color = (
-            "green"
-            if margin and margin > 15
-            else "yellow"
-            if margin and margin > 5
-            else "red"
-            if margin
-            else "dim"
-        )
+        for label, val, good, ok in [
+            ("ROE", p.roe, 15, 10),
+            ("ROA", p.roa, 10, 5),
+            ("Op Margin", p.operating_margin, 15, 5),
+            ("Net Margin", p.net_margin, 15, 5),
+            ("Gross Margin", p.gross_margin, 40, 20),
+        ]:
+            if val is not None:
+                color = "green" if val > good else "yellow" if val > ok else "red"
+                lines.append(f"{label}: [{color}]{self._pct(val)}[/]")
+            else:
+                lines.append(f"{label}: [dim]N/A[/]")
 
-        lines = [
-            f"ROE: [{roe_color}]{self._pct(roe)}[/]",
-            f"ROA: [{roa_color}]{self._pct(roa)}[/]",
-            f"Net Margin: [{margin_color}]{self._pct(margin)}[/]",
-            f"Gross Margin: {self._pct(p.gross_margin)}",
-            "",
-            "[dim]Higher = more profitable.",
-            "ROE>15% is excellent. ROA>10%",
-            "shows efficient asset use.",
-            "Net margin>15% is strong.[/]",
-        ]
         return "\n".join(lines)
 
     def _get_health_info(self) -> str:
-        h = self.stock.financial_health
-        de = h.debt_to_equity
-        de_val = de / 100 if de is not None else None
-
-        # Color code based on health thresholds
-        de_color = (
-            "green"
-            if de_val and de_val < 0.5
-            else "yellow"
-            if de_val and de_val < 1
-            else "red"
-            if de_val
-            else "dim"
-        )
-        cr = h.current_ratio
-        cr_color = (
-            "green" if cr and cr > 2 else "yellow" if cr and cr > 1 else "red" if cr else "dim"
-        )
-        qr = h.quick_ratio
-        qr_color = (
-            "green" if qr and qr > 1 else "yellow" if qr and qr > 0.5 else "red" if qr else "dim"
-        )
-
-        lines = [
-            f"D/E Ratio: [{de_color}]{self._fmt(de_val)}[/]",
-            f"Current Ratio: [{cr_color}]{self._fmt(cr)}[/]",
-            f"Quick Ratio: [{qr_color}]{self._fmt(qr)}[/]",
-            "",
-            "[dim]D/E<0.5 = low debt. Current",
-            "ratio>2 = can pay short-term",
-            "debts. Quick ratio>1 = liquid",
-            "without selling inventory.[/]",
-        ]
-        return "\n".join(lines)
+        """Legacy method - redirects to balance sheet."""
+        return self._get_balance_sheet_info()
 
     def _get_technical_info(self) -> str:
         t = self.stock.technical
+        lines = []
+
+        # RSI
         rsi = t.rsi_14
-        rsi_str = f"{rsi:.0f}" if rsi else "N/A"
-        rsi_note = ""
-        if rsi and rsi < 30:
-            rsi_str = f"[green]{rsi_str}[/]"
-            rsi_note = " [green](Oversold)[/]"
-        elif rsi and rsi > 70:
-            rsi_str = f"[red]{rsi_str}[/]"
-            rsi_note = " [red](Overbought)[/]"
+        if rsi is not None:
+            if rsi < 20:
+                color, label = "bold red", " STRONGLY OVERSOLD"
+            elif rsi < 30:
+                color, label = "red", " OVERSOLD"
+            elif rsi > 70:
+                color, label = "red", " OVERBOUGHT"
+            else:
+                color, label = "dim", ""
+            lines.append(f"RSI (14): [{color}]{rsi:.0f}[/]{label}")
+        else:
+            lines.append("RSI (14): [dim]N/A[/]")
 
-        # Color MA comparisons
-        ma50 = t.price_vs_ma_50_pct
-        ma50_color = "red" if ma50 and ma50 < -10 else "yellow" if ma50 and ma50 < 0 else "dim"
-        ma200 = t.price_vs_ma_200_pct
-        ma200_color = "red" if ma200 and ma200 < -20 else "yellow" if ma200 and ma200 < 0 else "dim"
+        # vs MAs
+        for label, val in [
+            ("vs 50 MA", t.price_vs_ma_50_pct),
+            ("vs 200 MA", t.price_vs_ma_200_pct),
+        ]:
+            if val is not None:
+                color = "red" if val < -10 else "yellow" if val < 0 else "green"
+                lines.append(f"{label}: [{color}]{self._pct(val)}[/]")
+            else:
+                lines.append(f"{label}: [dim]N/A[/]")
 
-        lines = [
-            f"RSI (14): {rsi_str}{rsi_note}",
-            f"vs 50 MA: [{ma50_color}]{self._pct(ma50)}[/]",
-            f"vs 200 MA: [{ma200_color}]{self._pct(ma200)}[/]",
-            f"From 52W Low: {self._pct(t.pct_from_52w_low)}",
-            f"From 52W High: {self._pct(t.pct_from_52w_high)}",
-            "",
-            "[dim]RSI<30 = oversold (potential",
-            "buying opportunity). Below MA",
-            "= downtrend. Near 52W low may",
-            "signal value if fundamentals OK.[/]",
-        ]
+        # 52W range
+        if t.pct_from_52w_low is not None:
+            lines.append(f"From 52W Low: {self._pct(t.pct_from_52w_low)}")
+        if t.pct_from_52w_high is not None:
+            lines.append(f"From 52W High: {self._pct(t.pct_from_52w_high)}")
+
         return "\n".join(lines)
 
     def _get_fair_value_info(self) -> str:
-        f = self.stock.fair_value
+        fv = self.stock.fair_value
         price = self.stock.current_price
-
         lines = []
-        if f.graham_number:
-            diff = ((f.graham_number - price) / price * 100) if price else 0
-            color = "green" if diff > 0 else "red"
-            lines.append(f"Graham: ${f.graham_number:.2f} [{color}]({diff:+.1f}%)[/]")
 
-        if f.dcf_value:
-            diff = ((f.dcf_value - price) / price * 100) if price else 0
-            color = "green" if diff > 0 else "red"
-            lines.append(f"DCF: ${f.dcf_value:.2f} [{color}]({diff:+.1f}%)[/]")
-
-        if f.margin_of_safety_pct is not None:
-            color = "green" if f.margin_of_safety_pct > 0 else "red"
-            lines.append(f"Margin of Safety: [{color}]{f.margin_of_safety_pct:+.1f}%[/]")
-
-        if not lines:
-            return "No estimates available"
-
-        # Add narrative
-        mos = f.margin_of_safety_pct
-        if mos is not None:
-            if mos > 30:
-                lines.append("")
-                lines.append("[green]Strong margin of safety.[/]")
-                lines.append("[dim]Trading well below estimated")
-                lines.append("fair value - classic value buy.[/]")
-            elif mos > 0:
-                lines.append("")
-                lines.append("[yellow]Some margin of safety.[/]")
-                lines.append("[dim]Modestly undervalued but not")
-                lines.append("a screaming bargain.[/]")
+        for label, val in [
+            ("Graham", fv.graham_number),
+            ("DCF", fv.dcf_value),
+            ("EPV", fv.epv_value),
+        ]:
+            if val is not None and price:
+                diff_pct = ((val - price) / price) * 100
+                color = "green" if diff_pct > 0 else "red"
+                lines.append(f"{label}: ${val:.2f} [{color}]({diff_pct:+.1f}%)[/]")
+            elif val is not None:
+                lines.append(f"{label}: ${val:.2f}")
             else:
-                lines.append("")
-                lines.append("[red]No margin of safety.[/]")
-                lines.append("[dim]Trading above fair value")
-                lines.append("estimates - proceed with caution.[/]")
+                lines.append(f"{label}: [dim]N/A[/]")
+
+        # Margin of safety
+        mos = fv.margin_of_safety_pct
+        if mos is not None:
+            color = "green" if mos > 0 else "red"
+            lines.append(f"Margin of Safety: [{color}]{mos:+.1f}%[/]")
+        else:
+            lines.append("Margin of Safety: [dim]N/A[/]")
 
         return "\n".join(lines)
 
@@ -1636,91 +1899,35 @@ class StockDetailScreen(Screen):
 
     def _get_dividend_info(self) -> str:
         d = self.stock.dividends
-        yield_pct = d.dividend_yield  # Already stored as percentage
-        payout = d.payout_ratio
+        lines = []
 
-        # Check if this is a dividend-paying stock/ETF
-        has_dividend = yield_pct is not None and yield_pct > 0
-
-        if not has_dividend:
+        # Yield
+        dy = d.dividend_yield
+        if dy is not None and dy > 0:
+            color = (
+                "bold green" if dy >= 4 else "green" if dy >= 2 else "yellow" if dy >= 1 else "dim"
+            )
+            lines.append(f"Yield: [{color}]{dy:.2f}%[/]")
+        else:
             return "[dim]No dividend/distribution[/]"
 
-        # Color code based on yield quality
-        if yield_pct:
-            if yield_pct >= 4:
-                yield_color = "bold green"
-            elif yield_pct >= 2:
-                yield_color = "green"
-            elif yield_pct >= 1:
-                yield_color = "yellow"
-            else:
-                yield_color = "dim"
-        else:
-            yield_color = "dim"
-
-        # Color code payout ratio (sustainability)
-        if payout:
-            if payout < 50:
-                payout_color = "green"
-            elif payout < 75:
-                payout_color = "yellow"
-            elif payout < 100:
-                payout_color = "orange3"
-            else:
-                payout_color = "red"
-        else:
-            payout_color = "dim"
-
-        # Core dividend info
-        lines = [
-            f"Yield: [{yield_color}]{yield_pct:.2f}%[/]" if yield_pct else "Yield: N/A",
-            f"Annual Rate: ${d.dividend_rate:.2f}/share" if d.dividend_rate else "Annual Rate: N/A",
-        ]
+        # Annual rate
+        if d.dividend_rate is not None:
+            lines.append(f"Annual Rate: ${d.dividend_rate:.2f}/share")
 
         # Payout ratio
-        if payout is not None:
-            lines.append(f"Payout Ratio: [{payout_color}]{payout:.0f}%[/]")
+        pr = d.payout_ratio
+        if pr is not None:
+            color = "green" if pr < 60 else "yellow" if pr < 80 else "red"
+            lines.append(f"Payout Ratio: [{color}]{pr:.0f}%[/]")
 
         # Frequency
         if d.dividend_frequency:
             lines.append(f"Frequency: {d.dividend_frequency.capitalize()}")
 
-        # Last dividend payment
-        if d.last_dividend_value:
-            last_div_str = f"${d.last_dividend_value:.4f}"
-            if d.last_dividend_date:
-                last_div_str += f" ({d.last_dividend_date})"
-            lines.append(f"Last Payment: {last_div_str}")
-
         # Ex-dividend date
         if d.ex_dividend_date:
             lines.append(f"Ex-Dividend: {d.ex_dividend_date}")
-
-        lines.append("")
-
-        # Historical context
-        if d.trailing_annual_dividend_rate:
-            lines.append(f"Trailing 12M: ${d.trailing_annual_dividend_rate:.2f}/share")
-
-        if d.five_year_avg_dividend_yield:
-            # Compare current yield to 5-year average
-            if yield_pct and d.five_year_avg_dividend_yield > 0:
-                vs_avg = ((yield_pct / d.five_year_avg_dividend_yield) - 1) * 100
-                avg_color = "green" if vs_avg > 10 else "yellow" if vs_avg > -10 else "red"
-                lines.append(
-                    f"5Y Avg Yield: "
-                    f"{d.five_year_avg_dividend_yield:.2f}%"
-                    f" ([{avg_color}]{vs_avg:+.0f}%[/] vs now)"
-                )
-            else:
-                lines.append(f"5Y Avg Yield: {d.five_year_avg_dividend_yield:.2f}%")
-
-        # Add contextual narrative
-        if yield_pct and yield_pct >= 4:
-            lines.append("")
-            lines.append("[green]High yield income opportunity.[/]")
-            if payout and payout > 80:
-                lines.append("[yellow]Watch payout sustainability.[/]")
 
         return "\n".join(lines)
 
@@ -2123,6 +2330,53 @@ class StockDetailScreen(Screen):
                 )
                 lines.append(f"[bold]Earnings:[/] {latest_inc}  {inc_spark}{qoq_str}")
 
+            # Revenue QoQ growth sparkline
+            from tradfi.core.quarterly import calculate_qoq_growth
+
+            rev_growth = calculate_qoq_growth(trends.quarters, "revenue")
+            if rev_growth:
+                growth_spark = sparkline(list(reversed(rev_growth)), width=8)
+                latest_g = rev_growth[0] if rev_growth else None
+                g_color = "green" if latest_g and latest_g > 0 else "red" if latest_g else "dim"
+                g_str = f"[{g_color}]{latest_g:+.1f}%[/]" if latest_g is not None else "[dim]N/A[/]"
+                lines.append(f"[bold]Rev Growth:[/]  {g_str}  {growth_spark}")
+
+            # EPS QoQ growth sparkline
+            eps_growth = calculate_qoq_growth(trends.quarters, "eps")
+            if eps_growth:
+                eg_spark = sparkline(list(reversed(eps_growth)), width=8)
+                latest_eg = eps_growth[0] if eps_growth else None
+                eg_color = "green" if latest_eg and latest_eg > 0 else "red" if latest_eg else "dim"
+                eg_str = (
+                    f"[{eg_color}]{latest_eg:+.1f}%[/]" if latest_eg is not None else "[dim]N/A[/]"
+                )
+                lines.append(f"[bold]EPS Growth:[/]  {eg_str}  {eg_spark}")
+
+            # P/E sparkline (per quarter)
+            pe_values = [q.pe_ratio for q in trends.quarters if q.pe_ratio is not None]
+            if pe_values:
+                pe_spark = sparkline(list(reversed(pe_values)), width=8)
+                latest_pe = pe_values[0]
+                pe_color = "green" if latest_pe < 15 else "yellow" if latest_pe < 25 else "red"
+                lines.append(f"[bold]P/E:[/]         [{pe_color}]{latest_pe:.1f}[/]  {pe_spark}")
+
+            # PEG sparkline (per quarter)
+            peg_values = [q.peg_ratio for q in trends.quarters if q.peg_ratio is not None]
+            if peg_values:
+                peg_spark = sparkline(list(reversed(peg_values)), width=8)
+                latest_peg = peg_values[0]
+                peg_color = "green" if latest_peg < 1 else "yellow" if latest_peg < 2 else "red"
+                lines.append(f"[bold]PEG:[/]         [{peg_color}]{latest_peg:.2f}[/]  {peg_spark}")
+
+            # FCF sparkline
+            fcfs = trends.get_metric_values("free_cash_flow")
+            if fcfs:
+                fcf_spark = sparkline(list(reversed(fcfs)), width=8)
+                latest_fcf_val = fcfs[0]
+                fcf_str = format_large_number(latest_fcf_val) if latest_fcf_val else "N/A"
+                fcf_color = "green" if latest_fcf_val and latest_fcf_val > 0 else "red"
+                lines.append(f"[bold]FCF:[/]         [{fcf_color}]{fcf_str}[/]  {fcf_spark}")
+
             lines.append("")
 
             # Margins
@@ -2367,9 +2621,14 @@ class ScreenerApp(App):
         padding-bottom: 1;
     }
 
-    #top-panels, #bottom-panels {
+    #top-panels, #bottom-panels, #row1-panels, #row2-panels, #row3-panels {
         height: auto;
         padding: 1 0;
+    }
+
+    #forensic-summary {
+        padding: 0 2;
+        margin-bottom: 1;
     }
 
     .info-panel {
