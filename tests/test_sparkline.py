@@ -105,10 +105,7 @@ class TestSparklineWithLabel:
     def test_labeled_sparkline_custom_formatter(self):
         """Test sparkline with custom format function."""
         values = [1_000_000_000, 1_200_000_000]
-        result = sparkline_with_label(
-            values, "Revenue",
-            format_fn=lambda x: f"${x/1e9:.1f}B"
-        )
+        result = sparkline_with_label(values, "Revenue", format_fn=lambda x: f"${x / 1e9:.1f}B")
         assert "Revenue:" in result
         assert "$1.2B" in result
 
@@ -185,27 +182,27 @@ class TestSparklineFormatLargeNumber:
 
     def test_trillions(self):
         """Test formatting numbers in trillions."""
-        assert format_large_number(1_500_000_000_000) == "$1.5T"
+        assert format_large_number(1_500_000_000_000) == "$1.50T"
 
     def test_billions(self):
         """Test formatting numbers in billions."""
-        assert format_large_number(1_500_000_000) == "$1.5B"
-        assert format_large_number(10_000_000_000) == "$10.0B"
+        assert format_large_number(1_500_000_000) == "$1.50B"
+        assert format_large_number(10_000_000_000) == "$10.00B"
 
     def test_millions(self):
         """Test formatting numbers in millions."""
-        assert format_large_number(1_500_000) == "$1.5M"
-        assert format_large_number(500_000_000) == "$500.0M"
+        assert format_large_number(1_500_000) == "$1.50M"
+        assert format_large_number(500_000_000) == "$500.00M"
 
     def test_thousands(self):
         """Test formatting numbers in thousands."""
-        assert format_large_number(1_500) == "$1.5K"
-        assert format_large_number(50_000) == "$50.0K"
+        assert format_large_number(1_500) == "$1.50K"
+        assert format_large_number(50_000) == "$50.00K"
 
     def test_small_numbers(self):
         """Test formatting small numbers."""
-        assert format_large_number(500) == "$500"
-        assert format_large_number(99) == "$99"
+        assert format_large_number(500) == "$500.00"
+        assert format_large_number(99) == "$99.00"
 
     def test_none_value(self):
         """Test formatting None."""
@@ -213,11 +210,11 @@ class TestSparklineFormatLargeNumber:
 
     def test_negative_billions(self):
         """Test formatting negative numbers."""
-        assert format_large_number(-1_500_000_000) == "-$1.5B"
+        assert format_large_number(-1_500_000_000) == "$-1.50B"
 
     def test_negative_millions(self):
         """Test formatting negative millions."""
-        assert format_large_number(-50_000_000) == "-$50.0M"
+        assert format_large_number(-50_000_000) == "$-50.00M"
 
 
 class TestSparkChars:

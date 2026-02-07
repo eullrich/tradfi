@@ -1,8 +1,9 @@
 """Quarterly financial data fetching and analysis."""
 
-import yfinance as yf
-import pandas as pd
 from typing import Optional
+
+import pandas as pd
+import yfinance as yf
 
 from tradfi.models.stock import QuarterlyData, QuarterlyTrends
 
@@ -24,7 +25,7 @@ def fetch_quarterly_financials(ticker_symbol: str, periods: int = 8) -> Optional
         # Get quarterly financial statements
         # yfinance returns these as DataFrames with dates as columns
         income_stmt = ticker.quarterly_income_stmt
-        balance_sheet = ticker.quarterly_balance_sheet
+        _balance_sheet = ticker.quarterly_balance_sheet
         cashflow = ticker.quarterly_cashflow
 
         if income_stmt is None or income_stmt.empty:

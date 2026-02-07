@@ -86,9 +86,7 @@ async def run_screen(request: ScreenRequestSchema):
         criteria = schema_to_screen_criteria(request.criteria)
     else:
         # Default: basic value criteria
-        criteria = schema_to_screen_criteria(
-            ScreenCriteriaSchema(pe_max=20, pb_max=3, roe_min=5)
-        )
+        criteria = schema_to_screen_criteria(ScreenCriteriaSchema(pe_max=20, pb_max=3, roe_min=5))
 
     # Screen stocks
     results = []

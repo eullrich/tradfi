@@ -2,25 +2,26 @@
 
 from __future__ import annotations
 
+from rich import box
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
-from rich import box
 
-from tradfi.models.stock import Stock
-from tradfi.core.technical import interpret_rsi
 from tradfi.core.currency import (
-    get_currency_symbol,
     convert_currency,
-    CURRENCY_SYMBOLS,
+    get_currency_symbol,
 )
+from tradfi.core.technical import interpret_rsi
+from tradfi.models.stock import Stock
 from tradfi.utils.cache import get_display_currency
 
 console = Console()
 
 
-def format_number(value: float | None, decimals: int = 2, prefix: str = "", suffix: str = "") -> str:
+def format_number(
+    value: float | None, decimals: int = 2, prefix: str = "", suffix: str = ""
+) -> str:
     """Format a number with optional prefix/suffix."""
     if value is None:
         return "N/A"
@@ -190,17 +191,24 @@ def display_stock_analysis(stock: Stock) -> None:
     subtitle = f"{stock.sector or 'Unknown Sector'} | {stock.industry or 'Unknown Industry'}"
 
     console.print()
-    console.print(Panel(
-        f"[bold white]{header_text}[/]\n[dim]{subtitle}[/]",
-        box=box.DOUBLE,
-        padding=(0, 2),
-    ))
+    console.print(
+        Panel(
+            f"[bold white]{header_text}[/]\n[dim]{subtitle}[/]",
+            box=box.DOUBLE,
+            padding=(0, 2),
+        )
+    )
 
     # Price info line
     stock_currency = stock.currency or "USD"
     price_line = Text()
     price_line.append("Price: ", style="dim")
-    price_line.append(format_price(stock.current_price, currency=stock_currency) if stock.current_price else "N/A", style="bold")
+    price_line.append(
+        format_price(stock.current_price, currency=stock_currency)
+        if stock.current_price
+        else "N/A",
+        style="bold",
+    )
     price_line.append("    Market Cap: ", style="dim")
     price_line.append(format_large_number(stock.valuation.market_cap, currency=stock_currency))
     price_line.append("    52W Range: ", style="dim")
@@ -222,29 +230,41 @@ def display_stock_analysis(stock: Stock) -> None:
     val_table.add_column("Value")
 
     val_table.add_row(
-        "P/E (TTM)", format_number(stock.valuation.pe_trailing),
-        "P/E (Fwd)", format_number(stock.valuation.pe_forward),
+        "P/E (TTM)",
+        format_number(stock.valuation.pe_trailing),
+        "P/E (Fwd)",
+        format_number(stock.valuation.pe_forward),
     )
     val_table.add_row(
-        "P/B", format_number(stock.valuation.pb_ratio),
-        "P/S", format_number(stock.valuation.ps_ratio),
+        "P/B",
+        format_number(stock.valuation.pb_ratio),
+        "P/S",
+        format_number(stock.valuation.ps_ratio),
     )
     val_table.add_row(
-        "EV/EBITDA", format_number(stock.valuation.ev_ebitda),
-        "PEG", format_number(stock.valuation.peg_ratio),
+        "EV/EBITDA",
+        format_number(stock.valuation.ev_ebitda),
+        "PEG",
+        format_number(stock.valuation.peg_ratio),
     )
     val_table.add_row("", "", "", "")
     val_table.add_row(
-        "Graham Number", format_price(stock.fair_value.graham_number, currency=stock_currency),
-        "DCF Fair Value", format_price(stock.fair_value.dcf_value, currency=stock_currency),
+        "Graham Number",
+        format_price(stock.fair_value.graham_number, currency=stock_currency),
+        "DCF Fair Value",
+        format_price(stock.fair_value.dcf_value, currency=stock_currency),
     )
     val_table.add_row(
-        "P/E Fair Value", format_price(stock.fair_value.pe_fair_value, currency=stock_currency),
-        "Current Price", format_price(stock.current_price, currency=stock_currency),
+        "P/E Fair Value",
+        format_price(stock.fair_value.pe_fair_value, currency=stock_currency),
+        "Current Price",
+        format_price(stock.current_price, currency=stock_currency),
     )
     val_table.add_row(
-        "Margin of Safety", get_margin_of_safety_display(stock.fair_value.margin_of_safety_pct),
-        "", "",
+        "Margin of Safety",
+        get_margin_of_safety_display(stock.fair_value.margin_of_safety_pct),
+        "",
+        "",
     )
 
     console.print(val_table)
@@ -258,23 +278,31 @@ def display_stock_analysis(stock: Stock) -> None:
     prof_table.add_column("Value")
 
     prof_table.add_row(
-        "Gross Margin", format_pct(stock.profitability.gross_margin),
-        "ROE", format_pct(stock.profitability.roe),
+        "Gross Margin",
+        format_pct(stock.profitability.gross_margin),
+        "ROE",
+        format_pct(stock.profitability.roe),
     )
     prof_table.add_row(
-        "Operating Margin", format_pct(stock.profitability.operating_margin),
-        "ROA", format_pct(stock.profitability.roa),
+        "Operating Margin",
+        format_pct(stock.profitability.operating_margin),
+        "ROA",
+        format_pct(stock.profitability.roa),
     )
     prof_table.add_row(
-        "Net Margin", format_pct(stock.profitability.net_margin),
-        "", "",
+        "Net Margin",
+        format_pct(stock.profitability.net_margin),
+        "",
+        "",
     )
 
     console.print(prof_table)
     console.print()
 
     # Financial Health Table
-    health_table = Table(title="FINANCIAL HEALTH", box=box.ROUNDED, show_header=False, padding=(0, 2))
+    health_table = Table(
+        title="FINANCIAL HEALTH", box=box.ROUNDED, show_header=False, padding=(0, 2)
+    )
     health_table.add_column("Metric", style="dim")
     health_table.add_column("Value")
     health_table.add_column("Metric", style="dim")
@@ -285,35 +313,47 @@ def display_stock_analysis(stock: Stock) -> None:
     d_e_display = format_number(d_e / 100, 2) if d_e is not None else "N/A"
 
     health_table.add_row(
-        "Current Ratio", format_number(stock.financial_health.current_ratio),
-        "Debt/Equity", d_e_display,
+        "Current Ratio",
+        format_number(stock.financial_health.current_ratio),
+        "Debt/Equity",
+        d_e_display,
     )
     health_table.add_row(
-        "Quick Ratio", format_number(stock.financial_health.quick_ratio),
-        "Free Cash Flow", format_large_number(stock.financial_health.free_cash_flow, currency=stock_currency),
+        "Quick Ratio",
+        format_number(stock.financial_health.quick_ratio),
+        "Free Cash Flow",
+        format_large_number(stock.financial_health.free_cash_flow, currency=stock_currency),
     )
 
     console.print(health_table)
     console.print()
 
     # Technical / Oversold Indicators Table
-    tech_table = Table(title="TECHNICAL / OVERSOLD INDICATORS", box=box.ROUNDED, show_header=False, padding=(0, 2))
+    tech_table = Table(
+        title="TECHNICAL / OVERSOLD INDICATORS", box=box.ROUNDED, show_header=False, padding=(0, 2)
+    )
     tech_table.add_column("Metric", style="dim")
     tech_table.add_column("Value")
     tech_table.add_column("Metric", style="dim")
     tech_table.add_column("Value")
 
     tech_table.add_row(
-        "RSI (14-day)", get_rsi_display(stock.technical.rsi_14),
-        "vs 52W High", format_pct(stock.technical.pct_from_52w_high),
+        "RSI (14-day)",
+        get_rsi_display(stock.technical.rsi_14),
+        "vs 52W High",
+        format_pct(stock.technical.pct_from_52w_high),
     )
     tech_table.add_row(
-        "vs 50-day MA", format_pct(stock.technical.price_vs_ma_50_pct),
-        "vs 52W Low", format_pct(stock.technical.pct_from_52w_low),
+        "vs 50-day MA",
+        format_pct(stock.technical.price_vs_ma_50_pct),
+        "vs 52W Low",
+        format_pct(stock.technical.pct_from_52w_low),
     )
     tech_table.add_row(
-        "vs 200-day MA", format_pct(stock.technical.price_vs_ma_200_pct),
-        "", "",
+        "vs 200-day MA",
+        format_pct(stock.technical.price_vs_ma_200_pct),
+        "",
+        "",
     )
 
     console.print(tech_table)
@@ -327,8 +367,10 @@ def display_stock_analysis(stock: Stock) -> None:
     growth_table.add_column("Value")
 
     growth_table.add_row(
-        "Revenue Growth (YoY)", format_pct(stock.growth.revenue_growth_yoy),
-        "Earnings Growth (YoY)", format_pct(stock.growth.earnings_growth_yoy),
+        "Revenue Growth (YoY)",
+        format_pct(stock.growth.revenue_growth_yoy),
+        "Earnings Growth (YoY)",
+        format_pct(stock.growth.earnings_growth_yoy),
     )
 
     console.print(growth_table)
@@ -343,12 +385,16 @@ def display_stock_analysis(stock: Stock) -> None:
         div_table.add_column("Value")
 
         div_table.add_row(
-            "Dividend Yield", format_pct(stock.dividends.dividend_yield),
-            "Payout Ratio", format_pct(stock.dividends.payout_ratio),
+            "Dividend Yield",
+            format_pct(stock.dividends.dividend_yield),
+            "Payout Ratio",
+            format_pct(stock.dividends.payout_ratio),
         )
         div_table.add_row(
-            "Annual Dividend", format_price(stock.dividends.dividend_rate, currency=stock_currency),
-            "", "",
+            "Annual Dividend",
+            format_price(stock.dividends.dividend_rate, currency=stock_currency),
+            "",
+            "",
         )
 
         console.print(div_table)
@@ -397,7 +443,9 @@ def display_stock_analysis(stock: Stock) -> None:
             summary_parts.append(f"[red]- High debt: {d_e_ratio:.2f} D/E[/]")
 
     if summary_parts or signal in ("STRONG_BUY", "BUY", "WATCH"):
-        summary_content = "\n".join(summary_parts) if summary_parts else "[dim]No notable signals[/]"
+        summary_content = (
+            "\n".join(summary_parts) if summary_parts else "[dim]No notable signals[/]"
+        )
 
         signal_panel = Panel(
             f"[bold]Signal: [/]{signal_display}\n\n{summary_content}",
@@ -409,5 +457,7 @@ def display_stock_analysis(stock: Stock) -> None:
 
     # Disclaimer
     console.print()
-    console.print("[dim italic]Disclaimer: This is for informational purposes only, not financial advice.[/]")
+    console.print(
+        "[dim italic]Disclaimer: This is for informational purposes only, not financial advice.[/]"
+    )
     console.print()

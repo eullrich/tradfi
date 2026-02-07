@@ -15,6 +15,7 @@ def format_large_number(value: float | None, currency: str = "USD") -> str:
     Kept here for backward compatibility.
     """
     from tradfi.utils.display import format_large_number as _format_large_number
+
     return _format_large_number(value, currency=currency)
 
 
@@ -62,7 +63,7 @@ def sparkline_with_label(
     label: str,
     width: int = 10,
     show_latest: bool = True,
-    format_fn: callable = None
+    format_fn: callable = None,
 ) -> str:
     """
     Generate a sparkline with a label and optional latest value.
@@ -191,12 +192,12 @@ def ascii_scatter(
             5        15       25
     """
     if not points:
-        return f"[dim]No data points to plot[/]"
+        return "[dim]No data points to plot[/]"
 
     # Filter out None values
     valid_points = [(x, y, label) for x, y, label in points if x is not None and y is not None]
     if not valid_points:
-        return f"[dim]No valid data points[/]"
+        return "[dim]No valid data points[/]"
 
     # Calculate ranges
     x_vals = [p[0] for p in valid_points]
@@ -247,7 +248,7 @@ def ascii_scatter(
     lines.append(f"  {y_label}")
 
     # Calculate Y-axis tick values
-    y_ticks = [y_max, (y_max + y_min) / 2, y_min]
+    _y_ticks = [y_max, (y_max + y_min) / 2, y_min]
 
     # Grid rows with Y-axis
     for i, row in enumerate(grid):
@@ -268,7 +269,13 @@ def ascii_scatter(
 
     # X-axis labels
     x_mid = (x_max + x_min) / 2
-    x_axis_labels = f"      {x_min:<.0f}" + " " * (width // 2 - 8) + f"{x_mid:.0f}" + " " * (width // 2 - 8) + f"{x_max:>.0f}"
+    x_axis_labels = (
+        f"      {x_min:<.0f}"
+        + " " * (width // 2 - 8)
+        + f"{x_mid:.0f}"
+        + " " * (width // 2 - 8)
+        + f"{x_max:>.0f}"
+    )
     lines.append(x_axis_labels)
     lines.append(f"      {' ' * (width // 2 - len(x_label) // 2)}{x_label}")
 

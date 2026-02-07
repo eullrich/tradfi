@@ -84,9 +84,32 @@ FOREX_TICKERS: dict[str, str] = {
 
 # Currencies where yfinance gives USD/XXX (need to invert for XXX/USD)
 INVERTED_PAIRS = {
-    "JPY", "CAD", "CHF", "CNY", "HKD", "SGD", "INR", "KRW", "TWD",
-    "BRL", "MXN", "ZAR", "SEK", "NOK", "DKK", "THB", "IDR", "MYR",
-    "PHP", "PLN", "TRY", "ILS", "SAR", "AED", "CLP", "COP",
+    "JPY",
+    "CAD",
+    "CHF",
+    "CNY",
+    "HKD",
+    "SGD",
+    "INR",
+    "KRW",
+    "TWD",
+    "BRL",
+    "MXN",
+    "ZAR",
+    "SEK",
+    "NOK",
+    "DKK",
+    "THB",
+    "IDR",
+    "MYR",
+    "PHP",
+    "PLN",
+    "TRY",
+    "ILS",
+    "SAR",
+    "AED",
+    "CLP",
+    "COP",
 }
 
 
@@ -293,11 +316,7 @@ def clear_rate_cache() -> None:
 def get_all_cached_rates() -> dict[str, float]:
     """Get all currently cached rates."""
     now = time.time()
-    return {
-        currency: rate
-        for currency, (rate, ts) in _rate_cache.items()
-        if now - ts < _cache_ttl
-    }
+    return {currency: rate for currency, (rate, ts) in _rate_cache.items() if now - ts < _cache_ttl}
 
 
 # List of all supported currencies for display

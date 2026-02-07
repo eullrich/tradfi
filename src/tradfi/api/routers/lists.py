@@ -121,7 +121,9 @@ async def update_item_notes(name: str, ticker: str, request: ListNoteSchema):
 async def get_categories():
     """Get all categories."""
     categories = list_categories()
-    return [CategorySchema(id=cat["id"], name=cat["name"], icon=cat.get("icon")) for cat in categories]
+    return [
+        CategorySchema(id=cat["id"], name=cat["name"], icon=cat.get("icon")) for cat in categories
+    ]
 
 
 @router.post("/categories", response_model=MessageSchema)
@@ -147,9 +149,7 @@ async def add_list_to_cat(category_id: int, list_name: str):
     return MessageSchema(message=f"List '{list_name}' added to category")
 
 
-@router.delete(
-    "/categories/{category_id}/lists/{list_name}", response_model=MessageSchema
-)
+@router.delete("/categories/{category_id}/lists/{list_name}", response_model=MessageSchema)
 async def remove_list_from_cat(category_id: int, list_name: str):
     """Remove a list from a category."""
     remove_list_from_category(list_name, category_id)

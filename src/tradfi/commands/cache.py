@@ -5,9 +5,9 @@ from datetime import datetime
 from typing import Optional
 
 import typer
+from rich import box
 from rich.console import Console
 from rich.table import Table
-from rich import box
 
 from tradfi.core.remote_provider import RemoteDataProvider
 from tradfi.core.screener import AVAILABLE_UNIVERSES

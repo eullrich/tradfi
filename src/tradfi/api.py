@@ -8,11 +8,12 @@ from typing import Annotated
 # In production, set TRADFI_PRODUCTION=1 to disable token exposure
 IS_PRODUCTION = os.getenv("TRADFI_PRODUCTION", "").lower() in ("1", "true", "yes")
 
-from fastapi import Depends, FastAPI, Header, HTTPException
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel, EmailStr
+from fastapi import Depends, FastAPI, Header, HTTPException  # noqa: E402
+from fastapi.responses import JSONResponse  # noqa: E402
+from pydantic import BaseModel, EmailStr  # noqa: E402
 
-from tradfi.utils.cache import (
+from tradfi.core.portfolio import calculate_portfolio_metrics  # noqa: E402
+from tradfi.utils.cache import (  # noqa: E402
     create_magic_link_token,
     get_batch_cached_stocks,
     get_cache_stats,
@@ -37,7 +38,6 @@ from tradfi.utils.cache import (
     validate_session_token,
     verify_magic_link_token,
 )
-from tradfi.core.portfolio import calculate_portfolio_metrics
 
 app = FastAPI(title="TradFi API", version="0.1.0")
 
@@ -49,11 +49,13 @@ app = FastAPI(title="TradFi API", version="0.1.0")
 
 class RegisterRequest(BaseModel):
     """Request to register/login with email."""
+
     email: EmailStr
 
 
 class RegisterResponse(BaseModel):
     """Response after requesting magic link."""
+
     message: str
     email: str
     magic_link_token: str | None = None  # Only populated in development mode
@@ -61,17 +63,20 @@ class RegisterResponse(BaseModel):
 
 class VerifyRequest(BaseModel):
     """Request to verify magic link token."""
+
     token: str
 
 
 class AuthResponse(BaseModel):
     """Response with session token and user info."""
+
     session_token: str
     user: dict
 
 
 class UserResponse(BaseModel):
     """User information response."""
+
     id: int
     email: str
     created_at: int
@@ -80,18 +85,21 @@ class UserResponse(BaseModel):
 
 class MessageResponse(BaseModel):
     """Simple message response."""
+
     message: str
 
 
 # Watchlist models
 class WatchlistItemRequest(BaseModel):
     """Request to add/update a watchlist item."""
+
     ticker: str
     notes: str | None = None
 
 
 class WatchlistItemResponse(BaseModel):
     """Watchlist item response."""
+
     ticker: str
     added_at: int
     notes: str | None
@@ -100,12 +108,14 @@ class WatchlistItemResponse(BaseModel):
 # List models
 class CreateListRequest(BaseModel):
     """Request to create a new list."""
+
     name: str
     description: str | None = None
 
 
 class ListResponse(BaseModel):
     """Saved list response."""
+
     id: int
     name: str
     description: str | None
@@ -116,12 +126,14 @@ class ListResponse(BaseModel):
 
 class ListItemRequest(BaseModel):
     """Request to add/update a list item."""
+
     ticker: str
     notes: str | None = None
 
 
 class ListItemResponse(BaseModel):
     """List item response."""
+
     ticker: str
     added_at: int
     notes: str | None
@@ -130,6 +142,7 @@ class ListItemResponse(BaseModel):
 # Position/Portfolio models
 class PositionRequest(BaseModel):
     """Request to set position data for a list item."""
+
     shares: float | None = None
     entry_price: float | None = None
     target_price: float | None = None
@@ -138,6 +151,7 @@ class PositionRequest(BaseModel):
 
 class PositionResponse(BaseModel):
     """Position data for a single item."""
+
     ticker: str
     shares: float | None = None
     entry_price: float | None = None
@@ -149,6 +163,7 @@ class PositionResponse(BaseModel):
 
 class PortfolioItemResponse(BaseModel):
     """Full portfolio item with calculated P&L metrics."""
+
     ticker: str
     shares: float | None = None
     entry_price: float | None = None
@@ -168,6 +183,7 @@ class PortfolioItemResponse(BaseModel):
 
 class PortfolioSummaryResponse(BaseModel):
     """Portfolio summary with aggregated metrics."""
+
     list_name: str
     items: list[PortfolioItemResponse]
     total_cost_basis: float
@@ -182,9 +198,7 @@ class PortfolioSummaryResponse(BaseModel):
 # ============================================================================
 
 
-def get_current_user(
-    authorization: Annotated[str | None, Header()] = None
-) -> dict:
+def get_current_user(authorization: Annotated[str | None, Header()] = None) -> dict:
     """
     Validate the session token and return the current user.
 
@@ -208,9 +222,7 @@ def get_current_user(
     return user
 
 
-def get_optional_user(
-    authorization: Annotated[str | None, Header()] = None
-) -> dict | None:
+def get_optional_user(authorization: Annotated[str | None, Header()] = None) -> dict | None:
     """
     Optionally validate the session token. Returns None if not authenticated.
     """
@@ -270,7 +282,7 @@ def verify(request: VerifyRequest) -> AuthResponse:
 @app.post("/api/auth/logout", response_model=MessageResponse)
 def logout(
     current_user: Annotated[dict, Depends(get_current_user)],
-    authorization: Annotated[str, Header()]
+    authorization: Annotated[str, Header()],
 ) -> MessageResponse:
     """
     Logout and invalidate the current session token.
@@ -318,14 +330,16 @@ def cache_status() -> JSONResponse:
         else:
             last_updated_ago = f"{int(age_seconds / 86400)}d ago"
 
-    return JSONResponse({
-        "total_cached": stats["total_cached"],
-        "fresh": stats["fresh"],
-        "stale": stats["stale"],
-        "cache_ttl_minutes": stats["cache_ttl_minutes"],
-        "last_updated": last_updated_iso,
-        "last_updated_ago": last_updated_ago,
-    })
+    return JSONResponse(
+        {
+            "total_cached": stats["total_cached"],
+            "fresh": stats["fresh"],
+            "stale": stats["stale"],
+            "cache_ttl_minutes": stats["cache_ttl_minutes"],
+            "last_updated": last_updated_iso,
+            "last_updated_ago": last_updated_ago,
+        }
+    )
 
 
 @app.get("/health")
@@ -341,7 +355,7 @@ def health() -> JSONResponse:
 
 @app.get("/api/watchlist", response_model=list[WatchlistItemResponse])
 def get_watchlist(
-    current_user: Annotated[dict, Depends(get_current_user)]
+    current_user: Annotated[dict, Depends(get_current_user)],
 ) -> list[WatchlistItemResponse]:
     """Get the current user's watchlist."""
     items = user_get_watchlist(current_user["id"])
@@ -350,8 +364,7 @@ def get_watchlist(
 
 @app.post("/api/watchlist", response_model=MessageResponse)
 def add_to_watchlist(
-    request: WatchlistItemRequest,
-    current_user: Annotated[dict, Depends(get_current_user)]
+    request: WatchlistItemRequest, current_user: Annotated[dict, Depends(get_current_user)]
 ) -> MessageResponse:
     """Add a ticker to the current user's watchlist."""
     added = user_add_to_watchlist(current_user["id"], request.ticker, request.notes)
@@ -362,8 +375,7 @@ def add_to_watchlist(
 
 @app.delete("/api/watchlist/{ticker}", response_model=MessageResponse)
 def remove_from_watchlist(
-    ticker: str,
-    current_user: Annotated[dict, Depends(get_current_user)]
+    ticker: str, current_user: Annotated[dict, Depends(get_current_user)]
 ) -> MessageResponse:
     """Remove a ticker from the current user's watchlist."""
     removed = user_remove_from_watchlist(current_user["id"], ticker)
@@ -376,7 +388,7 @@ def remove_from_watchlist(
 def update_watchlist_notes(
     ticker: str,
     request: WatchlistItemRequest,
-    current_user: Annotated[dict, Depends(get_current_user)]
+    current_user: Annotated[dict, Depends(get_current_user)],
 ) -> MessageResponse:
     """Update notes for a watchlist item."""
     if request.notes is None:
@@ -393,9 +405,7 @@ def update_watchlist_notes(
 
 
 @app.get("/api/lists", response_model=list[ListResponse])
-def get_lists(
-    current_user: Annotated[dict, Depends(get_current_user)]
-) -> list[ListResponse]:
+def get_lists(current_user: Annotated[dict, Depends(get_current_user)]) -> list[ListResponse]:
     """Get all saved lists for the current user."""
     lists = user_get_lists(current_user["id"])
     return [ListResponse(**lst) for lst in lists]
@@ -403,8 +413,7 @@ def get_lists(
 
 @app.post("/api/lists", response_model=ListResponse)
 def create_list(
-    request: CreateListRequest,
-    current_user: Annotated[dict, Depends(get_current_user)]
+    request: CreateListRequest, current_user: Annotated[dict, Depends(get_current_user)]
 ) -> ListResponse:
     """Create a new saved list."""
     result = user_create_list(current_user["id"], request.name, request.description)
@@ -415,8 +424,7 @@ def create_list(
 
 @app.get("/api/lists/{list_name}", response_model=ListResponse)
 def get_list(
-    list_name: str,
-    current_user: Annotated[dict, Depends(get_current_user)]
+    list_name: str, current_user: Annotated[dict, Depends(get_current_user)]
 ) -> ListResponse:
     """Get a specific saved list."""
     result = user_get_list(current_user["id"], list_name)
@@ -428,8 +436,7 @@ def get_list(
 
 @app.delete("/api/lists/{list_name}", response_model=MessageResponse)
 def delete_list(
-    list_name: str,
-    current_user: Annotated[dict, Depends(get_current_user)]
+    list_name: str, current_user: Annotated[dict, Depends(get_current_user)]
 ) -> MessageResponse:
     """Delete a saved list."""
     deleted = user_delete_list(current_user["id"], list_name)
@@ -440,8 +447,7 @@ def delete_list(
 
 @app.get("/api/lists/{list_name}/items", response_model=list[ListItemResponse])
 def get_list_items(
-    list_name: str,
-    current_user: Annotated[dict, Depends(get_current_user)]
+    list_name: str, current_user: Annotated[dict, Depends(get_current_user)]
 ) -> list[ListItemResponse]:
     """Get all items in a saved list."""
     items = user_get_list_items(current_user["id"], list_name)
@@ -454,12 +460,10 @@ def get_list_items(
 def add_to_list(
     list_name: str,
     request: ListItemRequest,
-    current_user: Annotated[dict, Depends(get_current_user)]
+    current_user: Annotated[dict, Depends(get_current_user)],
 ) -> MessageResponse:
     """Add a ticker to a saved list."""
-    added = user_add_to_list(
-        current_user["id"], list_name, request.ticker, request.notes
-    )
+    added = user_add_to_list(current_user["id"], list_name, request.ticker, request.notes)
     if added:
         return MessageResponse(message=f"{request.ticker.upper()} added to '{list_name}'")
     # Check if list exists
@@ -470,9 +474,7 @@ def add_to_list(
 
 @app.delete("/api/lists/{list_name}/items/{ticker}", response_model=MessageResponse)
 def remove_from_list(
-    list_name: str,
-    ticker: str,
-    current_user: Annotated[dict, Depends(get_current_user)]
+    list_name: str, ticker: str, current_user: Annotated[dict, Depends(get_current_user)]
 ) -> MessageResponse:
     """Remove a ticker from a saved list."""
     removed = user_remove_from_list(current_user["id"], list_name, ticker)
@@ -489,14 +491,12 @@ def update_list_item_notes(
     list_name: str,
     ticker: str,
     request: ListItemRequest,
-    current_user: Annotated[dict, Depends(get_current_user)]
+    current_user: Annotated[dict, Depends(get_current_user)],
 ) -> MessageResponse:
     """Update notes for an item in a saved list."""
     if request.notes is None:
         raise HTTPException(status_code=400, detail="Notes field required")
-    updated = user_update_list_item_notes(
-        current_user["id"], list_name, ticker, request.notes
-    )
+    updated = user_update_list_item_notes(current_user["id"], list_name, ticker, request.notes)
     if updated:
         return MessageResponse(message=f"Notes updated for {ticker.upper()}")
     # Check if list exists
@@ -515,7 +515,7 @@ def set_position(
     list_name: str,
     ticker: str,
     request: PositionRequest,
-    current_user: Annotated[dict, Depends(get_current_user)]
+    current_user: Annotated[dict, Depends(get_current_user)],
 ) -> MessageResponse:
     """
     Set position data for a list item (shares, entry_price, target_price, thesis).
@@ -527,10 +527,13 @@ def set_position(
         raise HTTPException(status_code=404, detail=f"List '{list_name}' not found")
 
     # Check if at least one field is provided
-    if all(v is None for v in [request.shares, request.entry_price, request.target_price, request.thesis]):
+    if all(
+        v is None
+        for v in [request.shares, request.entry_price, request.target_price, request.thesis]
+    ):
         raise HTTPException(
             status_code=400,
-            detail="At least one field (shares, entry_price, target_price, thesis) is required"
+            detail="At least one field (shares, entry_price, target_price, thesis) is required",
         )
 
     updated = user_set_position(
@@ -550,9 +553,7 @@ def set_position(
 
 @app.get("/api/lists/{list_name}/items/{ticker}/position", response_model=PositionResponse)
 def get_position(
-    list_name: str,
-    ticker: str,
-    current_user: Annotated[dict, Depends(get_current_user)]
+    list_name: str, ticker: str, current_user: Annotated[dict, Depends(get_current_user)]
 ) -> PositionResponse:
     """Get position data for a specific item in a list."""
     # Check if list exists
@@ -568,9 +569,7 @@ def get_position(
 
 @app.delete("/api/lists/{list_name}/items/{ticker}/position", response_model=MessageResponse)
 def clear_position(
-    list_name: str,
-    ticker: str,
-    current_user: Annotated[dict, Depends(get_current_user)]
+    list_name: str, ticker: str, current_user: Annotated[dict, Depends(get_current_user)]
 ) -> MessageResponse:
     """
     Clear position data for a list item (set shares/entry_price to NULL).
@@ -589,8 +588,7 @@ def clear_position(
 
 @app.get("/api/lists/{list_name}/portfolio", response_model=PortfolioSummaryResponse)
 def get_portfolio(
-    list_name: str,
-    current_user: Annotated[dict, Depends(get_current_user)]
+    list_name: str, current_user: Annotated[dict, Depends(get_current_user)]
 ) -> PortfolioSummaryResponse:
     """
     Get full portfolio view with P&L calculations for a list.
@@ -638,8 +636,7 @@ def get_portfolio(
 
 @app.get("/api/lists/{list_name}/has-positions")
 def check_has_positions(
-    list_name: str,
-    current_user: Annotated[dict, Depends(get_current_user)]
+    list_name: str, current_user: Annotated[dict, Depends(get_current_user)]
 ) -> JSONResponse:
     """Check if a list has any position data (for determining display mode)."""
     # Check if list exists

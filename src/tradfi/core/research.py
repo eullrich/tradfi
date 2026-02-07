@@ -15,9 +15,10 @@ def _read_response(response) -> bytes:
     """Read response, handling gzip compression if present."""
     data = response.read()
     # Check if gzip compressed (magic bytes 0x1f 0x8b)
-    if data[:2] == b'\x1f\x8b':
+    if data[:2] == b"\x1f\x8b":
         data = gzip.decompress(data)
     return data
+
 
 # Supported LLM providers
 LLM_PROVIDER_ANTHROPIC = "anthropic"
@@ -144,13 +145,15 @@ def get_recent_filings(cik: str, form_type: str = "10-K", count: int = 5) -> lis
         for i, form in enumerate(forms):
             if form == form_type and len(filings) < count:
                 accession = accessions[i].replace("-", "")
-                filings.append(Filing(
-                    form_type=form,
-                    filed_date=dates[i],
-                    accession_number=accessions[i],
-                    primary_document=primary_docs[i],
-                    filing_url=f"https://www.sec.gov/Archives/edgar/data/{cik.lstrip('0')}/{accession}/{primary_docs[i]}",
-                ))
+                filings.append(
+                    Filing(
+                        form_type=form,
+                        filed_date=dates[i],
+                        accession_number=accessions[i],
+                        primary_document=primary_docs[i],
+                        filing_url=f"https://www.sec.gov/Archives/edgar/data/{cik.lstrip('0')}/{accession}/{primary_docs[i]}",
+                    )
+                )
 
         return filings
 
@@ -176,12 +179,12 @@ def fetch_filing_content(filing: Filing, max_chars: int = 100000) -> str | None:
             content = _read_response(response).decode("utf-8", errors="ignore")
 
         # Strip HTML tags for cleaner text
-        content = re.sub(r'<style[^>]*>.*?</style>', '', content, flags=re.DOTALL | re.IGNORECASE)
-        content = re.sub(r'<script[^>]*>.*?</script>', '', content, flags=re.DOTALL | re.IGNORECASE)
-        content = re.sub(r'<[^>]+>', ' ', content)
-        content = re.sub(r'&nbsp;', ' ', content)
-        content = re.sub(r'&[a-zA-Z]+;', '', content)
-        content = re.sub(r'\s+', ' ', content)
+        content = re.sub(r"<style[^>]*>.*?</style>", "", content, flags=re.DOTALL | re.IGNORECASE)
+        content = re.sub(r"<script[^>]*>.*?</script>", "", content, flags=re.DOTALL | re.IGNORECASE)
+        content = re.sub(r"<[^>]+>", " ", content)
+        content = re.sub(r"&nbsp;", " ", content)
+        content = re.sub(r"&[a-zA-Z]+;", "", content)
+        content = re.sub(r"\s+", " ", content)
 
         # Truncate if too long
         if len(content) > max_chars:
@@ -218,11 +221,9 @@ def _call_anthropic(api_key: str, model: str, prompt: str) -> str | None:
     """Call Anthropic API and return response text."""
     import urllib.request
 
-    request_data = json.dumps({
-        "model": model,
-        "max_tokens": 2000,
-        "messages": [{"role": "user", "content": prompt}]
-    }).encode("utf-8")
+    request_data = json.dumps(
+        {"model": model, "max_tokens": 2000, "messages": [{"role": "user", "content": prompt}]}
+    ).encode("utf-8")
 
     req = urllib.request.Request(
         API_ENDPOINTS[LLM_PROVIDER_ANTHROPIC],
@@ -245,11 +246,9 @@ def _call_openrouter(api_key: str, model: str, prompt: str) -> str | None:
     """Call OpenRouter API and return response text."""
     import urllib.request
 
-    request_data = json.dumps({
-        "model": model,
-        "max_tokens": 4000,
-        "messages": [{"role": "user", "content": prompt}]
-    }).encode("utf-8")
+    request_data = json.dumps(
+        {"model": model, "max_tokens": 4000, "messages": [{"role": "user", "content": prompt}]}
+    ).encode("utf-8")
 
     req = urllib.request.Request(
         API_ENDPOINTS[LLM_PROVIDER_OPENROUTER],
@@ -310,8 +309,10 @@ def analyze_filing_with_claude(
 
     model = DEFAULT_MODELS[provider]
 
-    prompt = f"""Analyze this SEC {filing.form_type} filing for {ticker} filed on {filing.filed_date}.
-
+    prompt = (
+        f"Analyze this SEC {filing.form_type} filing for {ticker} "
+        f"filed on {filing.filed_date}.\n"
+        f"""
 Provide a deep value investor's analysis focusing on:
 
 1. **Executive Summary** (2-3 sentences on overall company health)
@@ -350,6 +351,7 @@ Format your response as JSON with this structure:
 FILING CONTENT:
 {content[:80000]}
 """
+    )
 
     try:
         # Call appropriate provider
@@ -362,7 +364,7 @@ FILING CONTENT:
             return None
 
         # Parse JSON from response
-        json_match = re.search(r'\{[\s\S]*\}', response_text)
+        json_match = re.search(r"\{[\s\S]*\}", response_text)
         if json_match:
             analysis = json.loads(json_match.group())
 

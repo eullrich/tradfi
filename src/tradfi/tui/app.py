@@ -85,6 +85,7 @@ class ClearAllPill(Static):
 
     class Clicked(Message):
         """Message sent when Clear All is clicked."""
+
         pass
 
     def __init__(self, **kwargs) -> None:
@@ -161,37 +162,45 @@ class FilterPillsContainer(Horizontal):
 
         # Add universe pills
         for universe in sorted(universes):
-            self.mount(FilterPill(
-                filter_type="universe",
-                filter_value=universe,
-                display_name=universe,
-            ))
+            self.mount(
+                FilterPill(
+                    filter_type="universe",
+                    filter_value=universe,
+                    display_name=universe,
+                )
+            )
 
         # Add category pills
         for category in sorted(categories):
-            self.mount(FilterPill(
-                filter_type="category",
-                filter_value=category,
-                display_name=category,
-            ))
+            self.mount(
+                FilterPill(
+                    filter_type="category",
+                    filter_value=category,
+                    display_name=category,
+                )
+            )
 
         # Add sector pills
         for sector in sorted(sectors):
             # Truncate sector names for display
             display = sector if len(sector) <= 20 else sector[:18] + ".."
-            self.mount(FilterPill(
-                filter_type="sector",
-                filter_value=sector,
-                display_name=display,
-            ))
+            self.mount(
+                FilterPill(
+                    filter_type="sector",
+                    filter_value=sector,
+                    display_name=display,
+                )
+            )
 
         # Add preset pill
         if preset:
-            self.mount(FilterPill(
-                filter_type="preset",
-                filter_value=preset,
-                display_name=preset,
-            ))
+            self.mount(
+                FilterPill(
+                    filter_type="preset",
+                    filter_value=preset,
+                    display_name=preset,
+                )
+            )
 
         # Add Clear All button if we have multiple filters
         total_filters = len(universes) + len(sectors) + len(categories) + (1 if preset else 0)
@@ -304,14 +313,10 @@ class ActionMenuScreen(ModalScreen):
             for category, items in ACTION_MENU_ITEMS.items():
                 yield Static(f"[bold magenta]{category}[/]", classes="action-category")
                 for action_id, key, description in items:
-                    yield Static(
-                        f"  [bold green]{key:>2}[/]  {description}",
-                        classes="action-item"
-                    )
+                    yield Static(f"  [bold green]{key:>2}[/]  {description}", classes="action-item")
 
             yield Static(
-                "[dim]Press key to execute, Space/Esc to close[/]",
-                id="action-menu-footer"
+                "[dim]Press key to execute, Space/Esc to close[/]", id="action-menu-footer"
             )
 
     def on_key(self, event) -> None:
@@ -325,8 +330,9 @@ class ActionMenuScreen(ModalScreen):
                     self.dismiss(action_id)
                     return
 
-from tradfi.core.remote_provider import RemoteDataProvider
-from tradfi.core.screener import (
+
+from tradfi.core.remote_provider import RemoteDataProvider  # noqa: E402
+from tradfi.core.screener import (  # noqa: E402
     AVAILABLE_UNIVERSES,
     PRESET_DESCRIPTIONS,
     PRESET_INFO,
@@ -338,18 +344,34 @@ from tradfi.core.screener import (
     load_tickers_by_categories,
     screen_stock,
 )
-from tradfi.models.stock import Stock
-from tradfi.utils.sparkline import ascii_bar, ascii_scatter
+from tradfi.models.stock import Stock  # noqa: E402
+from tradfi.utils.sparkline import ascii_bar, ascii_scatter  # noqa: E402
 
 # Metrics available for heatmap and scatter plot
 VISUALIZATION_METRICS = {
     "rsi": ("RSI", lambda s: s.technical.rsi_14, False),  # (label, getter, reverse_bar)
-    "pe": ("P/E", lambda s: s.valuation.pe_trailing if s.valuation.pe_trailing and isinstance(s.valuation.pe_trailing, (int, float)) and s.valuation.pe_trailing > 0 else None, True),
+    "pe": (
+        "P/E",
+        lambda s: (
+            s.valuation.pe_trailing
+            if s.valuation.pe_trailing
+            and isinstance(s.valuation.pe_trailing, (int, float))
+            and s.valuation.pe_trailing > 0
+            else None
+        ),
+        True,
+    ),
     "roe": ("ROE %", lambda s: s.profitability.roe, False),
     "return_1m": ("1M Return", lambda s: s.technical.return_1m, False),
     "mos": ("MoS %", lambda s: s.fair_value.margin_of_safety_pct, False),
     "div": ("Div Yield", lambda s: s.dividends.dividend_yield, False),
-    "pb": ("P/B", lambda s: s.valuation.pb_ratio if s.valuation.pb_ratio and s.valuation.pb_ratio > 0 else None, True),
+    "pb": (
+        "P/B",
+        lambda s: (
+            s.valuation.pb_ratio if s.valuation.pb_ratio and s.valuation.pb_ratio > 0 else None
+        ),
+        True,
+    ),
 }
 
 
@@ -414,7 +436,7 @@ class SectorHeatmapScreen(ModalScreen):
             yield Static("", id="heatmap-content")
             yield Static(
                 "[dim]1=RSI 2=P/E 3=ROE 4=Return 5=MoS | Enter=Filter | Esc=Close[/]",
-                id="heatmap-footer"
+                id="heatmap-footer",
             )
 
     def on_mount(self) -> None:
@@ -454,9 +476,7 @@ class SectorHeatmapScreen(ModalScreen):
 
         # Sort by stock count descending
         self.sector_list = sorted(
-            self.sector_stats.keys(),
-            key=lambda s: self.sector_stats[s]["count"],
-            reverse=True
+            self.sector_stats.keys(), key=lambda s: self.sector_stats[s]["count"], reverse=True
         )
 
     def _render_heatmap(self) -> None:
@@ -650,8 +670,7 @@ class ScatterPlotScreen(ModalScreen):
             yield Static("", id="scatter-plot")
             yield Static("", id="scatter-legend")
             yield Static(
-                "[dim]x=Change X axis | y=Change Y axis | Esc=Close[/]",
-                id="scatter-footer"
+                "[dim]x=Change X axis | y=Change Y axis | Esc=Close[/]", id="scatter-footer"
             )
 
     def on_mount(self) -> None:
@@ -837,9 +856,21 @@ class CacheManagementScreen(ModalScreen):
                     "[green]a[/] to refresh all, [green]Esc[/] to close[/]"
                 )
                 with Horizontal(id="cache-buttons"):
-                    yield Button("Refresh Selected", id="btn-refresh", variant="primary", classes="cache-button")
-                    yield Button("Refresh All US", id="btn-refresh-us", variant="warning", classes="cache-button")
-                    yield Button("Clear Cache", id="btn-clear", variant="error", classes="cache-button")
+                    yield Button(
+                        "Refresh Selected",
+                        id="btn-refresh",
+                        variant="primary",
+                        classes="cache-button",
+                    )
+                    yield Button(
+                        "Refresh All US",
+                        id="btn-refresh-us",
+                        variant="warning",
+                        classes="cache-button",
+                    )
+                    yield Button(
+                        "Clear Cache", id="btn-clear", variant="error", classes="cache-button"
+                    )
 
     def on_mount(self) -> None:
         """Load cache data when mounted."""
@@ -871,6 +902,7 @@ class CacheManagementScreen(ModalScreen):
         """Fetch just the refresh status (lightweight poll)."""
         try:
             import asyncio
+
             loop = asyncio.get_event_loop()
             self.refresh_status = await loop.run_in_executor(
                 None, self.remote_provider.get_refresh_status
@@ -963,7 +995,11 @@ class CacheManagementScreen(ModalScreen):
             # Update details
             progress_details = self.query_one("#progress-details", Static)
             eta_seconds = (total - completed) * 2  # Assume 2s per stock
-            eta_display = f"{eta_seconds // 60}m {eta_seconds % 60}s" if eta_seconds > 60 else f"{eta_seconds}s"
+            eta_display = (
+                f"{eta_seconds // 60}m {eta_seconds % 60}s"
+                if eta_seconds > 60
+                else f"{eta_seconds}s"
+            )
             progress_details.update(
                 f"[green]✓ {fetched} fetched[/]  "
                 f"[red]✗ {failed} failed[/]  "
@@ -992,6 +1028,7 @@ class CacheManagementScreen(ModalScreen):
             # Parse and format the time
             try:
                 from datetime import datetime
+
                 dt = datetime.fromisoformat(next_refresh.replace("Z", "+00:00"))
                 formatted = dt.strftime("%Y-%m-%d %H:%M UTC")
                 status_lines.append(f"[cyan]⏭ Next refresh:[/] {formatted}")
@@ -1006,6 +1043,7 @@ class CacheManagementScreen(ModalScreen):
         if last_refresh:
             try:
                 from datetime import datetime
+
                 dt = datetime.fromisoformat(last_refresh.replace("Z", "+00:00"))
                 formatted = dt.strftime("%Y-%m-%d %H:%M UTC")
                 last_line = f"[dim]⏮ Last refresh:[/] {formatted}"
@@ -1054,7 +1092,10 @@ class CacheManagementScreen(ModalScreen):
                 coverage = f"[red]{coverage_pct:.0f}%[/]"
 
             # Mark currently refreshing universe
-            if self.refresh_status.get("is_running") and self.refresh_status.get("current_universe") == name:
+            if (
+                self.refresh_status.get("is_running")
+                and self.refresh_status.get("current_universe") == name
+            ):
                 name = f"[yellow bold]⟳ {name}[/]"
 
             est_minutes = u.get("est_refresh_minutes", 0)
@@ -1098,7 +1139,8 @@ class CacheManagementScreen(ModalScreen):
             # Strip any markup from universe name
             if universe and "⟳" in universe:
                 import re
-                universe = re.sub(r'\[.*?\]', '', universe).strip().replace("⟳", "").strip()
+
+                universe = re.sub(r"\[.*?\]", "", universe).strip().replace("⟳", "").strip()
 
             if universe:
                 self.notify(f"Triggering refresh for {universe}...", severity="information")
@@ -1111,7 +1153,9 @@ class CacheManagementScreen(ModalScreen):
             self.app.call_from_thread(self.notify, f"Error: {result['error']}", severity="error")
         else:
             est = result.get("estimated_duration_minutes", 0)
-            self.app.call_from_thread(self.notify, f"Refresh started for {universe} (~{est:.0f}m)", severity="information")
+            self.app.call_from_thread(
+                self.notify, f"Refresh started for {universe} (~{est:.0f}m)", severity="information"
+            )
             # Start polling for real-time updates
             self.app.call_from_thread(self._start_polling)
             # Reload data after triggering (must use call_from_thread since we're in a worker)
@@ -1136,7 +1180,7 @@ class CacheManagementScreen(ModalScreen):
                 self.app.call_from_thread(
                     self.notify,
                     f"Could not start all: {result.get('error', 'Unknown')}",
-                    severity="warning"
+                    severity="warning",
                 )
                 break
 
@@ -1144,7 +1188,7 @@ class CacheManagementScreen(ModalScreen):
             self.app.call_from_thread(
                 self.notify,
                 f"Triggered refresh for: {', '.join(triggered)}",
-                severity="information"
+                severity="information",
             )
             # Start polling for real-time updates
             self.app.call_from_thread(self._start_polling)
@@ -1159,7 +1203,9 @@ class CacheManagementScreen(ModalScreen):
     def _do_clear_cache(self) -> None:
         """Worker to clear all cached data."""
         count = self.remote_provider.clear_cache()
-        self.app.call_from_thread(self.notify, f"Cleared {count} cached entries", severity="warning")
+        self.app.call_from_thread(
+            self.notify, f"Cleared {count} cached entries", severity="warning"
+        )
         # Reload data after clearing (must use call_from_thread since we're in a worker)
         self.app.call_from_thread(lambda: self.run_worker(self._load_cache_data()))
 
@@ -1205,9 +1251,15 @@ class StockDetailScreen(Screen):
 
         if is_etf:
             # ETF-specific layout
-            subtitle = f"[dim]{self.stock.sector or 'Unknown Category'} | {self.stock.etf.fund_family or 'Unknown Issuer'}[/]"
+            cat = self.stock.sector or "Unknown Category"
+            issuer = self.stock.etf.fund_family or "Unknown Issuer"
+            subtitle = f"[dim]{cat} | {issuer}[/]"
             yield Container(
-                Static(f"[bold cyan]{self.stock.ticker}[/] - {self.stock.name or 'N/A'} [yellow](ETF)[/]", id="stock-title"),
+                Static(
+                    f"[bold cyan]{self.stock.ticker}[/] - "
+                    f"{self.stock.name or 'N/A'} [yellow](ETF)[/]",
+                    id="stock-title",
+                ),
                 Static(subtitle, id="stock-subtitle"),
                 Horizontal(
                     self._create_panel("Price & Signal", self._get_etf_price_info()),
@@ -1229,8 +1281,15 @@ class StockDetailScreen(Screen):
         else:
             # Stock-specific layout (original)
             yield Container(
-                Static(f"[bold cyan]{self.stock.ticker}[/] - {self.stock.name or 'N/A'}", id="stock-title"),
-                Static(f"[dim]{self.stock.sector or 'Unknown Sector'} | {self.stock.industry or 'Unknown Industry'}[/]", id="stock-subtitle"),
+                Static(
+                    f"[bold cyan]{self.stock.ticker}[/] - {self.stock.name or 'N/A'}",
+                    id="stock-title",
+                ),
+                Static(
+                    f"[dim]{self.stock.sector or 'Unknown Sector'}"
+                    f" | {self.stock.industry or 'Unknown Industry'}[/]",
+                    id="stock-subtitle",
+                ),
                 Horizontal(
                     self._create_panel("Price & Signal", self._get_price_info()),
                     self._create_panel("Valuation", self._get_valuation_info()),
@@ -1272,7 +1331,10 @@ class StockDetailScreen(Screen):
 
         # Generate narrative
         signal_desc = {
-            "STRONG_BUY": "Multiple value indicators align - potentially undervalued with strong fundamentals.",
+            "STRONG_BUY": (
+                "Multiple value indicators align"
+                " - potentially undervalued with strong fundamentals."
+            ),
             "BUY": "Shows value characteristics worth investigating further.",
             "WATCH": "Some positive signals but doesn't meet all criteria yet.",
             "NEUTRAL": "No strong value signals detected.",
@@ -1292,11 +1354,17 @@ class StockDetailScreen(Screen):
 
         # Color code based on value thresholds
         pe = v.pe_trailing
-        pe_color = "green" if pe and pe < 15 else "yellow" if pe and pe < 25 else "red" if pe else "dim"
+        pe_color = (
+            "green" if pe and pe < 15 else "yellow" if pe and pe < 25 else "red" if pe else "dim"
+        )
         pb = v.pb_ratio
-        pb_color = "green" if pb and pb < 1.5 else "yellow" if pb and pb < 3 else "red" if pb else "dim"
+        pb_color = (
+            "green" if pb and pb < 1.5 else "yellow" if pb and pb < 3 else "red" if pb else "dim"
+        )
         peg = v.peg_ratio
-        peg_color = "green" if peg and peg < 1 else "yellow" if peg and peg < 2 else "red" if peg else "dim"
+        peg_color = (
+            "green" if peg and peg < 1 else "yellow" if peg and peg < 2 else "red" if peg else "dim"
+        )
 
         lines = [
             f"P/E: [{pe_color}]{self._fmt(pe)}[/]",
@@ -1317,11 +1385,35 @@ class StockDetailScreen(Screen):
 
         # Color code based on quality thresholds
         roe = p.roe
-        roe_color = "green" if roe and roe > 15 else "yellow" if roe and roe > 10 else "red" if roe else "dim"
+        roe_color = (
+            "green"
+            if roe and roe > 15
+            else "yellow"
+            if roe and roe > 10
+            else "red"
+            if roe
+            else "dim"
+        )
         roa = p.roa
-        roa_color = "green" if roa and roa > 10 else "yellow" if roa and roa > 5 else "red" if roa else "dim"
+        roa_color = (
+            "green"
+            if roa and roa > 10
+            else "yellow"
+            if roa and roa > 5
+            else "red"
+            if roa
+            else "dim"
+        )
         margin = p.net_margin
-        margin_color = "green" if margin and margin > 15 else "yellow" if margin and margin > 5 else "red" if margin else "dim"
+        margin_color = (
+            "green"
+            if margin and margin > 15
+            else "yellow"
+            if margin and margin > 5
+            else "red"
+            if margin
+            else "dim"
+        )
 
         lines = [
             f"ROE: [{roe_color}]{self._pct(roe)}[/]",
@@ -1342,11 +1434,23 @@ class StockDetailScreen(Screen):
         de_val = de / 100 if de is not None else None
 
         # Color code based on health thresholds
-        de_color = "green" if de_val and de_val < 0.5 else "yellow" if de_val and de_val < 1 else "red" if de_val else "dim"
+        de_color = (
+            "green"
+            if de_val and de_val < 0.5
+            else "yellow"
+            if de_val and de_val < 1
+            else "red"
+            if de_val
+            else "dim"
+        )
         cr = h.current_ratio
-        cr_color = "green" if cr and cr > 2 else "yellow" if cr and cr > 1 else "red" if cr else "dim"
+        cr_color = (
+            "green" if cr and cr > 2 else "yellow" if cr and cr > 1 else "red" if cr else "dim"
+        )
         qr = h.quick_ratio
-        qr_color = "green" if qr and qr > 1 else "yellow" if qr and qr > 0.5 else "red" if qr else "dim"
+        qr_color = (
+            "green" if qr and qr > 1 else "yellow" if qr and qr > 0.5 else "red" if qr else "dim"
+        )
 
         lines = [
             f"D/E Ratio: [{de_color}]{self._fmt(de_val)}[/]",
@@ -1603,7 +1707,11 @@ class StockDetailScreen(Screen):
             if yield_pct and d.five_year_avg_dividend_yield > 0:
                 vs_avg = ((yield_pct / d.five_year_avg_dividend_yield) - 1) * 100
                 avg_color = "green" if vs_avg > 10 else "yellow" if vs_avg > -10 else "red"
-                lines.append(f"5Y Avg Yield: {d.five_year_avg_dividend_yield:.2f}% ([{avg_color}]{vs_avg:+.0f}%[/] vs now)")
+                lines.append(
+                    f"5Y Avg Yield: "
+                    f"{d.five_year_avg_dividend_yield:.2f}%"
+                    f" ([{avg_color}]{vs_avg:+.0f}%[/] vs now)"
+                )
             else:
                 lines.append(f"5Y Avg Yield: {d.five_year_avg_dividend_yield:.2f}%")
 
@@ -1637,7 +1745,15 @@ class StockDetailScreen(Screen):
                 aum_str = f"${e.aum / 1_000:.0f}K"
 
         # Color code AUM (larger = more liquid)
-        aum_color = "green" if e.aum and e.aum > 1_000_000_000 else "yellow" if e.aum and e.aum > 100_000_000 else "red" if e.aum else "dim"
+        aum_color = (
+            "green"
+            if e.aum and e.aum > 1_000_000_000
+            else "yellow"
+            if e.aum and e.aum > 100_000_000
+            else "red"
+            if e.aum
+            else "dim"
+        )
 
         lines = [
             f"Fund Family: [cyan]{e.fund_family or 'N/A'}[/]",
@@ -1658,16 +1774,28 @@ class StockDetailScreen(Screen):
         e = self.stock.etf
 
         # Expense ratio color coding
-        exp_color = "green" if e.expense_ratio is not None and e.expense_ratio < 0.10 else \
-                    "yellow" if e.expense_ratio is not None and e.expense_ratio < 0.50 else \
-                    "red" if e.expense_ratio is not None else "dim"
+        exp_color = (
+            "green"
+            if e.expense_ratio is not None and e.expense_ratio < 0.10
+            else "yellow"
+            if e.expense_ratio is not None and e.expense_ratio < 0.50
+            else "red"
+            if e.expense_ratio is not None
+            else "dim"
+        )
         exp_str = f"{e.expense_ratio:.2f}%" if e.expense_ratio is not None else "N/A"
 
         # Premium/discount color coding
         prem_disc = e.premium_discount
-        prem_color = "green" if prem_disc is not None and abs(prem_disc) < 0.1 else \
-                     "yellow" if prem_disc is not None and abs(prem_disc) < 0.5 else \
-                     "red" if prem_disc is not None else "dim"
+        prem_color = (
+            "green"
+            if prem_disc is not None and abs(prem_disc) < 0.1
+            else "yellow"
+            if prem_disc is not None and abs(prem_disc) < 0.5
+            else "red"
+            if prem_disc is not None
+            else "dim"
+        )
         prem_str = f"{prem_disc:+.2f}%" if prem_disc is not None else "N/A"
 
         # NAV
@@ -1704,7 +1832,9 @@ class StockDetailScreen(Screen):
         t = self.stock.technical
 
         # YTD Return
-        ytd_color = "green" if e.ytd_return and e.ytd_return > 0 else "red" if e.ytd_return else "dim"
+        ytd_color = (
+            "green" if e.ytd_return and e.ytd_return > 0 else "red" if e.ytd_return else "dim"
+        )
         ytd_str = f"{e.ytd_return:+.1f}%" if e.ytd_return is not None else "N/A"
 
         # 1Y Return (from technical)
@@ -1713,11 +1843,15 @@ class StockDetailScreen(Screen):
         ret_1y_str = f"{ret_1y:+.1f}%" if ret_1y is not None else "N/A"
 
         # 3Y Return
-        ret_3y_color = "green" if e.return_3y and e.return_3y > 0 else "red" if e.return_3y else "dim"
+        ret_3y_color = (
+            "green" if e.return_3y and e.return_3y > 0 else "red" if e.return_3y else "dim"
+        )
         ret_3y_str = f"{e.return_3y:+.1f}%" if e.return_3y is not None else "N/A"
 
         # 5Y Return
-        ret_5y_color = "green" if e.return_5y and e.return_5y > 0 else "red" if e.return_5y else "dim"
+        ret_5y_color = (
+            "green" if e.return_5y and e.return_5y > 0 else "red" if e.return_5y else "dim"
+        )
         ret_5y_str = f"{e.return_5y:+.1f}%" if e.return_5y is not None else "N/A"
 
         # Beta
@@ -1796,7 +1930,6 @@ class StockDetailScreen(Screen):
     def action_deep_research(self) -> None:
         """Fetch and analyze SEC filing with LLM (OpenRouter or Anthropic)."""
         import os
-
 
         # Check for API key (OpenRouter preferred, Anthropic as fallback)
         has_openrouter = os.environ.get("OPENROUTER_API_KEY")
@@ -1934,8 +2067,7 @@ class StockDetailScreen(Screen):
         try:
             quarterly_panel = self.query_one("#quarterly-panel", Static)
             quarterly_panel.update(
-                "[bold red]Quarterly Trends[/]\n\n"
-                f"[dim]Error fetching quarterly data: {error}[/]"
+                f"[bold red]Quarterly Trends[/]\n\n[dim]Error fetching quarterly data: {error}[/]"
             )
         except Exception:
             pass
@@ -1970,7 +2102,11 @@ class StockDetailScreen(Screen):
                 rev_spark = sparkline(list(reversed(revenues)), width=8)
                 latest_rev = format_large_number(revenues[0]) if revenues else "N/A"
                 qoq_rev = trends.latest_qoq_revenue_growth
-                qoq_str = f" [{'green' if qoq_rev and qoq_rev > 0 else 'red'}]({qoq_rev:+.1f}% QoQ)[/]" if qoq_rev is not None else ""
+                qoq_str = (
+                    f" [{'green' if qoq_rev and qoq_rev > 0 else 'red'}]({qoq_rev:+.1f}% QoQ)[/]"
+                    if qoq_rev is not None
+                    else ""
+                )
                 lines.append(f"[bold]Revenue:[/]  {latest_rev}  {rev_spark}{qoq_str}")
                 lines.append(f"  Trend: [dim]{trends.revenue_trend}[/]")
 
@@ -1980,7 +2116,11 @@ class StockDetailScreen(Screen):
                 inc_spark = sparkline(list(reversed(incomes)), width=8)
                 latest_inc = format_large_number(incomes[0]) if incomes else "N/A"
                 qoq_earn = trends.latest_qoq_earnings_growth
-                qoq_str = f" [{'green' if qoq_earn and qoq_earn > 0 else 'red'}]({qoq_earn:+.1f}% QoQ)[/]" if qoq_earn is not None else ""
+                qoq_str = (
+                    f" [{'green' if qoq_earn and qoq_earn > 0 else 'red'}]({qoq_earn:+.1f}% QoQ)[/]"
+                    if qoq_earn is not None
+                    else ""
+                )
                 lines.append(f"[bold]Earnings:[/] {latest_inc}  {inc_spark}{qoq_str}")
 
             lines.append("")
@@ -2017,8 +2157,7 @@ class StockDetailScreen(Screen):
 
         except Exception as e:
             quarterly_panel.update(
-                "[bold red]Quarterly Trends[/]\n\n"
-                f"[dim]Error displaying quarterly data: {e}[/]"
+                f"[bold red]Quarterly Trends[/]\n\n[dim]Error displaying quarterly data: {e}[/]"
             )
 
     def action_find_similar(self) -> None:
@@ -2068,8 +2207,7 @@ class StockDetailScreen(Screen):
 
         if not similar:
             similar_panel.update(
-                "[bold cyan]More Like This[/]\n\n"
-                "[dim]No similar stocks found in the universe.[/]"
+                "[bold cyan]More Like This[/]\n\n[dim]No similar stocks found in the universe.[/]"
             )
             return
 
@@ -2371,19 +2509,71 @@ class ScreenerApp(App):
         "ticker": (lambda s: s.ticker, False, "Ticker"),
         "sector": (lambda s: s.sector or "ZZZ", False, "Sector"),
         "price": (lambda s: s.current_price or 0, True, "Price"),
-        "1m": (lambda s: s.technical.return_1m if s.technical.return_1m is not None else float("-inf"), True, "1M"),
-        "6m": (lambda s: s.technical.return_6m if s.technical.return_6m is not None else float("-inf"), True, "6M"),
-        "1y": (lambda s: s.technical.return_1y if s.technical.return_1y is not None else float("-inf"), True, "1Y"),
-        "pe": (lambda s: s.valuation.pe_trailing if s.valuation.pe_trailing and s.valuation.pe_trailing > 0 else float("inf"), False, "P/E"),
-        "pb": (lambda s: s.valuation.pb_ratio if s.valuation.pb_ratio and s.valuation.pb_ratio > 0 else float("inf"), False, "P/B"),
-        "roe": (lambda s: s.profitability.roe if s.profitability.roe else float("-inf"), True, "ROE"),
-        "div": (lambda s: s.dividends.dividend_yield if s.dividends.dividend_yield else 0, True, "Div"),
+        "1m": (
+            lambda s: s.technical.return_1m if s.technical.return_1m is not None else float("-inf"),
+            True,
+            "1M",
+        ),
+        "6m": (
+            lambda s: s.technical.return_6m if s.technical.return_6m is not None else float("-inf"),
+            True,
+            "6M",
+        ),
+        "1y": (
+            lambda s: s.technical.return_1y if s.technical.return_1y is not None else float("-inf"),
+            True,
+            "1Y",
+        ),
+        "pe": (
+            lambda s: (
+                s.valuation.pe_trailing
+                if s.valuation.pe_trailing and s.valuation.pe_trailing > 0
+                else float("inf")
+            ),
+            False,
+            "P/E",
+        ),
+        "pb": (
+            lambda s: (
+                s.valuation.pb_ratio
+                if s.valuation.pb_ratio and s.valuation.pb_ratio > 0
+                else float("inf")
+            ),
+            False,
+            "P/B",
+        ),
+        "roe": (
+            lambda s: s.profitability.roe if s.profitability.roe else float("-inf"),
+            True,
+            "ROE",
+        ),
+        "div": (
+            lambda s: s.dividends.dividend_yield if s.dividends.dividend_yield else 0,
+            True,
+            "Div",
+        ),
         "rsi": (lambda s: s.technical.rsi_14 if s.technical.rsi_14 else float("inf"), False, "RSI"),
-        "mos": (lambda s: s.fair_value.margin_of_safety_pct if s.fair_value.margin_of_safety_pct else float("-inf"), True, "MoS%"),
+        "mos": (
+            lambda s: (
+                s.fair_value.margin_of_safety_pct
+                if s.fair_value.margin_of_safety_pct
+                else float("-inf")
+            ),
+            True,
+            "MoS%",
+        ),
         # ETF-specific sort options
-        "exp": (lambda s: s.etf.expense_ratio if s.etf.expense_ratio is not None else float("inf"), False, "ExpRatio"),
+        "exp": (
+            lambda s: s.etf.expense_ratio if s.etf.expense_ratio is not None else float("inf"),
+            False,
+            "ExpRatio",
+        ),
         "aum": (lambda s: s.etf.aum if s.etf.aum else 0, True, "AUM"),
-        "ytd": (lambda s: s.etf.ytd_return if s.etf.ytd_return is not None else float("-inf"), True, "YTD"),
+        "ytd": (
+            lambda s: s.etf.ytd_return if s.etf.ytd_return is not None else float("-inf"),
+            True,
+            "YTD",
+        ),
     }
 
     def __init__(self, api_url: str, admin_key: str | None = None) -> None:
@@ -2419,6 +2609,7 @@ class ScreenerApp(App):
         # Currency display settings
         from tradfi.core.currency import DEFAULT_CURRENCY_CYCLE
         from tradfi.utils.cache import get_display_currency
+
         self._currency_cycle = DEFAULT_CURRENCY_CYCLE
         self._display_currency = get_display_currency()  # Load from config
 
@@ -2465,19 +2656,19 @@ class ScreenerApp(App):
                         "              ██████████████████████████████████████████             \n"
                         "          ████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░████         \n"
                         "        ██░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░██       \n"
-                        "      ██░░░░░░[bold green] ██████╗ ███████╗███████╗██████╗  [/][bold cyan]░░░░░░░░██     \n"
-                        "      ██░░░░░░[bold green] ██╔══██╗██╔════╝██╔════╝██╔══██╗ [/][bold cyan]░░░░░░░░██     \n"
-                        "      ██░░░░░░[bold green] ██║  ██║█████╗  █████╗  ██████╔╝ [/][bold cyan]░░░░░░░░██     \n"
-                        "      ██░░░░░░[bold green] ██║  ██║██╔══╝  ██╔══╝  ██╔═══╝  [/][bold cyan]░░░░░░░░██     \n"
-                        "      ██░░░░░░[bold green] ██████╔╝███████╗███████╗██║      [/][bold cyan]░░░░░░░░██     \n"
-                        "      ██░░░░░░[bold green] ╚═════╝ ╚══════╝╚══════╝╚═╝      [/][bold cyan]░░░░░░░░██     \n"
+                        "      ██░░░░░░[bold green] ██████╗ ███████╗███████╗██████╗  [/][bold cyan]░░░░░░░░██     \n"  # noqa: E501
+                        "      ██░░░░░░[bold green] ██╔══██╗██╔════╝██╔════╝██╔══██╗ [/][bold cyan]░░░░░░░░██     \n"  # noqa: E501
+                        "      ██░░░░░░[bold green] ██║  ██║█████╗  █████╗  ██████╔╝ [/][bold cyan]░░░░░░░░██     \n"  # noqa: E501
+                        "      ██░░░░░░[bold green] ██║  ██║██╔══╝  ██╔══╝  ██╔═══╝  [/][bold cyan]░░░░░░░░██     \n"  # noqa: E501
+                        "      ██░░░░░░[bold green] ██████╔╝███████╗███████╗██║      [/][bold cyan]░░░░░░░░██     \n"  # noqa: E501
+                        "      ██░░░░░░[bold green] ╚═════╝ ╚══════╝╚══════╝╚═╝      [/][bold cyan]░░░░░░░░██     \n"  # noqa: E501
                         "      ██░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░██       \n"
-                        "      ██░░░░░░[bold green] ██╗   ██╗ █████╗ ██╗     ██╗   ██╗███████╗[/][bold cyan]██     \n"
-                        "      ██░░░░░░[bold green] ██║   ██║██╔══██╗██║     ██║   ██║██╔════╝[/][bold cyan]██     \n"
-                        "      ██░░░░░░[bold green] ██║   ██║███████║██║     ██║   ██║█████╗  [/][bold cyan]██     \n"
-                        "      ██░░░░░░[bold green] ╚██╗ ██╔╝██╔══██║██║     ██║   ██║██╔══╝  [/][bold cyan]██     \n"
-                        "      ██░░░░░░[bold green]  ╚████╔╝ ██║  ██║███████╗╚██████╔╝███████╗[/][bold cyan]██     \n"
-                        "      ██░░░░░░[bold green]   ╚═══╝  ╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚══════╝[/][bold cyan]██     \n"
+                        "      ██░░░░░░[bold green] ██╗   ██╗ █████╗ ██╗     ██╗   ██╗███████╗[/][bold cyan]██     \n"  # noqa: E501
+                        "      ██░░░░░░[bold green] ██║   ██║██╔══██╗██║     ██║   ██║██╔════╝[/][bold cyan]██     \n"  # noqa: E501
+                        "      ██░░░░░░[bold green] ██║   ██║███████║██║     ██║   ██║█████╗  [/][bold cyan]██     \n"  # noqa: E501
+                        "      ██░░░░░░[bold green] ╚██╗ ██╔╝██╔══██║██║     ██║   ██║██╔══╝  [/][bold cyan]██     \n"  # noqa: E501
+                        "      ██░░░░░░[bold green]  ╚████╔╝ ██║  ██║███████╗╚██████╔╝███████╗[/][bold cyan]██     \n"  # noqa: E501
+                        "      ██░░░░░░[bold green]   ╚═══╝  ╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚══════╝[/][bold cyan]██     \n"  # noqa: E501
                         "        ██░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░██       \n"
                         "          ████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░████         \n"
                         "              ████████████████████████████████████████████           \n"
@@ -2503,7 +2694,11 @@ class ScreenerApp(App):
             id="main-container",
         )
         yield Horizontal(
-            Static("[dim]Ready.[/] Press [bold]Space[/] for actions, [bold]/[/] to search, [bold]r[/] to scan.", id="status-bar"),
+            Static(
+                "[dim]Ready.[/] Press [bold]Space[/] for actions,"
+                " [bold]/[/] to search, [bold]r[/] to scan.",
+                id="status-bar",
+            ),
             Static("[cyan]Sort: P/E ↓[/]", id="sort-indicator"),
             Static(f"[yellow]{self._display_currency}[/]", id="currency-indicator"),
             Static("[dim]Connecting...[/]", id="api-status"),
@@ -2517,7 +2712,9 @@ class ScreenerApp(App):
         table.cursor_type = "row"
         # Simplified columns for cleaner view (9 instead of 14)
         # Focus on key value metrics: Ticker, Sector, Price, P/E, ROE, RSI, MoS%, Div, Signal
-        table.add_columns("Company", "Sector", "Price", "P/E", "ROE", "RSI", "MoS%", "Div", "Signal")
+        table.add_columns(
+            "Company", "Sector", "Price", "P/E", "ROE", "RSI", "MoS%", "Div", "Signal"
+        )
 
         # Populate universe selection list
         self._populate_universes()
@@ -2541,7 +2738,7 @@ class ScreenerApp(App):
     def _update_sectors_ui(self, sectors: list[tuple[str, int]]) -> None:
         """Update sector UI with fetched data."""
         try:
-            sector_select = self.query_one("#sector-select", SelectionList)
+            self.query_one("#sector-select", SelectionList)
 
             # Store full list for filtering
             self._all_sectors = sorted(sectors, key=lambda x: x[0].lower())
@@ -2560,11 +2757,9 @@ class ScreenerApp(App):
     def _fetch_api_status(self) -> dict | None:
         """Fetch cache stats from the API."""
         import httpx
+
         try:
-            response = httpx.get(
-                f"{self.api_url.rstrip('/')}/api/v1/cache/stats",
-                timeout=5.0
-            )
+            response = httpx.get(f"{self.api_url.rstrip('/')}/api/v1/cache/stats", timeout=5.0)
             response.raise_for_status()
             return response.json()
         except Exception:
@@ -2575,6 +2770,7 @@ class ScreenerApp(App):
         if timestamp is None:
             return "never"
         import time
+
         age = time.time() - timestamp
         if age < 60:
             return "just now"
@@ -2595,6 +2791,7 @@ class ScreenerApp(App):
                 time_str = self._format_relative_time(last_updated)
                 # Extract hostname for display
                 from urllib.parse import urlparse
+
                 host = urlparse(self.api_url).netloc
                 api_status.update(
                     f"[green]●[/] [dim]{host}[/] | "
@@ -2640,7 +2837,9 @@ class ScreenerApp(App):
                      If not provided, shows all sectors from cache.
         """
         # Run the blocking API call in a worker thread
-        self.run_worker(lambda: self._fetch_and_populate_sectors(tickers), exclusive=True, thread=True)
+        self.run_worker(
+            lambda: self._fetch_and_populate_sectors(tickers), exclusive=True, thread=True
+        )
 
     def _fetch_and_populate_sectors(self, tickers: list[str] | None = None) -> None:
         """Worker to fetch sectors and update UI."""
@@ -2682,8 +2881,7 @@ class ScreenerApp(App):
         # Get all tickers from selected universes
         tickers: list[str] = []
         universes_to_check = (
-            self.selected_universes if self.selected_universes
-            else set(AVAILABLE_UNIVERSES.keys())
+            self.selected_universes if self.selected_universes else set(AVAILABLE_UNIVERSES.keys())
         )
 
         for name in universes_to_check:
@@ -2767,8 +2965,7 @@ class ScreenerApp(App):
             search_lower = search_term.lower().strip()
             if search_lower:
                 filtered = [
-                    (sec, count) for sec, count in self._all_sectors
-                    if search_lower in sec.lower()
+                    (sec, count) for sec, count in self._all_sectors if search_lower in sec.lower()
                 ]
             else:
                 filtered = self._all_sectors
@@ -2903,7 +3100,9 @@ class ScreenerApp(App):
         """Update status bar with contextual workflow guidance."""
         # Count total tickers based on selection
         total_tickers = 0
-        universes_to_check = self.selected_universes if self.selected_universes else set(AVAILABLE_UNIVERSES.keys())
+        universes_to_check = (
+            self.selected_universes if self.selected_universes else set(AVAILABLE_UNIVERSES.keys())
+        )
         for name in universes_to_check:
             try:
                 if self.selected_categories:
@@ -2957,8 +3156,7 @@ class ScreenerApp(App):
             preset_info = ""
 
         self._update_status(
-            f"{filter_desc}{preset_info} [dim]~{total_tickers} stocks[/] | "
-            f"[bold]r[/]=scan"
+            f"{filter_desc}{preset_info} [dim]~{total_tickers} stocks[/] | [bold]r[/]=scan"
         )
 
     def _update_section_titles(self) -> None:
@@ -3135,8 +3333,14 @@ class ScreenerApp(App):
         tickers = list_data.get("tickers", []) if list_data else []
 
         if not tickers:
-            self.notify(f"{display_name} is empty.\nAdd stocks with 'l' (long) or 'x' (short) in detail view.",
-                       title=display_name, severity="warning", timeout=5)
+            self.notify(
+                f"{display_name} is empty.\n"
+                "Add stocks with 'l' (long) or 'x' (short)"
+                " in detail view.",
+                title=display_name,
+                severity="warning",
+                timeout=5,
+            )
             return
 
         # Check if list has portfolio data
@@ -3170,14 +3374,12 @@ class ScreenerApp(App):
                 lambda: self._fetch_portfolio(list_name),
                 exclusive=True,
                 thread=True,
-                name="_fetch_portfolio"
+                name="_fetch_portfolio",
             )
         else:
             # Standard stock list view
             self.run_worker(
-                lambda: self._fetch_position_stocks(tickers),
-                exclusive=True,
-                thread=True
+                lambda: self._fetch_position_stocks(tickers), exclusive=True, thread=True
             )
 
     def _fetch_portfolio(self, list_name: str) -> dict | None:
@@ -3228,7 +3430,9 @@ class ScreenerApp(App):
 
             alloc_str = f"{alloc:.1f}%" if alloc is not None else "-"
 
-            table.add_row(ticker, shares, entry, price, value, pnl_str, pnl_pct_str, alloc_str, key=ticker)
+            table.add_row(
+                ticker, shares, entry, price, value, pnl_str, pnl_pct_str, alloc_str, key=ticker
+            )
 
         # Update status bar with portfolio summary
         total_cost = portfolio.get("total_cost_basis", 0)
@@ -3255,8 +3459,7 @@ class ScreenerApp(App):
         for i, ticker in enumerate(tickers):
             progress = (i + 1) / total * 100
             self.call_from_thread(
-                self._update_progress, ticker, i + 1, total,
-                len(stocks), progress, 0, False
+                self._update_progress, ticker, i + 1, total, len(stocks), progress, 0, False
             )
 
             stock = self._get_stock(ticker)
@@ -3279,9 +3482,7 @@ class ScreenerApp(App):
             # Reuse cached data - only sector/preset filters changed
             all_stocks = self._cached_stocks
             ticker_list = self._cached_ticker_list
-            self.call_from_thread(
-                self._update_progress_batch, "Filtering cached data...", 0, 0, 0
-            )
+            self.call_from_thread(self._update_progress_batch, "Filtering cached data...", 0, 0, 0)
         else:
             # Universe/category selection changed - fetch from server
             all_stocks, ticker_list = self._fetch_stock_data()
@@ -3308,8 +3509,7 @@ class ScreenerApp(App):
             if i % 50 == 0 or i == total - 1:
                 found = len(passing_stocks)
                 self.call_from_thread(
-                    self._update_progress_batch, f"Filtering {ticker}...",
-                    i + 1, total, found
+                    self._update_progress_batch, f"Filtering {ticker}...", i + 1, total, found
                 )
 
             stock = all_stocks.get(ticker)
@@ -3357,9 +3557,7 @@ class ScreenerApp(App):
             use_fetch_all = True
 
         if use_fetch_all:
-            self.call_from_thread(
-                self._update_progress_batch, "Loading all from cache...", 0, 0, 0
-            )
+            self.call_from_thread(self._update_progress_batch, "Loading all from cache...", 0, 0, 0)
             all_stocks = self.remote_provider.fetch_all_stocks()
             ticker_list = sorted(all_stocks.keys())
         else:
@@ -3374,8 +3572,9 @@ class ScreenerApp(App):
 
         return all_stocks, ticker_list
 
-    def _update_progress(self, ticker: str, current: int, total: int, found: int,
-                         progress: float, fetched: int) -> None:
+    def _update_progress(
+        self, ticker: str, current: int, total: int, found: int, progress: float, fetched: int
+    ) -> None:
         try:
             # Current ticker being processed
             loading_detail = self.query_one("#loading-detail", Static)
@@ -3492,12 +3691,16 @@ class ScreenerApp(App):
 
         # Price
         stock_currency = stock.currency or "USD"
-        price = format_price_func(
-            stock.current_price,
-            currency=stock_currency,
-            display_currency=self._display_currency,
-            decimals=0,
-        ) if stock.current_price else "-"
+        price = (
+            format_price_func(
+                stock.current_price,
+                currency=stock_currency,
+                display_currency=self._display_currency,
+                decimals=0,
+            )
+            if stock.current_price
+            else "-"
+        )
 
         # Expense Ratio
         exp_ratio = "-"
@@ -3546,15 +3749,23 @@ class ScreenerApp(App):
 
         # Price
         stock_currency = stock.currency or "USD"
-        price = format_price_func(
-            stock.current_price,
-            currency=stock_currency,
-            display_currency=self._display_currency,
-            decimals=0,
-        ) if stock.current_price else "-"
+        price = (
+            format_price_func(
+                stock.current_price,
+                currency=stock_currency,
+                display_currency=self._display_currency,
+                decimals=0,
+            )
+            if stock.current_price
+            else "-"
+        )
 
         # P/E
-        pe = f"{stock.valuation.pe_trailing:.1f}" if stock.valuation.pe_trailing and isinstance(stock.valuation.pe_trailing, (int, float)) else "-"
+        pe = (
+            f"{stock.valuation.pe_trailing:.1f}"
+            if stock.valuation.pe_trailing and isinstance(stock.valuation.pe_trailing, (int, float))
+            else "-"
+        )
 
         # ROE
         roe = f"{stock.profitability.roe:.0f}%" if stock.profitability.roe else "-"
@@ -3592,12 +3803,16 @@ class ScreenerApp(App):
 
         # Price
         stock_currency = stock.currency or "USD"
-        price = format_price_func(
-            stock.current_price,
-            currency=stock_currency,
-            display_currency=self._display_currency,
-            decimals=0,
-        ) if stock.current_price else "-"
+        price = (
+            format_price_func(
+                stock.current_price,
+                currency=stock_currency,
+                display_currency=self._display_currency,
+                decimals=0,
+            )
+            if stock.current_price
+            else "-"
+        )
 
         # Dividend yield
         div_val = stock.dividends.dividend_yield
@@ -3648,6 +3863,7 @@ class ScreenerApp(App):
 
         # Add rows based on view mode
         from tradfi.utils.display import format_price
+
         for stock in sorted_stocks:
             if view_mode == "etf":
                 row = self._format_etf_row(stock, format_price)
@@ -3733,8 +3949,7 @@ class ScreenerApp(App):
         suggestion_text = suggestions[0] if suggestions else "Try different filters"
 
         self._update_status(
-            f"[yellow]No results:[/] {issue_text}. "
-            f"[dim]Suggestion: {suggestion_text}[/]"
+            f"[yellow]No results:[/] {issue_text}. [dim]Suggestion: {suggestion_text}[/]"
         )
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
@@ -3755,6 +3970,7 @@ class ScreenerApp(App):
 
     def action_show_actions(self) -> None:
         """Show the action menu."""
+
         def handle_action(action_id: str | None) -> None:
             if action_id is None:
                 return
@@ -3816,8 +4032,6 @@ class ScreenerApp(App):
 
     def action_toggle_currency(self) -> None:
         """Toggle display currency (USD -> EUR -> GBP -> JPY -> AUD -> ZAR -> XAU)."""
-        from tradfi.core.currency import get_currency_symbol
-
         # Cycle to next currency
         try:
             current_idx = self._currency_cycle.index(self._display_currency)
@@ -3829,7 +4043,6 @@ class ScreenerApp(App):
         # Update the currency indicator
         try:
             indicator = self.query_one("#currency-indicator", Static)
-            symbol = get_currency_symbol(self._display_currency)
             indicator.update(f"[yellow]{self._display_currency}[/]")
         except Exception:
             pass
@@ -3911,7 +4124,9 @@ class ScreenerApp(App):
         """Worker to clear all cached stock data on the server."""
         count = self.remote_provider.clear_cache()
         self._invalidate_stock_cache()
-        self.call_from_thread(self.notify, f"Cleared {count} cached entries on server", title="Cache Cleared")
+        self.call_from_thread(
+            self.notify, f"Cleared {count} cached entries on server", title="Cache Cleared"
+        )
 
     def action_resync_universes(self) -> None:
         """Resync all universes by triggering server-side refresh."""
@@ -4131,11 +4346,7 @@ class ScreenerApp(App):
 
         self._viewing_list = f"Search: {ticker}"
 
-        self.run_worker(
-            lambda: self._fetch_single_stock(ticker),
-            exclusive=True,
-            thread=True
-        )
+        self.run_worker(lambda: self._fetch_single_stock(ticker), exclusive=True, thread=True)
 
     def _fetch_single_stock(self, ticker: str) -> list[Stock]:
         """Fetch a single stock by ticker."""

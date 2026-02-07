@@ -23,9 +23,15 @@ console = Console()
 
 
 def analyze(
-    tickers: list[str] = typer.Argument(..., help="Stock ticker symbol(s) (e.g., AAPL or AAPL MSFT GOOGL)"),
-    compare: bool = typer.Option(False, "--compare", "-c", help="Compare multiple stocks side by side"),
-    export: Optional[str] = typer.Option(None, "--export", "-e", help="Export to file (json or csv)"),
+    tickers: list[str] = typer.Argument(
+        ..., help="Stock ticker symbol(s) (e.g., AAPL or AAPL MSFT GOOGL)"
+    ),
+    compare: bool = typer.Option(
+        False, "--compare", "-c", help="Compare multiple stocks side by side"
+    ),
+    export: Optional[str] = typer.Option(
+        None, "--export", "-e", help="Export to file (json or csv)"
+    ),
     output: Optional[str] = typer.Option(None, "--output", "-o", help="Output file path"),
 ) -> None:
     """
@@ -98,9 +104,17 @@ def display_comparison(stocks: list[Stock]) -> None:
         table.add_column(stock.ticker, justify="right")
 
     # Basic Info
-    table.add_row("Name", *[s.name[:20] + "..." if s.name and len(s.name) > 20 else (s.name or "N/A") for s in stocks])
+    table.add_row(
+        "Name",
+        *[
+            s.name[:20] + "..." if s.name and len(s.name) > 20 else (s.name or "N/A")
+            for s in stocks
+        ],
+    )
     table.add_row("Sector", *[s.sector or "N/A" for s in stocks])
-    table.add_row("Price", *[f"${s.current_price:.2f}" if s.current_price else "N/A" for s in stocks])
+    table.add_row(
+        "Price", *[f"${s.current_price:.2f}" if s.current_price else "N/A" for s in stocks]
+    )
     table.add_row("Market Cap", *[format_large_number(s.valuation.market_cap) for s in stocks])
 
     # Separator
@@ -115,9 +129,13 @@ def display_comparison(stocks: list[Stock]) -> None:
     table.add_row("EV/EBITDA", *[format_number(s.valuation.ev_ebitda, 1) for s in stocks])
 
     # Fair value
-    table.add_row("Graham Number", *[format_number(s.fair_value.graham_number, 2, "$") for s in stocks])
+    table.add_row(
+        "Graham Number", *[format_number(s.fair_value.graham_number, 2, "$") for s in stocks]
+    )
     table.add_row("DCF Value", *[format_number(s.fair_value.dcf_value, 2, "$") for s in stocks])
-    table.add_row("Margin of Safety", *[format_pct(s.fair_value.margin_of_safety_pct) for s in stocks])
+    table.add_row(
+        "Margin of Safety", *[format_pct(s.fair_value.margin_of_safety_pct) for s in stocks]
+    )
 
     # Separator
     table.add_row("", *["" for _ in stocks], style="dim")
@@ -134,13 +152,17 @@ def display_comparison(stocks: list[Stock]) -> None:
     table.add_row("[bold]FINANCIAL HEALTH[/]", *["" for _ in stocks])
 
     # Financial health
-    table.add_row("Current Ratio", *[format_number(s.financial_health.current_ratio, 2) for s in stocks])
+    table.add_row(
+        "Current Ratio", *[format_number(s.financial_health.current_ratio, 2) for s in stocks]
+    )
     de_values = []
     for s in stocks:
         de = s.financial_health.debt_to_equity
         de_values.append(format_number(de / 100, 2) if de is not None else "N/A")
     table.add_row("Debt/Equity", *de_values)
-    table.add_row("Free Cash Flow", *[format_large_number(s.financial_health.free_cash_flow) for s in stocks])
+    table.add_row(
+        "Free Cash Flow", *[format_large_number(s.financial_health.free_cash_flow) for s in stocks]
+    )
 
     # Separator
     table.add_row("", *["" for _ in stocks], style="dim")
@@ -173,7 +195,9 @@ def display_comparison(stocks: list[Stock]) -> None:
 
     console.print(table)
     console.print()
-    console.print("[dim italic]Disclaimer: This is for informational purposes only, not financial advice.[/]")
+    console.print(
+        "[dim italic]Disclaimer: This is for informational purposes only, not financial advice.[/]"
+    )
     console.print()
 
 

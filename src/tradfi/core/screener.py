@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 from tradfi.models.stock import Stock
 
@@ -231,7 +230,7 @@ MARKET_CURRENCIES: dict[str, str] = {
     "value": "USD",
     # Regional (mixed currencies)
     "europe": "EUR",  # Default to EUR for Europe
-    "asia": "USD",    # Default to USD for cross-region
+    "asia": "USD",  # Default to USD for cross-region
     "emerging": "USD",
     # Western Europe
     "uk": "GBP",
@@ -329,9 +328,7 @@ def load_tickers(universe: str = "sp500") -> list[str]:
 
     if not ticker_file.exists():
         available = ", ".join(AVAILABLE_UNIVERSES.keys())
-        raise FileNotFoundError(
-            f"Universe '{universe}' not found. Available: {available}"
-        )
+        raise FileNotFoundError(f"Universe '{universe}' not found. Available: {available}")
 
     with open(ticker_file) as f:
         tickers = [line.strip() for line in f if line.strip() and not line.startswith("#")]
@@ -357,9 +354,7 @@ def load_tickers_with_categories(universe: str) -> dict[str, list[str]]:
 
     if not ticker_file.exists():
         available = ", ".join(AVAILABLE_UNIVERSES.keys())
-        raise FileNotFoundError(
-            f"Universe '{universe}' not found. Available: {available}"
-        )
+        raise FileNotFoundError(f"Universe '{universe}' not found. Available: {available}")
 
     categories: dict[str, list[str]] = {}
     current_category = "Uncategorized"
@@ -621,7 +616,8 @@ def get_preset_screen(name: str) -> ScreenCriteria:
     Get a pre-built screen by name.
 
     Args:
-        name: Screen name (graham, buffett, dividend, fallen-angels, hidden-gems, oversold, turnaround)
+        name: Screen name (graham, buffett, dividend, fallen-angels,
+            hidden-gems, oversold, turnaround)
 
     Returns:
         ScreenCriteria for the preset
@@ -701,9 +697,14 @@ def calculate_similarity_score(target: Stock, candidate: Stock) -> tuple[float, 
     # P/E similarity (15 points)
     target_pe = target.valuation.pe_trailing
     candidate_pe = candidate.valuation.pe_trailing
-    if (target_pe and candidate_pe and
-        isinstance(target_pe, (int, float)) and isinstance(candidate_pe, (int, float)) and
-        target_pe > 0 and candidate_pe > 0):
+    if (
+        target_pe
+        and candidate_pe
+        and isinstance(target_pe, (int, float))
+        and isinstance(candidate_pe, (int, float))
+        and target_pe > 0
+        and candidate_pe > 0
+    ):
         pe_diff = abs(target_pe - candidate_pe)
         if pe_diff <= 3:  # Very similar P/E
             score += 15

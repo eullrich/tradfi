@@ -421,19 +421,11 @@ class TestPresetScreens:
         expected_presets = [
             "graham",
             "buffett",
-            "deep-value",
-            "oversold-value",
             "dividend",
-            "quality",
-            "buyback",
-            "short-candidates",
             "fallen-angels",
-            "dividend-growers",
-            "turnaround",
             "hidden-gems",
-            "momentum-value",
-            "sweetspot",
-            "income",
+            "oversold",
+            "turnaround",
         ]
         for preset in expected_presets:
             assert preset in PRESET_SCREENS, f"Preset '{preset}' not found"
@@ -452,9 +444,9 @@ class TestPresetScreens:
 
     def test_get_preset_screen_with_underscores(self):
         """get_preset_screen should handle underscores in preset names."""
-        criteria = get_preset_screen("deep_value")
-        assert criteria.pb_max == 1.0
-        assert criteria.pe_max == 10
+        criteria = get_preset_screen("fallen_angels")
+        assert criteria.roe_min == 15
+        assert criteria.margin_min == 10
 
     def test_graham_preset_criteria(self):
         """Verify Graham preset has correct criteria."""
@@ -473,18 +465,20 @@ class TestPresetScreens:
         assert criteria.margin_min == 10
         assert criteria.pe_max == 25
 
-    def test_deep_value_preset_criteria(self):
-        """Verify deep-value preset has correct criteria."""
-        criteria = PRESET_SCREENS["deep-value"]
-        assert criteria.pb_max == 1.0
-        assert criteria.pe_max == 10
+    def test_oversold_preset_criteria(self):
+        """Verify oversold preset has correct criteria."""
+        criteria = PRESET_SCREENS["oversold"]
+        assert criteria.rsi_max == 30
+        assert criteria.near_52w_low_pct == 15
+        assert criteria.below_200ma is True
 
-    def test_short_candidates_preset_criteria(self):
-        """Verify short-candidates preset has correct criteria."""
-        criteria = PRESET_SCREENS["short-candidates"]
-        assert criteria.pe_min == 40
-        assert criteria.roe_max == 10
-        assert criteria.rsi_min == 60
+    def test_turnaround_preset_criteria(self):
+        """Verify turnaround preset has correct criteria."""
+        criteria = PRESET_SCREENS["turnaround"]
+        assert criteria.pe_max == 12
+        assert criteria.pct_from_52w_high_max == -25
+        assert criteria.rsi_max == 40
+        assert criteria.current_ratio_min == 1.5
 
 
 class TestSimilarityScore:
@@ -583,10 +577,7 @@ class TestFindSimilarStocks:
     def test_find_similar_respects_limit(self):
         """Results should be limited to specified count."""
         target = create_test_stock(ticker="AAPL")
-        candidates = [
-            create_test_stock(ticker=f"STOCK{i}", industry="Software")
-            for i in range(20)
-        ]
+        candidates = [create_test_stock(ticker=f"STOCK{i}", industry="Software") for i in range(20)]
         results = find_similar_stocks(target, candidates, limit=5, min_score=0)
         assert len(results) <= 5
 
@@ -598,7 +589,9 @@ class TestFindSimilarStocks:
             sector="Technology",
         )
         candidates = [
-            create_test_stock(ticker="MSFT", industry="Software", sector="Technology"),  # High score
+            create_test_stock(
+                ticker="MSFT", industry="Software", sector="Technology"
+            ),  # High score
             create_test_stock(ticker="JPM", industry="Banking", sector="Finance"),  # Low score
         ]
         results = find_similar_stocks(target, candidates, limit=10, min_score=25)
@@ -610,7 +603,10 @@ class TestFindSimilarStocks:
     def test_find_similar_excludes_target(self):
         """Target stock should not appear in results (score is 0 for self)."""
         target = create_test_stock(ticker="AAPL", industry="Software", sector="Technology")
-        candidates = [target, create_test_stock(ticker="MSFT", industry="Software", sector="Technology")]
+        candidates = [
+            target,
+            create_test_stock(ticker="MSFT", industry="Software", sector="Technology"),
+        ]
         # Use min_score > 0 to exclude self-matches (which return score 0)
         results = find_similar_stocks(target, candidates, limit=10, min_score=1)
 

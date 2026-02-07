@@ -1,14 +1,12 @@
 """CLI command for quarterly financial analysis."""
 
-from typing import Optional
-
 import typer
 from rich.console import Console
-from rich.table import Table
 from rich.panel import Panel
+from rich.table import Table
 
 from tradfi.core.quarterly import fetch_quarterly_financials, get_quarterly_summary
-from tradfi.utils.sparkline import sparkline, format_large_number, trend_indicator
+from tradfi.utils.sparkline import format_large_number, sparkline, trend_indicator
 
 console = Console()
 
@@ -20,12 +18,14 @@ def quarterly(
     ),
     periods: int = typer.Option(
         8,
-        "--periods", "-p",
+        "--periods",
+        "-p",
         help="Number of quarters to fetch (default 8)",
     ),
     compare: bool = typer.Option(
         False,
-        "--compare", "-c",
+        "--compare",
+        "-c",
         help="Show side-by-side comparison (for multiple tickers)",
     ),
 ) -> None:
@@ -65,11 +65,14 @@ def _display_quarterly(ticker: str, periods: int) -> None:
     summary = get_quarterly_summary(trends)
 
     # Header
-    console.print(Panel(
-        f"[bold]{ticker}[/] - Quarterly Financial Analysis\n"
-        f"[dim]Latest: {summary['latest_quarter']} | {summary['quarters_available']} quarters of data[/]",
-        style="cyan",
-    ))
+    console.print(
+        Panel(
+            f"[bold]{ticker}[/] - Quarterly Financial Analysis\n"
+            f"[dim]Latest: {summary['latest_quarter']}"
+            f" | {summary['quarters_available']} quarters of data[/]",
+            style="cyan",
+        )
+    )
 
     # Revenue section
     revenues = trends.get_metric_values("revenue")
@@ -78,7 +81,7 @@ def _display_quarterly(ticker: str, periods: int) -> None:
     qoq_rev = summary.get("qoq_revenue_growth")
     qoq_rev_str = f"{qoq_rev:+.1f}%" if qoq_rev is not None else "N/A"
 
-    console.print(f"\n[bold magenta]Revenue[/]")
+    console.print("\n[bold magenta]Revenue[/]")
     console.print(f"  Latest:   {format_large_number(summary['revenue'])}")
     console.print(f"  Trend:    {rev_spark}  {rev_trend}  [dim]({summary['revenue_trend']})[/]")
     console.print(f"  QoQ:      {qoq_rev_str}")
@@ -90,7 +93,7 @@ def _display_quarterly(ticker: str, periods: int) -> None:
     qoq_earn = summary.get("qoq_earnings_growth")
     qoq_earn_str = f"{qoq_earn:+.1f}%" if qoq_earn is not None else "N/A"
 
-    console.print(f"\n[bold magenta]Net Income[/]")
+    console.print("\n[bold magenta]Net Income[/]")
     console.print(f"  Latest:   {format_large_number(summary['net_income'])}")
     console.print(f"  Trend:    {earn_spark}  {earn_trend}")
     console.print(f"  QoQ:      {qoq_earn_str}")
@@ -117,7 +120,7 @@ def _display_quarterly(ticker: str, periods: int) -> None:
     console.print(f"  Net:      {nm_str:>8}  {nm_spark}")
 
     # Quarterly detail table
-    console.print(f"\n[bold magenta]Quarter Detail[/]")
+    console.print("\n[bold magenta]Quarter Detail[/]")
     table = Table(show_header=True, header_style="bold")
     table.add_column("Quarter", style="cyan")
     table.add_column("Revenue", justify="right")

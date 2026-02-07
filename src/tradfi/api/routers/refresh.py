@@ -7,13 +7,13 @@ from pydantic import BaseModel
 
 from tradfi.api.auth import require_admin_key
 from tradfi.api.scheduler import (
-    get_refresh_state,
-    refresh_universe,
     get_next_scheduled_refresh,
+    get_refresh_state,
     get_scheduler_config,
+    refresh_universe,
 )
 from tradfi.core.screener import AVAILABLE_UNIVERSES, load_tickers
-from tradfi.utils.cache import get_cached_stock_data, get_cache_stats
+from tradfi.utils.cache import get_cache_stats, get_cached_stock_data
 
 router = APIRouter(prefix="/refresh", tags=["refresh"])
 
@@ -120,16 +120,20 @@ async def get_universe_stats():
     for name, description in AVAILABLE_UNIVERSES.items():
         try:
             tickers = load_tickers(name)
-            cached = sum(1 for t in tickers if get_cached_stock_data(t, ignore_ttl=True) is not None)
+            cached = sum(
+                1 for t in tickers if get_cached_stock_data(t, ignore_ttl=True) is not None
+            )
 
-            results.append(UniverseStatsSchema(
-                name=name,
-                description=description,
-                total=len(tickers),
-                cached=cached,
-                missing=len(tickers) - cached,
-                est_refresh_minutes=round(len(tickers) * 2 / 60, 1),  # 2s default delay
-            ))
+            results.append(
+                UniverseStatsSchema(
+                    name=name,
+                    description=description,
+                    total=len(tickers),
+                    cached=cached,
+                    missing=len(tickers) - cached,
+                    est_refresh_minutes=round(len(tickers) * 2 / 60, 1),  # 2s default delay
+                )
+            )
         except Exception:
             pass
 
