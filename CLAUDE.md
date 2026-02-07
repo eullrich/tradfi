@@ -210,6 +210,20 @@ SQLite at `~/.tradfi/cache.db`:
 - `user_saved_lists` - User-scoped lists
 - `user_saved_list_items` - User-scoped list items
 
+## Git Worktrees
+
+Three parallel worktrees for concurrent Claude sessions:
+
+| Path | Branch | Purpose |
+|------|--------|---------|
+| `/home/user/tradfi` | feature branches | Primary feature development |
+| `/home/user/tradfi-fix` | `fix` | Bug fixes & maintenance |
+| `/home/user/tradfi-lab` | `lab` | Experiments & prototypes (disposable) |
+
+**Shell aliases** (in `~/.bashrc`): `tw`/`tf`/`tl` to navigate, `cw`/`cf`/`cl` to launch Claude, `ts` for status across all.
+
+**Rules**: Never edit the same file in two worktrees simultaneously. Main worktree owns the push branch. Lab is disposable — reset freely.
+
 ## Development
 
 ```bash
