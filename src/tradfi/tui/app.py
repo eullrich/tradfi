@@ -5,7 +5,6 @@ from __future__ import annotations
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
-from textual.coordinate import Coordinate
 from textual.css.query import NoMatches
 from textual.message import Message
 from textual.screen import ModalScreen, Screen
@@ -241,7 +240,6 @@ ACTION_MENU_ITEMS = {
     "Actions": [
         ("refresh", "r", "Refresh / Run screen"),
         ("save", "s", "Save current list"),
-        ("select", "v", "Select/deselect stock"),
         ("cache_manage", "K", "Cache Manager"),
         ("clear_cache", "C", "Clear cache"),
         ("resync", "R", "Resync all universes"),
@@ -2473,12 +2471,6 @@ class ScreenerApp(App):
         padding: 0 2;
         text-align: center;
     }
-
-    #selection-counter {
-        width: auto;
-        padding: 0 2;
-        text-align: center;
-    }
     """
 
     # Simplified bindings - most actions now in action menu (Space)
@@ -2509,7 +2501,6 @@ class ScreenerApp(App):
         Binding("-", "sort_mos", "Sort: MoS", show=False),
         Binding("$", "toggle_currency", "Currency", show=False),
         Binding("K", "cache_manage", "Cache Manager", show=False),
-        Binding("v", "toggle_select", "Select", show=False),
     ]
 
     # Sort options: (attribute_getter, reverse_default, display_name)
@@ -2598,7 +2589,6 @@ class ScreenerApp(App):
         self.selected_sectors: set[str] = set()  # Selected sectors (include)
         self.selected_universes: set[str] = set()  # Selected universes
         self.selected_categories: set[str] = set()  # Selected categories (for ETF universe)
-        self.selected_tickers: set[str] = set()  # Multi-selected stocks in table
         self._sectors_loaded: bool = False  # Track if sectors list is populated
         self._all_sectors: list[tuple[str, int]] = []  # Full list for filtering
 
@@ -2710,7 +2700,6 @@ class ScreenerApp(App):
                 id="status-bar",
             ),
             Static("[cyan]Sort: P/E ↓[/]", id="sort-indicator"),
-            Static("", id="selection-counter"),
             Static(f"[yellow]{self._display_currency}[/]", id="currency-indicator"),
             Static("[dim]Connecting...[/]", id="api-status"),
             id="bottom-bar",
@@ -3838,10 +3827,6 @@ class ScreenerApp(App):
         loading.display = False
         table.display = True
 
-        # Clear stock selections on table refresh
-        self.selected_tickers.clear()
-        self._update_selection_counter()
-
         # Determine view mode based on asset types
         view_mode = self._get_view_mode(self.stocks)
         columns = self._get_columns_for_mode(view_mode)
@@ -3986,7 +3971,6 @@ class ScreenerApp(App):
                 "clear": self.action_clear_filters,
                 "refresh": self.action_refresh,
                 "save": self.action_save_list,
-                "select": self.action_toggle_select,
                 "cache_manage": self.action_cache_manage,
                 "clear_cache": self.action_clear_cache,
                 "resync": self.action_resync_universes,
@@ -4025,7 +4009,7 @@ class ScreenerApp(App):
             "Quick Keys:\n"
             "Space - Action menu (all commands)\n"
             "/ - Search ticker | r - Refresh | q - Quit\n"
-            "Enter - View details | v - Select/deselect | Esc - Go back\n"
+            "Enter - View details | Esc - Go back\n"
             "\n"
             "In action menu, press any key to execute that action.\n"
             "\n"
@@ -4034,42 +4018,6 @@ class ScreenerApp(App):
             title="Help",
             timeout=10,
         )
-
-    def action_toggle_select(self) -> None:
-        """Toggle selection of the current row in the results table."""
-        table = self.query_one("#results-table", DataTable)
-        if not table.display or table.row_count == 0:
-            return
-        try:
-            row_key, _ = table.coordinate_to_cell_key(
-                Coordinate(table.cursor_row, 0)
-            )
-        except Exception:
-            return
-        ticker = str(row_key.value)
-        # Get the current cell value in the first column
-        first_col_key = list(table.columns.keys())[0]
-        current_value = str(table.get_cell(row_key, first_col_key))
-        if ticker in self.selected_tickers:
-            # Deselect: remove checkmark prefix
-            self.selected_tickers.discard(ticker)
-            if current_value.startswith("* "):
-                table.update_cell(row_key, first_col_key, current_value[2:])
-        else:
-            # Select: add checkmark prefix
-            self.selected_tickers.add(ticker)
-            if not current_value.startswith("* "):
-                table.update_cell(row_key, first_col_key, f"* {current_value}")
-        self._update_selection_counter()
-
-    def _update_selection_counter(self) -> None:
-        """Update the selection counter in the bottom bar."""
-        counter = self.query_one("#selection-counter", Static)
-        count = len(self.selected_tickers)
-        if count > 0:
-            counter.update(f"[bold green]{count} selected[/]")
-        else:
-            counter.update("")
 
     def action_toggle_currency(self) -> None:
         """Toggle display currency (USD -> EUR -> GBP -> JPY -> AUD -> ZAR -> XAU)."""
