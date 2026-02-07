@@ -3263,6 +3263,7 @@ class ScreenerApp(App):
     def _fetch_stocks(self) -> list[Stock]:
         # Build ticker list based on universe selection
         ticker_set: set[str] = set()
+        use_fetch_all = False
 
         if self.selected_universes:
             # Load from selected universes
@@ -3276,18 +3277,17 @@ class ScreenerApp(App):
                         ticker_set.update(load_tickers(name))
                 except FileNotFoundError:
                     pass
-        else:
-            # No universes selected - load all
+        elif self.selected_categories:
+            # All universes but with category filter - need ticker lists
             for name in AVAILABLE_UNIVERSES.keys():
                 try:
-                    ticker_set.update(load_tickers(name))
+                    tickers = load_tickers_by_categories(name, self.selected_categories)
+                    ticker_set.update(tickers)
                 except FileNotFoundError:
                     pass
-
-        ticker_list = sorted(ticker_set)
-
-        if not ticker_list:
-            return []
+        else:
+            # No universes or categories selected - fetch all cached stocks directly
+            use_fetch_all = True
 
         # Get criteria
         if self.current_preset and self.current_preset in PRESET_SCREENS:
@@ -3295,13 +3295,22 @@ class ScreenerApp(App):
         else:
             criteria = ScreenCriteria()  # No filter - show all stocks
 
-        # Update progress to show we're fetching
-        self.call_from_thread(
-            self._update_progress_batch, "Loading from cache...", 0, len(ticker_list), 0
-        )
+        if use_fetch_all:
+            # Fetch ALL cached stocks in one efficient request (no ticker list needed)
+            self.call_from_thread(
+                self._update_progress_batch, "Loading all from cache...", 0, 0, 0
+            )
+            all_stocks = self.remote_provider.fetch_all_stocks()
+            ticker_list = sorted(all_stocks.keys())
+        else:
+            ticker_list = sorted(ticker_set)
+            if not ticker_list:
+                return []
 
-        # Fetch all stocks in a single batch request (MUCH faster than individual requests)
-        all_stocks = self.remote_provider.fetch_stocks_batch(ticker_list)
+            self.call_from_thread(
+                self._update_progress_batch, "Loading from cache...", 0, len(ticker_list), 0
+            )
+            all_stocks = self.remote_provider.fetch_stocks_batch(ticker_list)
 
         # Filter stocks locally (fast in-memory operation)
         passing_stocks = []
