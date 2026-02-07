@@ -59,8 +59,11 @@ async def get_preset(name: str):
     try:
         criteria = get_preset_screen(name)
         return PresetSchema(name=name, criteria=screen_criteria_to_schema(criteria))
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Unknown preset '{name}'. Use /screening/presets to list available options.",
+        )
 
 
 @router.post("/run", response_model=ScreenResultSchema)
@@ -70,11 +73,15 @@ async def run_screen(request: ScreenRequestSchema):
 
     You can use a preset name OR provide custom criteria (or both to combine).
     """
-    # Load tickers from universe
+    # Validate and load tickers from universe
     try:
         tickers = load_tickers(request.universe)
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except (FileNotFoundError, ValueError):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown universe '{request.universe}'. "
+            "Use /screening/universes to list options.",
+        )
 
     # Get screening criteria
     if request.preset:

@@ -1392,7 +1392,7 @@ def update_smart_list_timestamp(name: str) -> None:
 
 # Token expiry times
 MAGIC_LINK_EXPIRY = 15 * 60  # 15 minutes
-SESSION_TOKEN_EXPIRY = 30 * 24 * 60 * 60  # 30 days
+SESSION_TOKEN_EXPIRY = 7 * 24 * 60 * 60  # 7 days
 
 
 def create_user(email: str) -> dict | None:

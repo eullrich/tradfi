@@ -4,8 +4,9 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from tradfi.api.routers import cache, currency, lists, refresh, screening, stocks, watchlist
 from tradfi.api.scheduler import setup_scheduler, shutdown_scheduler
@@ -62,6 +63,20 @@ Configure via environment variables:
     lifespan=lifespan,
 )
 
+
+# Security headers middleware
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next) -> Response:
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        return response
+
+
+app.add_middleware(SecurityHeadersMiddleware)
+
 # CORS middleware - configure via TRADFI_CORS_ORIGINS environment variable
 # Default is restrictive (no cross-origin requests allowed)
 # Set TRADFI_CORS_ORIGINS=* for development or specific origins comma-separated
@@ -73,7 +88,7 @@ if _cors_origins_env == "*":
         CORSMiddleware,
         allow_origins=["*"],
         allow_credentials=False,
-        allow_methods=["GET", "POST", "PUT", "DELETE"],
+        allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
         allow_headers=["*"],
     )
 elif _cors_origins_env:
@@ -83,7 +98,7 @@ elif _cors_origins_env:
         CORSMiddleware,
         allow_origins=_allowed_origins,
         allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "DELETE"],
+        allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
         allow_headers=["*"],
     )
 # If TRADFI_CORS_ORIGINS is not set, no CORS middleware is added (most secure)
