@@ -73,24 +73,16 @@ async def get_all_stocks():
 
 
 @router.post("/batch")
-async def get_stocks_batch(
-    tickers: list[str],
-    fetch_missing: bool = Query(
-        default=False, description="Fetch missing tickers from yfinance if not in cache"
-    ),
-):
+async def get_stocks_batch(tickers: list[str]):
     """
     Get multiple stocks by ticker in a single request.
 
-    Returns dict mapping ticker to stock data. Missing tickers are omitted.
-    When fetch_missing=true, uncached tickers are fetched from yfinance.
+    Returns dict mapping ticker to stock data. Tickers not in cache are
+    fetched from yfinance automatically.
     """
-    if fetch_missing:
-        # fetch_stock_from_api uses time.sleep for rate limiting - run in thread
-        # to avoid blocking the async event loop
-        stocks = await asyncio.to_thread(fetch_stocks_batch, tickers, fetch_missing=True)
-    else:
-        stocks = fetch_stocks_batch(tickers)
+    # fetch_stock_from_api uses time.sleep for rate limiting - run in thread
+    # to avoid blocking the async event loop
+    stocks = await asyncio.to_thread(fetch_stocks_batch, tickers)
     result = {}
     for ticker, stock in stocks.items():
         try:

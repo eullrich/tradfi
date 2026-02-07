@@ -2174,19 +2174,8 @@ class StockDetailScreen(Screen):
     def _fetch_similar(self) -> None:
         """Background worker to find similar stocks."""
         try:
-            # Fetch all stocks from cache to compare against
-            all_tickers = []
-            for name in AVAILABLE_UNIVERSES.keys():
-                try:
-                    all_tickers.extend(load_tickers(name))
-                except FileNotFoundError:
-                    pass
-
-            # Remove duplicates and limit to reasonable size
-            unique_tickers = list(set(all_tickers))
-
-            # Fetch stock data in batch
-            all_stocks = self.remote_provider.fetch_stocks_batch(unique_tickers)
+            # Fetch all cached stocks to compare against
+            all_stocks = self.remote_provider.fetch_all_stocks()
             candidates = list(all_stocks.values())
 
             # Find similar stocks
@@ -3575,7 +3564,7 @@ class ScreenerApp(App):
             self.call_from_thread(
                 self._update_progress_batch, "Loading stocks...", 0, len(ticker_list), 0
             )
-            all_stocks = self.remote_provider.fetch_stocks_batch(ticker_list, fetch_missing=True)
+            all_stocks = self.remote_provider.fetch_stocks_batch(ticker_list)
 
         return all_stocks, ticker_list
 
