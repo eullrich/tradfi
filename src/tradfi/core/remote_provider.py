@@ -218,6 +218,8 @@ class RemoteDataProvider:
             buyback=self._parse_buyback(data.get("buyback", {})),
             eps=data.get("eps"),
             book_value_per_share=data.get("book_value_per_share"),
+            shares_outstanding=data.get("shares_outstanding"),
+            operating_income=data.get("operating_income"),
         )
 
     def _parse_valuation(self, data: dict) -> ValuationMetrics:
@@ -249,6 +251,11 @@ class RemoteDataProvider:
             debt_to_assets=data.get("debt_to_assets"),
             interest_coverage=data.get("interest_coverage"),
             free_cash_flow=data.get("free_cash_flow"),
+            operating_cash_flow=data.get("operating_cash_flow"),
+            total_debt=data.get("total_debt"),
+            total_cash=data.get("total_cash"),
+            net_income=data.get("net_income"),
+            ebitda=data.get("ebitda"),
         )
 
     def _parse_growth(self, data: dict) -> GrowthMetrics:
@@ -292,6 +299,7 @@ class RemoteDataProvider:
             graham_number=data.get("graham_number"),
             dcf_value=data.get("dcf_value"),
             pe_fair_value=data.get("pe_fair_value"),
+            epv_value=data.get("epv_value"),
             margin_of_safety_pct=data.get("margin_of_safety_pct"),
         )
 

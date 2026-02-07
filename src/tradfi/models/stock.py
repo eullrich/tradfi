@@ -18,6 +18,8 @@ class QuarterlyData:
     net_margin: Optional[float] = None  # As percentage
     eps: Optional[float] = None
     free_cash_flow: Optional[float] = None
+    pe_ratio: Optional[float] = None
+    peg_ratio: Optional[float] = None
 
 
 @dataclass
@@ -171,6 +173,11 @@ class FinancialHealth:
     debt_to_assets: Optional[float] = None
     interest_coverage: Optional[float] = None
     free_cash_flow: Optional[float] = None
+    operating_cash_flow: Optional[float] = None    # yfinance: operatingCashflow
+    total_debt: Optional[float] = None             # yfinance: totalDebt
+    total_cash: Optional[float] = None             # yfinance: totalCash
+    net_income: Optional[float] = None             # yfinance: netIncomeToCommon
+    ebitda: Optional[float] = None                 # yfinance: ebitda
 
 
 @dataclass
@@ -204,6 +211,7 @@ class FairValueEstimates:
     graham_number: Optional[float] = None
     dcf_value: Optional[float] = None
     pe_fair_value: Optional[float] = None  # Based on P/E of 15
+    epv_value: Optional[float] = None  # Earnings Power Value
     margin_of_safety_pct: Optional[float] = None  # Based on best available estimate
 
 

@@ -17,6 +17,7 @@ from tradfi.core.technical import (
 )
 from tradfi.core.valuation import (
     calculate_dcf_fair_value,
+    calculate_earnings_power_value,
     calculate_graham_number,
     calculate_pe_fair_value,
 )
@@ -257,7 +258,14 @@ def fetch_stock_from_api(ticker_symbol: str) -> Stock | None:
             current_ratio=info.get("currentRatio"),
             quick_ratio=info.get("quickRatio"),
             debt_to_equity=info.get("debtToEquity"),
+            debt_to_assets=info.get("debtToAssets"),
+            interest_coverage=info.get("interestCoverage"),
             free_cash_flow=info.get("freeCashflow"),
+            operating_cash_flow=info.get("operatingCashflow"),
+            total_debt=info.get("totalDebt"),
+            total_cash=info.get("totalCash"),
+            net_income=info.get("netIncomeToCommon"),
+            ebitda=info.get("ebitda"),
         )
 
         # Growth metrics
@@ -371,6 +379,10 @@ def fetch_stock_from_api(ticker_symbol: str) -> Stock | None:
             terminal_growth=0.03,
         )
 
+        epv_value = calculate_earnings_power_value(
+            stock.operating_income, stock.shares_outstanding
+        )
+
         best_fair_value = dcf_value or graham_number or pe_fair_value
         margin_of_safety = None
         if best_fair_value is not None and current_price is not None and current_price > 0:
@@ -380,6 +392,7 @@ def fetch_stock_from_api(ticker_symbol: str) -> Stock | None:
             graham_number=graham_number,
             dcf_value=dcf_value,
             pe_fair_value=pe_fair_value,
+            epv_value=epv_value,
             margin_of_safety_pct=margin_of_safety,
         )
 
