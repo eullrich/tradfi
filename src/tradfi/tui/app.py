@@ -2472,10 +2472,12 @@ class ScreenerApp(App):
         text-align: center;
     }
 
-    #stock-count {
-        width: auto;
-        padding: 0 2;
-        text-align: center;
+    #company-counter {
+        height: auto;
+        padding: 0 1;
+        text-align: left;
+        color: $text;
+        text-style: bold;
     }
     """
 
@@ -2694,6 +2696,7 @@ class ScreenerApp(App):
                     id="loading",
                 ),
                 FilterPillsContainer(id="filter-pills"),
+                Static("", id="company-counter"),
                 DataTable(id="results-table"),
                 id="content",
             ),
@@ -2706,7 +2709,6 @@ class ScreenerApp(App):
                 id="status-bar",
             ),
             Static("[cyan]Sort: P/E ↓[/]", id="sort-indicator"),
-            Static("", id="stock-count"),
             Static(f"[yellow]{self._display_currency}[/]", id="currency-indicator"),
             Static("[dim]Connecting...[/]", id="api-status"),
             id="bottom-bar",
@@ -3859,7 +3861,7 @@ class ScreenerApp(App):
 
         # Handle empty results with helpful feedback
         if not self.stocks:
-            self.query_one("#stock-count", Static).update("[dim]0[/] stocks")
+            self.query_one("#company-counter", Static).update("[dim]0 companies[/]")
             self._show_empty_results_feedback()
             return
 
@@ -3882,9 +3884,21 @@ class ScreenerApp(App):
 
             table.add_row(*row, key=stock.ticker)
 
-        # Update stock count indicator
-        stock_count = self.query_one("#stock-count", Static)
-        stock_count.update(f"[bold cyan]{len(self.stocks)}[/] stocks")
+        # Update company counter above the table
+        counter = self.query_one("#company-counter", Static)
+        count = len(self.stocks)
+        if self._viewing_list:
+            context = self._viewing_list
+        elif self.current_preset and self.current_preset in PRESET_INFO:
+            context = PRESET_INFO[self.current_preset]["name"]
+        elif self.selected_universes and len(self.selected_universes) == 1:
+            context = next(iter(self.selected_universes)).upper()
+        elif self.selected_universes:
+            context = f"{len(self.selected_universes)} universes"
+        else:
+            context = "All"
+        label = "company" if count == 1 else "companies"
+        counter.update(f"[bold cyan]{count}[/] {label} [dim]|[/] [dim]{context}[/]")
 
         # Update status with sort info and active filters
         direction = "↓" if reverse else "↑"
