@@ -2334,8 +2334,9 @@ class StockDetailScreen(Screen):
             from tradfi.core.quarterly import calculate_qoq_growth
 
             rev_growth = calculate_qoq_growth(trends.quarters, "revenue")
-            if rev_growth:
-                growth_spark = sparkline(list(reversed(rev_growth)), width=8)
+            rev_growth_clean = [v for v in rev_growth if v is not None]
+            if rev_growth_clean:
+                growth_spark = sparkline(list(reversed(rev_growth_clean)), width=8)
                 latest_g = rev_growth[0] if rev_growth else None
                 g_color = "green" if latest_g and latest_g > 0 else "red" if latest_g else "dim"
                 g_str = f"[{g_color}]{latest_g:+.1f}%[/]" if latest_g is not None else "[dim]N/A[/]"
@@ -2343,8 +2344,9 @@ class StockDetailScreen(Screen):
 
             # EPS QoQ growth sparkline
             eps_growth = calculate_qoq_growth(trends.quarters, "eps")
-            if eps_growth:
-                eg_spark = sparkline(list(reversed(eps_growth)), width=8)
+            eps_growth_clean = [v for v in eps_growth if v is not None]
+            if eps_growth_clean:
+                eg_spark = sparkline(list(reversed(eps_growth_clean)), width=8)
                 latest_eg = eps_growth[0] if eps_growth else None
                 eg_color = "green" if latest_eg and latest_eg > 0 else "red" if latest_eg else "dim"
                 eg_str = (
