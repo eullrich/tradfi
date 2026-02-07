@@ -4,9 +4,9 @@ import os
 from typing import Optional
 
 import typer
+from rich import box
 from rich.console import Console
 from rich.table import Table
-from rich import box
 
 from tradfi.core.remote_provider import RemoteDataProvider
 
@@ -21,9 +21,10 @@ DEFAULT_API_URL = "https://deepv-production.up.railway.app"
 
 
 def _get_provider() -> RemoteDataProvider:
-    """Get the remote data provider using API URL from environment."""
+    """Get the remote data provider using API URL and admin key from environment."""
     api_url = os.environ.get("TRADFI_API_URL", DEFAULT_API_URL)
-    return RemoteDataProvider(api_url)
+    admin_key = os.environ.get("TRADFI_ADMIN_KEY")
+    return RemoteDataProvider(api_url, admin_key=admin_key)
 
 
 app = typer.Typer(
@@ -212,6 +213,52 @@ def remove_ticker(
 
 
 # ============================================================================
+# Long/Short List Shared Logic
+# ============================================================================
+
+def _manage_position_list(
+    list_key: str,
+    display_name: str,
+    color: str,
+    action: str,
+    ticker: str | None,
+    remove: bool,
+    clear: bool,
+) -> None:
+    """Shared logic for managing long/short position lists."""
+    provider = _get_provider()
+
+    # Ensure the list exists
+    if provider.get_list(list_key) is None:
+        provider.create_list(list_key, [])
+
+    if clear:
+        provider.delete_list(list_key)
+        provider.create_list(list_key, [])
+        console.print(f"[{color}]{display_name} cleared[/]")
+        return
+
+    if ticker:
+        ticker = ticker.upper()
+        if remove:
+            if provider.remove_from_list(list_key, ticker):
+                console.print(f"[{color}]Removed {ticker} from {display_name.lower()}[/]")
+            else:
+                console.print(f"[yellow]{ticker} not in {display_name.lower()}[/]")
+        else:
+            if provider.add_to_list(list_key, ticker):
+                console.print(f"[{color}]Added {ticker} to {display_name.lower()}[/]")
+            else:
+                console.print(f"[yellow]{ticker} already in {display_name.lower()}[/]")
+        return
+
+    # View the list
+    list_data = provider.get_list(list_key)
+    tickers = list_data.get("tickers", []) if list_data else []
+    _display_position_list(provider, display_name, tickers, color, action)
+
+
+# ============================================================================
 # Long List Commands - for stocks you want to go long on
 # ============================================================================
 
@@ -230,36 +277,7 @@ def long_list(
         tradfi list long AAPL -r      # Remove AAPL from long list
         tradfi list long --clear      # Clear entire long list
     """
-    provider = _get_provider()
-
-    # Ensure the list exists
-    if provider.get_list(LONG_LIST) is None:
-        provider.create_list(LONG_LIST, [])
-
-    if clear:
-        provider.delete_list(LONG_LIST)
-        provider.create_list(LONG_LIST, [])
-        console.print("[green]Long list cleared[/]")
-        return
-
-    if ticker:
-        ticker = ticker.upper()
-        if remove:
-            if provider.remove_from_list(LONG_LIST, ticker):
-                console.print(f"[green]Removed {ticker} from long list[/]")
-            else:
-                console.print(f"[yellow]{ticker} not in long list[/]")
-        else:
-            if provider.add_to_list(LONG_LIST, ticker):
-                console.print(f"[green]Added {ticker} to long list[/]")
-            else:
-                console.print(f"[yellow]{ticker} already in long list[/]")
-        return
-
-    # View the list
-    list_data = provider.get_list(LONG_LIST)
-    tickers = list_data.get("tickers", []) if list_data else []
-    _display_position_list(provider, "Long List", tickers, "green", "buy")
+    _manage_position_list(LONG_LIST, "Long list", "green", "buy", ticker, remove, clear)
 
 
 # ============================================================================
@@ -281,36 +299,7 @@ def short_list(
         tradfi list short TSLA -r     # Remove TSLA from short list
         tradfi list short --clear     # Clear entire short list
     """
-    provider = _get_provider()
-
-    # Ensure the list exists
-    if provider.get_list(SHORT_LIST) is None:
-        provider.create_list(SHORT_LIST, [])
-
-    if clear:
-        provider.delete_list(SHORT_LIST)
-        provider.create_list(SHORT_LIST, [])
-        console.print("[red]Short list cleared[/]")
-        return
-
-    if ticker:
-        ticker = ticker.upper()
-        if remove:
-            if provider.remove_from_list(SHORT_LIST, ticker):
-                console.print(f"[red]Removed {ticker} from short list[/]")
-            else:
-                console.print(f"[yellow]{ticker} not in short list[/]")
-        else:
-            if provider.add_to_list(SHORT_LIST, ticker):
-                console.print(f"[red]Added {ticker} to short list[/]")
-            else:
-                console.print(f"[yellow]{ticker} already in short list[/]")
-        return
-
-    # View the list
-    list_data = provider.get_list(SHORT_LIST)
-    tickers = list_data.get("tickers", []) if list_data else []
-    _display_position_list(provider, "Short List", tickers, "red", "short")
+    _manage_position_list(SHORT_LIST, "Short list", "red", "short", ticker, remove, clear)
 
 
 def _display_position_list(provider: RemoteDataProvider, title: str, tickers: list[str], color: str, action: str) -> None:
@@ -376,7 +365,7 @@ def category_create(
         icon_str = f" {icon}" if icon else ""
         console.print(f"[green]Created category '{name}'{icon_str}[/]")
     else:
-        console.print(f"[red]Failed to create category (may already exist)[/]")
+        console.print("[red]Failed to create category (may already exist)[/]")
 
 
 @category_app.command("ls")
@@ -576,7 +565,7 @@ def set_position_cmd(
         if provider.clear_position(list_name, ticker):
             console.print(f"[green]Cleared position data for {ticker}[/]")
         else:
-            console.print(f"[red]Failed to clear position data[/]")
+            console.print("[red]Failed to clear position data[/]")
         return
 
     if shares is None and entry is None and target is None and thesis is None:

@@ -3,12 +3,8 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING
 
 import yfinance as yf
-
-if TYPE_CHECKING:
-    pass
 
 # Currency symbols for display
 CURRENCY_SYMBOLS: dict[str, str] = {
