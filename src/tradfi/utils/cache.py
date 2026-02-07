@@ -26,6 +26,7 @@ DEFAULT_RATE_LIMIT_DELAY = 2.0  # seconds between requests
 @dataclass
 class CacheConfig:
     """Configuration for caching and rate limiting."""
+
     cache_ttl: int = DEFAULT_CACHE_TTL  # seconds
     rate_limit_delay: float = DEFAULT_RATE_LIMIT_DELAY  # seconds
     cache_enabled: bool = True
@@ -57,14 +58,18 @@ def save_config(config: CacheConfig) -> None:
     """Save configuration to file."""
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     with open(CONFIG_FILE, "w") as f:
-        json.dump({
-            "cache_ttl": config.cache_ttl,
-            "rate_limit_delay": config.rate_limit_delay,
-            "cache_enabled": config.cache_enabled,
-            "offline_mode": config.offline_mode,
-            "display_currency": config.display_currency,
-            "currency_rate_ttl": config.currency_rate_ttl,
-        }, f, indent=2)
+        json.dump(
+            {
+                "cache_ttl": config.cache_ttl,
+                "rate_limit_delay": config.rate_limit_delay,
+                "cache_enabled": config.cache_enabled,
+                "offline_mode": config.offline_mode,
+                "display_currency": config.display_currency,
+                "currency_rate_ttl": config.currency_rate_ttl,
+            },
+            f,
+            indent=2,
+        )
 
 
 # Global config instance
@@ -143,7 +148,7 @@ def cache_currency_rate(currency: str, rate: float) -> None:
         conn.execute(
             """INSERT OR REPLACE INTO currency_rates (currency, rate_to_usd, updated_at)
                VALUES (?, ?, ?)""",
-            (currency.upper(), rate, int(time.time()))
+            (currency.upper(), rate, int(time.time())),
         )
         conn.commit()
     finally:
@@ -168,7 +173,7 @@ def get_cached_currency_rate(currency: str, ttl: int | None = None) -> tuple[flo
     try:
         row = conn.execute(
             "SELECT rate_to_usd, updated_at FROM currency_rates WHERE currency = ?",
-            (currency.upper(),)
+            (currency.upper(),),
         ).fetchone()
 
         if row is None:
@@ -201,8 +206,7 @@ def get_all_cached_currency_rates(ttl: int | None = None) -> dict[str, float]:
     conn = get_db_connection()
     try:
         rows = conn.execute(
-            "SELECT currency, rate_to_usd FROM currency_rates WHERE ? - updated_at <= ?",
-            (now, ttl)
+            "SELECT currency, rate_to_usd FROM currency_rates WHERE ? - updated_at <= ?", (now, ttl)
         ).fetchall()
         return {row["currency"]: row["rate_to_usd"] for row in rows}
     finally:
@@ -408,14 +412,16 @@ def cache_stock_data(ticker: str, data: dict) -> None:
     try:
         conn.execute(
             "INSERT OR REPLACE INTO stock_cache (ticker, data, cached_at) VALUES (?, ?, ?)",
-            (ticker.upper(), json.dumps(data), int(time.time()))
+            (ticker.upper(), json.dumps(data), int(time.time())),
         )
         conn.commit()
     finally:
         conn.close()
 
 
-def get_cached_stock_data(ticker: str, ttl: int | None = None, ignore_ttl: bool = False) -> dict | None:
+def get_cached_stock_data(
+    ticker: str, ttl: int | None = None, ignore_ttl: bool = False
+) -> dict | None:
     """Get cached stock data if it exists and is fresh.
 
     Args:
@@ -436,8 +442,7 @@ def get_cached_stock_data(ticker: str, ttl: int | None = None, ignore_ttl: bool 
     conn = get_db_connection()
     try:
         row = conn.execute(
-            "SELECT data, cached_at FROM stock_cache WHERE ticker = ?",
-            (ticker.upper(),)
+            "SELECT data, cached_at FROM stock_cache WHERE ticker = ?", (ticker.upper(),)
         ).fetchone()
 
         if row is None:
@@ -459,8 +464,7 @@ def get_cache_age(ticker: str) -> float | None:
     conn = get_db_connection()
     try:
         row = conn.execute(
-            "SELECT cached_at FROM stock_cache WHERE ticker = ?",
-            (ticker.upper(),)
+            "SELECT cached_at FROM stock_cache WHERE ticker = ?", (ticker.upper(),)
         ).fetchone()
         if row is None:
             return None
@@ -542,20 +546,16 @@ def get_cache_stats() -> dict:
         total = conn.execute("SELECT COUNT(*) FROM stock_cache").fetchone()[0]
         fresh = conn.execute(
             "SELECT COUNT(*) FROM stock_cache WHERE ? - cached_at <= ?",
-            (int(time.time()), config.cache_ttl)
+            (int(time.time()), config.cache_ttl),
         ).fetchone()[0]
         stale = total - fresh
 
         # Get most recent cache update time
-        last_update_row = conn.execute(
-            "SELECT MAX(cached_at) FROM stock_cache"
-        ).fetchone()
+        last_update_row = conn.execute("SELECT MAX(cached_at) FROM stock_cache").fetchone()
         last_updated = last_update_row[0] if last_update_row and last_update_row[0] else None
 
         # Get oldest cache entry time
-        oldest_row = conn.execute(
-            "SELECT MIN(cached_at) FROM stock_cache"
-        ).fetchone()
+        oldest_row = conn.execute("SELECT MIN(cached_at) FROM stock_cache").fetchone()
         oldest_entry = oldest_row[0] if oldest_row and oldest_row[0] else None
 
         return {
@@ -593,7 +593,7 @@ def get_batch_cached_stocks(tickers: list[str] | None = None) -> dict[str, dict]
             placeholders = ",".join("?" * len(tickers))
             rows = conn.execute(
                 f"SELECT ticker, data FROM stock_cache WHERE ticker IN ({placeholders})",
-                [t.upper() for t in tickers]
+                [t.upper() for t in tickers],
             ).fetchall()
 
         result = {}
@@ -620,13 +620,14 @@ def clear_cache() -> int:
 
 # Watchlist functions
 
+
 def add_to_watchlist(ticker: str, notes: str | None = None) -> bool:
     """Add a ticker to the watchlist. Returns True if added, False if already exists."""
     conn = get_db_connection()
     try:
         cursor = conn.execute(
             "INSERT OR IGNORE INTO watchlist (ticker, added_at, notes) VALUES (?, ?, ?)",
-            (ticker.upper(), int(time.time()), notes)
+            (ticker.upper(), int(time.time()), notes),
         )
         conn.commit()
         return cursor.rowcount > 0
@@ -638,10 +639,7 @@ def remove_from_watchlist(ticker: str) -> bool:
     """Remove a ticker from the watchlist. Returns True if removed."""
     conn = get_db_connection()
     try:
-        cursor = conn.execute(
-            "DELETE FROM watchlist WHERE ticker = ?",
-            (ticker.upper(),)
-        )
+        cursor = conn.execute("DELETE FROM watchlist WHERE ticker = ?", (ticker.upper(),))
         conn.commit()
         return cursor.rowcount > 0
     finally:
@@ -665,8 +663,7 @@ def update_watchlist_notes(ticker: str, notes: str) -> bool:
     conn = get_db_connection()
     try:
         cursor = conn.execute(
-            "UPDATE watchlist SET notes = ? WHERE ticker = ?",
-            (notes, ticker.upper())
+            "UPDATE watchlist SET notes = ? WHERE ticker = ?", (notes, ticker.upper())
         )
         conn.commit()
         return cursor.rowcount > 0
@@ -675,6 +672,7 @@ def update_watchlist_notes(ticker: str, notes: str) -> bool:
 
 
 # Alert functions
+
 
 def add_alert(ticker: str, alert_type: str, threshold: float) -> int:
     """
@@ -688,7 +686,7 @@ def add_alert(ticker: str, alert_type: str, threshold: float) -> int:
     try:
         cursor = conn.execute(
             "INSERT INTO alerts (ticker, alert_type, threshold, created_at) VALUES (?, ?, ?, ?)",
-            (ticker.upper(), alert_type, threshold, int(time.time()))
+            (ticker.upper(), alert_type, threshold, int(time.time())),
         )
         conn.commit()
         return cursor.lastrowid
@@ -702,8 +700,10 @@ def get_alerts(ticker: str | None = None) -> list[dict]:
     try:
         if ticker:
             rows = conn.execute(
-                "SELECT * FROM alerts WHERE ticker = ? AND triggered_at IS NULL ORDER BY created_at",
-                (ticker.upper(),)
+                "SELECT * FROM alerts WHERE ticker = ?"
+                " AND triggered_at IS NULL"
+                " ORDER BY created_at",
+                (ticker.upper(),),
             ).fetchall()
         else:
             rows = conn.execute(
@@ -730,8 +730,7 @@ def trigger_alert(alert_id: int) -> None:
     conn = get_db_connection()
     try:
         conn.execute(
-            "UPDATE alerts SET triggered_at = ? WHERE id = ?",
-            (int(time.time()), alert_id)
+            "UPDATE alerts SET triggered_at = ? WHERE id = ?", (int(time.time()), alert_id)
         )
         conn.commit()
     finally:
@@ -739,6 +738,7 @@ def trigger_alert(alert_id: int) -> None:
 
 
 # Saved list functions
+
 
 def save_list(name: str, tickers: list[str], description: str | None = None) -> bool:
     """
@@ -761,7 +761,7 @@ def save_list(name: str, tickers: list[str], description: str | None = None) -> 
             """INSERT INTO saved_lists (name, description, created_at, updated_at)
                VALUES (?, ?, ?, ?)
                ON CONFLICT(name) DO UPDATE SET description = ?, updated_at = ?""",
-            (name, description, now, now, description, now)
+            (name, description, now, now, description, now),
         )
 
         # Clear existing items and add new ones
@@ -770,7 +770,7 @@ def save_list(name: str, tickers: list[str], description: str | None = None) -> 
         for ticker in tickers:
             conn.execute(
                 "INSERT INTO saved_list_items (list_name, ticker, added_at) VALUES (?, ?, ?)",
-                (name, ticker.upper(), now)
+                (name, ticker.upper(), now),
             )
 
         conn.commit()
@@ -793,15 +793,12 @@ def get_saved_list(name: str) -> list[str] | None:
     conn = get_db_connection()
     try:
         # Check if list exists
-        row = conn.execute(
-            "SELECT name FROM saved_lists WHERE name = ?", (name,)
-        ).fetchone()
+        row = conn.execute("SELECT name FROM saved_lists WHERE name = ?", (name,)).fetchone()
         if row is None:
             return None
 
         rows = conn.execute(
-            "SELECT ticker FROM saved_list_items WHERE list_name = ? ORDER BY added_at",
-            (name,)
+            "SELECT ticker FROM saved_list_items WHERE list_name = ? ORDER BY added_at", (name,)
         ).fetchall()
         return [row["ticker"] for row in rows]
     finally:
@@ -871,20 +868,17 @@ def add_to_saved_list(name: str, ticker: str) -> bool:
     conn = get_db_connection()
     try:
         # Check if list exists
-        row = conn.execute(
-            "SELECT name FROM saved_lists WHERE name = ?", (name,)
-        ).fetchone()
+        row = conn.execute("SELECT name FROM saved_lists WHERE name = ?", (name,)).fetchone()
         if row is None:
             return False
 
         try:
             conn.execute(
                 "INSERT INTO saved_list_items (list_name, ticker, added_at) VALUES (?, ?, ?)",
-                (name, ticker.upper(), int(time.time()))
+                (name, ticker.upper(), int(time.time())),
             )
             conn.execute(
-                "UPDATE saved_lists SET updated_at = ? WHERE name = ?",
-                (int(time.time()), name)
+                "UPDATE saved_lists SET updated_at = ? WHERE name = ?", (int(time.time()), name)
             )
             conn.commit()
             return True
@@ -910,12 +904,11 @@ def remove_from_saved_list(name: str, ticker: str) -> bool:
     try:
         cursor = conn.execute(
             "DELETE FROM saved_list_items WHERE list_name = ? AND ticker = ?",
-            (name, ticker.upper())
+            (name, ticker.upper()),
         )
         if cursor.rowcount > 0:
             conn.execute(
-                "UPDATE saved_lists SET updated_at = ? WHERE name = ?",
-                (int(time.time()), name)
+                "UPDATE saved_lists SET updated_at = ? WHERE name = ?", (int(time.time()), name)
             )
         conn.commit()
         return cursor.rowcount > 0
@@ -926,6 +919,7 @@ def remove_from_saved_list(name: str, ticker: str) -> bool:
 # ============================================================================
 # CATEGORY MANAGEMENT
 # ============================================================================
+
 
 def create_category(name: str, color: str | None = None, icon: str | None = None) -> int | None:
     """
@@ -943,7 +937,7 @@ def create_category(name: str, color: str | None = None, icon: str | None = None
     try:
         cursor = conn.execute(
             "INSERT INTO list_categories (name, color, icon, created_at) VALUES (?, ?, ?, ?)",
-            (name, color, icon, int(time.time()))
+            (name, color, icon, int(time.time())),
         )
         conn.commit()
         return cursor.lastrowid
@@ -993,7 +987,7 @@ def add_list_to_category(list_name: str, category_id: int) -> bool:
     try:
         conn.execute(
             "INSERT OR IGNORE INTO list_category_membership (list_name, category_id) VALUES (?, ?)",
-            (list_name, category_id)
+            (list_name, category_id),
         )
         conn.commit()
         return True
@@ -1010,7 +1004,7 @@ def remove_list_from_category(list_name: str, category_id: int) -> bool:
     try:
         cursor = conn.execute(
             "DELETE FROM list_category_membership WHERE list_name = ? AND category_id = ?",
-            (list_name, category_id)
+            (list_name, category_id),
         )
         conn.commit()
         return cursor.rowcount > 0
@@ -1023,8 +1017,7 @@ def get_lists_in_category(category_id: int) -> list[str]:
     conn = get_db_connection()
     try:
         rows = conn.execute(
-            "SELECT list_name FROM list_category_membership WHERE category_id = ?",
-            (category_id,)
+            "SELECT list_name FROM list_category_membership WHERE category_id = ?", (category_id,)
         ).fetchall()
         return [row["list_name"] for row in rows]
     finally:
@@ -1036,8 +1029,7 @@ def get_category_by_name(name: str) -> dict | None:
     conn = get_db_connection()
     try:
         row = conn.execute(
-            "SELECT id, name, color, icon, created_at FROM list_categories WHERE name = ?",
-            (name,)
+            "SELECT id, name, color, icon, created_at FROM list_categories WHERE name = ?", (name,)
         ).fetchone()
         return dict(row) if row else None
     finally:
@@ -1047,6 +1039,7 @@ def get_category_by_name(name: str) -> dict | None:
 # ============================================================================
 # ENHANCED NOTES
 # ============================================================================
+
 
 def set_item_note(
     list_name: str,
@@ -1080,8 +1073,7 @@ def set_item_note(
     try:
         # Check if note exists
         existing = conn.execute(
-            "SELECT * FROM list_item_notes WHERE list_name = ? AND ticker = ?",
-            (list_name, ticker)
+            "SELECT * FROM list_item_notes WHERE list_name = ? AND ticker = ?", (list_name, ticker)
         ).fetchone()
 
         if existing:
@@ -1108,17 +1100,20 @@ def set_item_note(
                 updates.append("updated_at = ?")
                 params.append(now)
                 params.extend([list_name, ticker])
+                set_clause = ", ".join(updates)
                 conn.execute(
-                    f"UPDATE list_item_notes SET {', '.join(updates)} WHERE list_name = ? AND ticker = ?",
-                    params
+                    f"UPDATE list_item_notes SET {set_clause} WHERE list_name = ? AND ticker = ?",
+                    params,
                 )
         else:
             # Insert new
             conn.execute(
                 """INSERT INTO list_item_notes
-                   (list_name, ticker, notes, thesis, entry_price, target_price, shares, added_at, updated_at)
+                   (list_name, ticker, notes, thesis,
+                    entry_price, target_price, shares,
+                    added_at, updated_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (list_name, ticker, notes, thesis, entry_price, target_price, shares, now, now)
+                (list_name, ticker, notes, thesis, entry_price, target_price, shares, now, now),
             )
 
         conn.commit()
@@ -1135,8 +1130,7 @@ def get_item_note(list_name: str, ticker: str) -> dict | None:
     conn = get_db_connection()
     try:
         row = conn.execute(
-            "SELECT * FROM list_item_notes WHERE list_name = ? AND ticker = ?",
-            (list_name, ticker)
+            "SELECT * FROM list_item_notes WHERE list_name = ? AND ticker = ?", (list_name, ticker)
         ).fetchone()
         return dict(row) if row else None
     finally:
@@ -1150,8 +1144,7 @@ def get_all_item_notes(list_name: str) -> list[dict]:
     conn = get_db_connection()
     try:
         rows = conn.execute(
-            "SELECT * FROM list_item_notes WHERE list_name = ? ORDER BY ticker",
-            (list_name,)
+            "SELECT * FROM list_item_notes WHERE list_name = ? ORDER BY ticker", (list_name,)
         ).fetchall()
         return [dict(row) for row in rows]
     finally:
@@ -1166,8 +1159,7 @@ def delete_item_note(list_name: str, ticker: str) -> bool:
     conn = get_db_connection()
     try:
         cursor = conn.execute(
-            "DELETE FROM list_item_notes WHERE list_name = ? AND ticker = ?",
-            (list_name, ticker)
+            "DELETE FROM list_item_notes WHERE list_name = ? AND ticker = ?", (list_name, ticker)
         )
         conn.commit()
         return cursor.rowcount > 0
@@ -1240,7 +1232,7 @@ def get_all_positions(list_name: str) -> list[dict]:
             """SELECT * FROM list_item_notes
                WHERE list_name = ? AND (shares IS NOT NULL OR entry_price IS NOT NULL)
                ORDER BY ticker""",
-            (list_name,)
+            (list_name,),
         ).fetchall()
         return [dict(row) for row in rows]
     finally:
@@ -1270,7 +1262,7 @@ def clear_position(list_name: str, ticker: str) -> bool:
             """UPDATE list_item_notes
                SET shares = NULL, entry_price = NULL, updated_at = ?
                WHERE list_name = ? AND ticker = ?""",
-            (now, list_name, ticker)
+            (now, list_name, ticker),
         )
         conn.commit()
         return cursor.rowcount > 0
@@ -1295,7 +1287,7 @@ def has_positions(list_name: str) -> bool:
         row = conn.execute(
             """SELECT COUNT(*) FROM list_item_notes
                WHERE list_name = ? AND (shares IS NOT NULL OR entry_price IS NOT NULL)""",
-            (list_name,)
+            (list_name,),
         ).fetchone()
         return row[0] > 0 if row else False
     finally:
@@ -1306,7 +1298,10 @@ def has_positions(list_name: str) -> bool:
 # SMART LISTS
 # ============================================================================
 
-def create_smart_list(name: str, criteria: dict, universe: str | None = None, auto_update: bool = True) -> bool:
+
+def create_smart_list(
+    name: str, criteria: dict, universe: str | None = None, auto_update: bool = True
+) -> bool:
     """
     Create a smart list with auto-updating criteria.
 
@@ -1326,7 +1321,7 @@ def create_smart_list(name: str, criteria: dict, universe: str | None = None, au
             """INSERT OR REPLACE INTO smart_lists
                (name, criteria, universe, auto_update, last_updated)
                VALUES (?, ?, ?, ?, ?)""",
-            (name, json.dumps(criteria), universe, 1 if auto_update else 0, int(time.time()))
+            (name, json.dumps(criteria), universe, 1 if auto_update else 0, int(time.time())),
         )
         conn.commit()
         return True
@@ -1341,9 +1336,7 @@ def get_smart_list(name: str) -> dict | None:
     name = name.lower().replace(" ", "-")
     conn = get_db_connection()
     try:
-        row = conn.execute(
-            "SELECT * FROM smart_lists WHERE name = ?", (name,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM smart_lists WHERE name = ?", (name,)).fetchone()
         if row:
             result = dict(row)
             result["criteria"] = json.loads(result["criteria"])
@@ -1386,8 +1379,7 @@ def update_smart_list_timestamp(name: str) -> None:
     conn = get_db_connection()
     try:
         conn.execute(
-            "UPDATE smart_lists SET last_updated = ? WHERE name = ?",
-            (int(time.time()), name)
+            "UPDATE smart_lists SET last_updated = ? WHERE name = ?", (int(time.time()), name)
         )
         conn.commit()
     finally:
@@ -1417,10 +1409,7 @@ def create_user(email: str) -> dict | None:
     now = int(time.time())
     conn = get_db_connection()
     try:
-        cursor = conn.execute(
-            "INSERT INTO users (email, created_at) VALUES (?, ?)",
-            (email, now)
-        )
+        cursor = conn.execute("INSERT INTO users (email, created_at) VALUES (?, ?)", (email, now))
         conn.commit()
         return {
             "id": cursor.lastrowid,
@@ -1440,8 +1429,7 @@ def get_user_by_email(email: str) -> dict | None:
     conn = get_db_connection()
     try:
         row = conn.execute(
-            "SELECT id, email, created_at, last_login_at FROM users WHERE email = ?",
-            (email,)
+            "SELECT id, email, created_at, last_login_at FROM users WHERE email = ?", (email,)
         ).fetchone()
         return dict(row) if row else None
     finally:
@@ -1453,8 +1441,7 @@ def get_user_by_id(user_id: int) -> dict | None:
     conn = get_db_connection()
     try:
         row = conn.execute(
-            "SELECT id, email, created_at, last_login_at FROM users WHERE id = ?",
-            (user_id,)
+            "SELECT id, email, created_at, last_login_at FROM users WHERE id = ?", (user_id,)
         ).fetchone()
         return dict(row) if row else None
     finally:
@@ -1492,7 +1479,7 @@ def create_magic_link_token(email: str) -> tuple[str, dict] | tuple[None, None]:
         conn.execute(
             """INSERT INTO auth_tokens (user_id, token, token_type, created_at, expires_at)
                VALUES (?, ?, 'magic_link', ?, ?)""",
-            (user["id"], token, now, expires_at)
+            (user["id"], token, now, expires_at),
         )
         conn.commit()
         return token, user
@@ -1520,23 +1507,17 @@ def verify_magic_link_token(token: str) -> tuple[str, dict] | tuple[None, None]:
                JOIN users u ON t.user_id = u.id
                WHERE t.token = ? AND t.token_type = 'magic_link'
                AND t.expires_at > ? AND t.used_at IS NULL""",
-            (token, now)
+            (token, now),
         ).fetchone()
 
         if not row:
             return None, None
 
         # Mark magic link as used
-        conn.execute(
-            "UPDATE auth_tokens SET used_at = ? WHERE id = ?",
-            (now, row["id"])
-        )
+        conn.execute("UPDATE auth_tokens SET used_at = ? WHERE id = ?", (now, row["id"]))
 
         # Update user's last login
-        conn.execute(
-            "UPDATE users SET last_login_at = ? WHERE id = ?",
-            (now, row["user_id"])
-        )
+        conn.execute("UPDATE users SET last_login_at = ? WHERE id = ?", (now, row["user_id"]))
 
         # Create session token
         session_token = secrets.token_urlsafe(32)
@@ -1545,7 +1526,7 @@ def verify_magic_link_token(token: str) -> tuple[str, dict] | tuple[None, None]:
         conn.execute(
             """INSERT INTO auth_tokens (user_id, token, token_type, created_at, expires_at)
                VALUES (?, ?, 'session', ?, ?)""",
-            (row["user_id"], session_token, now, session_expires)
+            (row["user_id"], session_token, now, session_expires),
         )
 
         conn.commit()
@@ -1580,7 +1561,7 @@ def validate_session_token(token: str) -> dict | None:
                JOIN users u ON t.user_id = u.id
                WHERE t.token = ? AND t.token_type = 'session'
                AND t.expires_at > ? AND t.used_at IS NULL""",
-            (token, now)
+            (token, now),
         ).fetchone()
 
         return dict(row) if row else None
@@ -1603,7 +1584,7 @@ def revoke_session_token(token: str) -> bool:
     try:
         cursor = conn.execute(
             "UPDATE auth_tokens SET used_at = ? WHERE token = ? AND token_type = 'session'",
-            (now, token)
+            (now, token),
         )
         conn.commit()
         return cursor.rowcount > 0
@@ -1627,7 +1608,7 @@ def revoke_all_user_sessions(user_id: int) -> int:
         cursor = conn.execute(
             """UPDATE auth_tokens SET used_at = ?
                WHERE user_id = ? AND token_type = 'session' AND used_at IS NULL""",
-            (now, user_id)
+            (now, user_id),
         )
         conn.commit()
         return cursor.rowcount
@@ -1645,10 +1626,7 @@ def cleanup_expired_tokens() -> int:
     now = int(time.time())
     conn = get_db_connection()
     try:
-        cursor = conn.execute(
-            "DELETE FROM auth_tokens WHERE expires_at < ?",
-            (now,)
-        )
+        cursor = conn.execute("DELETE FROM auth_tokens WHERE expires_at < ?", (now,))
         conn.commit()
         return cursor.rowcount
     finally:
@@ -1696,7 +1674,7 @@ def user_add_to_watchlist(user_id: int, ticker: str, notes: str | None = None) -
         cursor = conn.execute(
             """INSERT OR IGNORE INTO user_watchlist (user_id, ticker, added_at, notes)
                VALUES (?, ?, ?, ?)""",
-            (user_id, ticker.upper(), int(time.time()), notes)
+            (user_id, ticker.upper(), int(time.time()), notes),
         )
         conn.commit()
         return cursor.rowcount > 0
@@ -1709,8 +1687,7 @@ def user_remove_from_watchlist(user_id: int, ticker: str) -> bool:
     conn = get_db_connection()
     try:
         cursor = conn.execute(
-            "DELETE FROM user_watchlist WHERE user_id = ? AND ticker = ?",
-            (user_id, ticker.upper())
+            "DELETE FROM user_watchlist WHERE user_id = ? AND ticker = ?", (user_id, ticker.upper())
         )
         conn.commit()
         return cursor.rowcount > 0
@@ -1725,7 +1702,7 @@ def user_get_watchlist(user_id: int) -> list[dict]:
         rows = conn.execute(
             """SELECT ticker, added_at, notes FROM user_watchlist
                WHERE user_id = ? ORDER BY added_at DESC""",
-            (user_id,)
+            (user_id,),
         ).fetchall()
         return [dict(row) for row in rows]
     finally:
@@ -1738,7 +1715,7 @@ def user_update_watchlist_notes(user_id: int, ticker: str, notes: str) -> bool:
     try:
         cursor = conn.execute(
             "UPDATE user_watchlist SET notes = ? WHERE user_id = ? AND ticker = ?",
-            (notes, user_id, ticker.upper())
+            (notes, user_id, ticker.upper()),
         )
         conn.commit()
         return cursor.rowcount > 0
@@ -1751,9 +1728,7 @@ def user_update_watchlist_notes(user_id: int, ticker: str, notes: str) -> bool:
 # ============================================================================
 
 
-def user_create_list(
-    user_id: int, name: str, description: str | None = None
-) -> dict | None:
+def user_create_list(user_id: int, name: str, description: str | None = None) -> dict | None:
     """
     Create a new saved list for a user.
 
@@ -1772,7 +1747,7 @@ def user_create_list(
         cursor = conn.execute(
             """INSERT INTO user_saved_lists (user_id, name, description, created_at, updated_at)
                VALUES (?, ?, ?, ?, ?)""",
-            (user_id, name, description, now, now)
+            (user_id, name, description, now, now),
         )
         conn.commit()
         return {
@@ -1805,7 +1780,7 @@ def user_get_lists(user_id: int) -> list[dict]:
                WHERE l.user_id = ?
                GROUP BY l.id
                ORDER BY l.updated_at DESC""",
-            (user_id,)
+            (user_id,),
         ).fetchall()
         return [dict(row) for row in rows]
     finally:
@@ -1820,7 +1795,7 @@ def user_get_list(user_id: int, name: str) -> dict | None:
         row = conn.execute(
             """SELECT id, name, description, created_at, updated_at
                FROM user_saved_lists WHERE user_id = ? AND name = ?""",
-            (user_id, name)
+            (user_id, name),
         ).fetchone()
         return dict(row) if row else None
     finally:
@@ -1833,8 +1808,7 @@ def user_delete_list(user_id: int, name: str) -> bool:
     conn = get_db_connection()
     try:
         cursor = conn.execute(
-            "DELETE FROM user_saved_lists WHERE user_id = ? AND name = ?",
-            (user_id, name)
+            "DELETE FROM user_saved_lists WHERE user_id = ? AND name = ?", (user_id, name)
         )
         conn.commit()
         return cursor.rowcount > 0
@@ -1842,9 +1816,7 @@ def user_delete_list(user_id: int, name: str) -> bool:
         conn.close()
 
 
-def user_add_to_list(
-    user_id: int, list_name: str, ticker: str, notes: str | None = None
-) -> bool:
+def user_add_to_list(user_id: int, list_name: str, ticker: str, notes: str | None = None) -> bool:
     """
     Add a ticker to a user's saved list.
 
@@ -1862,8 +1834,7 @@ def user_add_to_list(
     try:
         # Get the list
         list_row = conn.execute(
-            "SELECT id FROM user_saved_lists WHERE user_id = ? AND name = ?",
-            (user_id, list_name)
+            "SELECT id FROM user_saved_lists WHERE user_id = ? AND name = ?", (user_id, list_name)
         ).fetchone()
 
         if not list_row:
@@ -1873,13 +1844,12 @@ def user_add_to_list(
         cursor = conn.execute(
             """INSERT OR IGNORE INTO user_saved_list_items (list_id, ticker, added_at, notes)
                VALUES (?, ?, ?, ?)""",
-            (list_row["id"], ticker.upper(), now, notes)
+            (list_row["id"], ticker.upper(), now, notes),
         )
         inserted = cursor.rowcount > 0
         if inserted:
             conn.execute(
-                "UPDATE user_saved_lists SET updated_at = ? WHERE id = ?",
-                (now, list_row["id"])
+                "UPDATE user_saved_lists SET updated_at = ? WHERE id = ?", (now, list_row["id"])
             )
         conn.commit()
         return inserted
@@ -1894,8 +1864,7 @@ def user_remove_from_list(user_id: int, list_name: str, ticker: str) -> bool:
     try:
         # Get the list
         list_row = conn.execute(
-            "SELECT id FROM user_saved_lists WHERE user_id = ? AND name = ?",
-            (user_id, list_name)
+            "SELECT id FROM user_saved_lists WHERE user_id = ? AND name = ?", (user_id, list_name)
         ).fetchone()
 
         if not list_row:
@@ -1903,12 +1872,12 @@ def user_remove_from_list(user_id: int, list_name: str, ticker: str) -> bool:
 
         cursor = conn.execute(
             "DELETE FROM user_saved_list_items WHERE list_id = ? AND ticker = ?",
-            (list_row["id"], ticker.upper())
+            (list_row["id"], ticker.upper()),
         )
         if cursor.rowcount > 0:
             conn.execute(
                 "UPDATE user_saved_lists SET updated_at = ? WHERE id = ?",
-                (int(time.time()), list_row["id"])
+                (int(time.time()), list_row["id"]),
             )
         conn.commit()
         return cursor.rowcount > 0
@@ -1928,8 +1897,7 @@ def user_get_list_items(user_id: int, list_name: str) -> list[dict] | None:
     try:
         # Get the list
         list_row = conn.execute(
-            "SELECT id FROM user_saved_lists WHERE user_id = ? AND name = ?",
-            (user_id, list_name)
+            "SELECT id FROM user_saved_lists WHERE user_id = ? AND name = ?", (user_id, list_name)
         ).fetchone()
 
         if not list_row:
@@ -1938,24 +1906,21 @@ def user_get_list_items(user_id: int, list_name: str) -> list[dict] | None:
         rows = conn.execute(
             """SELECT ticker, added_at, notes FROM user_saved_list_items
                WHERE list_id = ? ORDER BY added_at DESC""",
-            (list_row["id"],)
+            (list_row["id"],),
         ).fetchall()
         return [dict(row) for row in rows]
     finally:
         conn.close()
 
 
-def user_update_list_item_notes(
-    user_id: int, list_name: str, ticker: str, notes: str
-) -> bool:
+def user_update_list_item_notes(user_id: int, list_name: str, ticker: str, notes: str) -> bool:
     """Update notes for an item in a user's saved list."""
     list_name = list_name.lower().replace(" ", "-")
     conn = get_db_connection()
     try:
         # Get the list
         list_row = conn.execute(
-            "SELECT id FROM user_saved_lists WHERE user_id = ? AND name = ?",
-            (user_id, list_name)
+            "SELECT id FROM user_saved_lists WHERE user_id = ? AND name = ?", (user_id, list_name)
         ).fetchone()
 
         if not list_row:
@@ -1963,7 +1928,7 @@ def user_update_list_item_notes(
 
         cursor = conn.execute(
             "UPDATE user_saved_list_items SET notes = ? WHERE list_id = ? AND ticker = ?",
-            (notes, list_row["id"], ticker.upper())
+            (notes, list_row["id"], ticker.upper()),
         )
         conn.commit()
         return cursor.rowcount > 0
@@ -2007,8 +1972,7 @@ def user_set_position(
     try:
         # Get the list
         list_row = conn.execute(
-            "SELECT id FROM user_saved_lists WHERE user_id = ? AND name = ?",
-            (user_id, list_name)
+            "SELECT id FROM user_saved_lists WHERE user_id = ? AND name = ?", (user_id, list_name)
         ).fetchone()
 
         if not list_row:
@@ -2034,9 +1998,10 @@ def user_set_position(
             return False
 
         params.extend([list_row["id"], ticker])
+        set_clause = ", ".join(updates)
         cursor = conn.execute(
-            f"UPDATE user_saved_list_items SET {', '.join(updates)} WHERE list_id = ? AND ticker = ?",
-            params
+            f"UPDATE user_saved_list_items SET {set_clause} WHERE list_id = ? AND ticker = ?",
+            params,
         )
         conn.commit()
         return cursor.rowcount > 0
@@ -2063,8 +2028,7 @@ def user_get_position(user_id: int, list_name: str, ticker: str) -> dict | None:
     try:
         # Get the list
         list_row = conn.execute(
-            "SELECT id FROM user_saved_lists WHERE user_id = ? AND name = ?",
-            (user_id, list_name)
+            "SELECT id FROM user_saved_lists WHERE user_id = ? AND name = ?", (user_id, list_name)
         ).fetchone()
 
         if not list_row:
@@ -2073,7 +2037,7 @@ def user_get_position(user_id: int, list_name: str, ticker: str) -> dict | None:
         row = conn.execute(
             """SELECT ticker, added_at, notes, shares, entry_price, target_price, thesis
                FROM user_saved_list_items WHERE list_id = ? AND ticker = ?""",
-            (list_row["id"], ticker)
+            (list_row["id"], ticker),
         ).fetchone()
         return dict(row) if row else None
     finally:
@@ -2097,8 +2061,7 @@ def user_get_all_positions(user_id: int, list_name: str) -> list[dict] | None:
     try:
         # Get the list
         list_row = conn.execute(
-            "SELECT id FROM user_saved_lists WHERE user_id = ? AND name = ?",
-            (user_id, list_name)
+            "SELECT id FROM user_saved_lists WHERE user_id = ? AND name = ?", (user_id, list_name)
         ).fetchone()
 
         if not list_row:
@@ -2109,7 +2072,7 @@ def user_get_all_positions(user_id: int, list_name: str) -> list[dict] | None:
                FROM user_saved_list_items
                WHERE list_id = ? AND (shares IS NOT NULL OR entry_price IS NOT NULL)
                ORDER BY ticker""",
-            (list_row["id"],)
+            (list_row["id"],),
         ).fetchall()
         return [dict(row) for row in rows]
     finally:
@@ -2133,8 +2096,7 @@ def user_get_list_items_with_positions(user_id: int, list_name: str) -> list[dic
     try:
         # Get the list
         list_row = conn.execute(
-            "SELECT id FROM user_saved_lists WHERE user_id = ? AND name = ?",
-            (user_id, list_name)
+            "SELECT id FROM user_saved_lists WHERE user_id = ? AND name = ?", (user_id, list_name)
         ).fetchone()
 
         if not list_row:
@@ -2143,7 +2105,7 @@ def user_get_list_items_with_positions(user_id: int, list_name: str) -> list[dic
         rows = conn.execute(
             """SELECT ticker, added_at, notes, shares, entry_price, target_price, thesis
                FROM user_saved_list_items WHERE list_id = ? ORDER BY added_at DESC""",
-            (list_row["id"],)
+            (list_row["id"],),
         ).fetchall()
         return [dict(row) for row in rows]
     finally:
@@ -2171,8 +2133,7 @@ def user_clear_position(user_id: int, list_name: str, ticker: str) -> bool:
     try:
         # Get the list
         list_row = conn.execute(
-            "SELECT id FROM user_saved_lists WHERE user_id = ? AND name = ?",
-            (user_id, list_name)
+            "SELECT id FROM user_saved_lists WHERE user_id = ? AND name = ?", (user_id, list_name)
         ).fetchone()
 
         if not list_row:
@@ -2182,7 +2143,7 @@ def user_clear_position(user_id: int, list_name: str, ticker: str) -> bool:
             """UPDATE user_saved_list_items
                SET shares = NULL, entry_price = NULL
                WHERE list_id = ? AND ticker = ?""",
-            (list_row["id"], ticker)
+            (list_row["id"], ticker),
         )
         conn.commit()
         return cursor.rowcount > 0
@@ -2207,8 +2168,7 @@ def user_has_positions(user_id: int, list_name: str) -> bool:
     try:
         # Get the list
         list_row = conn.execute(
-            "SELECT id FROM user_saved_lists WHERE user_id = ? AND name = ?",
-            (user_id, list_name)
+            "SELECT id FROM user_saved_lists WHERE user_id = ? AND name = ?", (user_id, list_name)
         ).fetchone()
 
         if not list_row:
@@ -2217,7 +2177,7 @@ def user_has_positions(user_id: int, list_name: str) -> bool:
         row = conn.execute(
             """SELECT COUNT(*) FROM user_saved_list_items
                WHERE list_id = ? AND (shares IS NOT NULL OR entry_price IS NOT NULL)""",
-            (list_row["id"],)
+            (list_row["id"],),
         ).fetchone()
         return row[0] > 0 if row else False
     finally:

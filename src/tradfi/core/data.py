@@ -112,7 +112,9 @@ def _extract_etf_metrics(info: dict) -> ETFMetrics:
     )
 
 
-def fetch_stock(ticker_symbol: str, use_cache: bool = True, cache_only: bool = False) -> Stock | None:
+def fetch_stock(
+    ticker_symbol: str, use_cache: bool = True, cache_only: bool = False
+) -> Stock | None:
     """
     Fetch stock data from cache only. Does not hit yfinance API.
 

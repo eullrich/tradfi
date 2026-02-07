@@ -7,7 +7,6 @@ from tradfi.models.stock import (
     DividendInfo,
     FairValueEstimates,
     FinancialHealth,
-    GrowthMetrics,
     ProfitabilityMetrics,
     QuarterlyData,
     QuarterlyTrends,
@@ -84,9 +83,11 @@ class TestQuarterlyTrends:
 
     def test_revenue_trend_insufficient_data(self):
         """Test revenue trend returns 'N/A' with insufficient data."""
-        trends = QuarterlyTrends(quarters=[
-            QuarterlyData(quarter="2024Q3", revenue=100),
-        ])
+        trends = QuarterlyTrends(
+            quarters=[
+                QuarterlyData(quarter="2024Q3", revenue=100),
+            ]
+        )
         assert trends.revenue_trend == "N/A"
 
     def test_revenue_trend_no_data(self):
@@ -138,9 +139,11 @@ class TestQuarterlyTrends:
 
     def test_margin_trend_insufficient_data(self):
         """Test margin trend returns 'N/A' with insufficient data."""
-        trends = QuarterlyTrends(quarters=[
-            QuarterlyData(quarter="2024Q3", gross_margin=45.0),
-        ])
+        trends = QuarterlyTrends(
+            quarters=[
+                QuarterlyData(quarter="2024Q3", gross_margin=45.0),
+            ]
+        )
         assert trends.margin_trend == "N/A"
 
     def test_latest_qoq_revenue_growth(self):
@@ -163,9 +166,11 @@ class TestQuarterlyTrends:
 
     def test_latest_qoq_revenue_growth_insufficient_data(self):
         """Test QoQ growth returns None with insufficient data."""
-        trends = QuarterlyTrends(quarters=[
-            QuarterlyData(quarter="2024Q3", revenue=100),
-        ])
+        trends = QuarterlyTrends(
+            quarters=[
+                QuarterlyData(quarter="2024Q3", revenue=100),
+            ]
+        )
         assert trends.latest_qoq_revenue_growth is None
 
     def test_latest_qoq_revenue_growth_zero_prior(self):

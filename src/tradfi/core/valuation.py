@@ -31,9 +31,7 @@ def calculate_graham_number(eps: float | None, book_value: float | None) -> floa
     return math.sqrt(22.5 * eps * book_value)
 
 
-def calculate_margin_of_safety(
-    current_price: float, fair_value: float | None
-) -> float | None:
+def calculate_margin_of_safety(current_price: float, fair_value: float | None) -> float | None:
     """
     Calculate margin of safety percentage.
 
@@ -111,7 +109,7 @@ def calculate_dcf_fair_value(
     projected_fcf = free_cash_flow
 
     for year in range(1, years + 1):
-        projected_fcf *= (1 + growth_rate)
+        projected_fcf *= 1 + growth_rate
         discount_factor = (1 + discount_rate) ** year
         present_value_fcf += projected_fcf / discount_factor
 
@@ -130,3 +128,39 @@ def calculate_dcf_fair_value(
     fair_value_per_share = total_value / shares_outstanding
 
     return fair_value_per_share
+
+
+def calculate_earnings_power_value(
+    operating_income: float | None,
+    shares_outstanding: float | None,
+    tax_rate: float = 0.21,
+    cost_of_capital: float = 0.10,
+) -> float | None:
+    """
+    Calculate Earnings Power Value (Bruce Greenwald's method).
+
+    EPV = (Operating Income * (1 - tax_rate)) / cost_of_capital / shares_outstanding
+
+    Assumes no growth — values the company based on current sustainable earnings.
+
+    Args:
+        operating_income: Total operating income (EBIT)
+        shares_outstanding: Number of shares outstanding
+        tax_rate: Effective tax rate (default 21%)
+        cost_of_capital: Required rate of return / WACC (default 10%)
+
+    Returns:
+        EPV per share, or None if inputs invalid
+    """
+    if operating_income is None or shares_outstanding is None:
+        return None
+
+    if operating_income <= 0 or shares_outstanding <= 0:
+        return None
+
+    if cost_of_capital <= 0:
+        return None
+
+    after_tax_earnings = operating_income * (1 - tax_rate)
+    epv = after_tax_earnings / cost_of_capital
+    return epv / shares_outstanding

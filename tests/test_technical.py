@@ -18,8 +18,9 @@ class TestCalculateRSI:
     def test_basic_rsi_calculation(self):
         """Test RSI with a typical price series."""
         # Create a series with some ups and downs
-        prices = pd.Series([100, 102, 101, 103, 105, 104, 106, 108, 107, 109,
-                           110, 108, 109, 111, 113, 112])
+        prices = pd.Series(
+            [100, 102, 101, 103, 105, 104, 106, 108, 107, 109, 110, 108, 109, 111, 113, 112]
+        )
         result = calculate_rsi(prices, period=14)
         assert result is not None
         assert 0 <= result <= 100
@@ -46,8 +47,9 @@ class TestCalculateRSI:
     def test_rsi_mixed_movement(self):
         """Test RSI with balanced up/down movement (should be near 50)."""
         # Alternating up and down with similar magnitudes
-        prices = pd.Series([100, 101, 100, 101, 100, 101, 100, 101,
-                           100, 101, 100, 101, 100, 101, 100, 101])
+        prices = pd.Series(
+            [100, 101, 100, 101, 100, 101, 100, 101, 100, 101, 100, 101, 100, 101, 100, 101]
+        )
         result = calculate_rsi(prices, period=14)
         assert result is not None
         # Should be relatively balanced, though exact value depends on calculation

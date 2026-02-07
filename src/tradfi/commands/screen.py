@@ -3,24 +3,23 @@
 from typing import Optional
 
 import typer
-from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
-from rich.table import Table
 from rich import box
+from rich.console import Console
+from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
+from rich.table import Table
 
 from tradfi.core.data import fetch_stock
 from tradfi.core.screener import (
+    AVAILABLE_UNIVERSES,
     ScreenCriteria,
-    load_tickers,
-    screen_stock,
     get_preset_screen,
     list_available_universes,
-    PRESET_SCREENS,
-    AVAILABLE_UNIVERSES,
+    load_tickers,
+    screen_stock,
 )
 from tradfi.models.stock import Stock
-from tradfi.utils.display import format_number, format_pct, get_signal_display
 from tradfi.utils.cache import save_list
+from tradfi.utils.display import format_number, format_pct, get_signal_display
 
 console = Console()
 
@@ -29,34 +28,43 @@ def screen(
     # Universe selection
     universe: str = typer.Option(
         "sp500",
-        "--universe", "-u",
-        help="Stock universe(s): sp500, dow30, nasdaq100, russell2000, etc. Use comma to combine (e.g., sp500,nasdaq100)",
+        "--universe",
+        "-u",
+        help="Stock universe(s): sp500, dow30, nasdaq100, russell2000, etc. "
+        "Use comma to combine (e.g., sp500,nasdaq100)",
     ),
     all_universes: bool = typer.Option(
         False,
-        "--all", "-a",
+        "--all",
+        "-a",
         help="Search across ALL universes",
     ),
     exclude: Optional[str] = typer.Option(
         None,
-        "--exclude", "-x",
-        help="Exclude universe(s) from search. Comma-separated (e.g., --exclude russell2000,international)",
+        "--exclude",
+        "-x",
+        help="Exclude universe(s) from search. "
+        "Comma-separated (e.g., --exclude russell2000,international)",
     ),
     list_universes: bool = typer.Option(
         False,
-        "--list-universes", "--universes",
+        "--list-universes",
+        "--universes",
         help="List all available stock universes",
     ),
     tickers: Optional[str] = typer.Option(
         None,
-        "--tickers", "-t",
+        "--tickers",
+        "-t",
         help="Comma-separated list of tickers to screen (overrides universe)",
     ),
     # Pre-built screens
     preset: Optional[str] = typer.Option(
         None,
-        "--preset", "-p",
-        help="Pre-built screen: graham, buffett, dividend, fallen-angels, hidden-gems, oversold, turnaround",
+        "--preset",
+        "-p",
+        help="Pre-built screen: graham, buffett, dividend, "
+        "fallen-angels, hidden-gems, oversold, turnaround",
     ),
     # Valuation filters
     pe_max: Optional[float] = typer.Option(None, "--pe-max", help="Maximum P/E ratio"),
@@ -66,75 +74,101 @@ def screen(
     ps_max: Optional[float] = typer.Option(None, "--ps-max", help="Maximum P/S ratio"),
     # Profitability filters
     roe_min: Optional[float] = typer.Option(None, "--roe-min", help="Minimum ROE (%)"),
-    roe_max: Optional[float] = typer.Option(None, "--roe-max", help="Maximum ROE (%) - for finding weak stocks"),
+    roe_max: Optional[float] = typer.Option(
+        None, "--roe-max", help="Maximum ROE (%) - for finding weak stocks"
+    ),
     roa_min: Optional[float] = typer.Option(None, "--roa-min", help="Minimum ROA (%)"),
     margin_min: Optional[float] = typer.Option(None, "--margin-min", help="Minimum net margin (%)"),
-    margin_max: Optional[float] = typer.Option(None, "--margin-max", help="Maximum net margin (%) - for finding weak stocks"),
+    margin_max: Optional[float] = typer.Option(
+        None, "--margin-max", help="Maximum net margin (%) - for finding weak stocks"
+    ),
     # Financial health filters
     debt_equity_max: Optional[float] = typer.Option(
-        None, "--debt-equity-max", "--de-max",
+        None,
+        "--debt-equity-max",
+        "--de-max",
         help="Maximum debt/equity ratio (e.g., 0.5 for 50%)",
     ),
     current_ratio_min: Optional[float] = typer.Option(
-        None, "--current-min",
+        None,
+        "--current-min",
         help="Minimum current ratio",
     ),
     # Dividend filters
     dividend_yield_min: Optional[float] = typer.Option(
-        None, "--div-min",
+        None,
+        "--div-min",
         help="Minimum dividend yield (%)",
     ),
     # Technical / Oversold filters
     rsi_max: Optional[float] = typer.Option(
-        None, "--rsi-max",
+        None,
+        "--rsi-max",
         help="Maximum RSI (e.g., 30 for oversold)",
     ),
     rsi_min: Optional[float] = typer.Option(
-        None, "--rsi-min",
+        None,
+        "--rsi-min",
         help="Minimum RSI",
     ),
     near_52w_low: Optional[float] = typer.Option(
-        None, "--near-52w-low",
+        None,
+        "--near-52w-low",
         help="Within X% of 52-week low",
     ),
     below_200ma: bool = typer.Option(
-        False, "--below-200ma",
+        False,
+        "--below-200ma",
         help="Price below 200-day moving average",
     ),
     below_50ma: bool = typer.Option(
-        False, "--below-50ma",
+        False,
+        "--below-50ma",
         help="Price below 50-day moving average",
     ),
     # Sector filter
     sector: Optional[str] = typer.Option(
-        None, "--sector", "-i",
-        help="Filter by sector (e.g., 'Technology', 'Healthcare', 'Financial'). Partial match. Comma-separated for multiple.",
+        None,
+        "--sector",
+        "-i",
+        help="Filter by sector (e.g., 'Technology', 'Healthcare'). "
+        "Partial match. Comma-separated for multiple.",
     ),
     exclude_sector: Optional[str] = typer.Option(
-        None, "--exclude-sector", "-xi",
+        None,
+        "--exclude-sector",
+        "-xi",
         help="Exclude sectors. Comma-separated (e.g., --exclude-sector Technology,Energy)",
     ),
     list_sectors: bool = typer.Option(
-        False, "--list-sectors", "--sectors",
+        False,
+        "--list-sectors",
+        "--sectors",
         help="List all available sectors",
     ),
     # Output options
     limit: int = typer.Option(
-        20, "--limit", "-l",
+        20,
+        "--limit",
+        "-l",
         help="Maximum number of results to show",
     ),
     sort_by: str = typer.Option(
         "pe",
-        "--sort", "-s",
+        "--sort",
+        "-s",
         help="Sort by: pe, pb, roe, rsi, div, margin-of-safety (mos), sector",
     ),
     group_by_sector: bool = typer.Option(
-        False, "--group-by-sector", "-g",
+        False,
+        "--group-by-sector",
+        "-g",
         help="Group results by sector",
     ),
     # Save results
     save_as: Optional[str] = typer.Option(
-        None, "--save",
+        None,
+        "--save",
         help="Save results to a named list (e.g., --save my-value-picks)",
     ),
 ) -> None:
@@ -246,7 +280,7 @@ def screen(
                     try:
                         ticker_set.update(load_tickers(name))
                         universes_used.append(name)
-                    except FileNotFoundError as e:
+                    except FileNotFoundError:
                         console.print(f"[red]Error: Unknown universe '{name}'[/]")
                         raise typer.Exit(1)
 
@@ -260,7 +294,10 @@ def screen(
         if len(universes_used) == 1:
             console.print(f"[dim]Screening {universes_used[0]} ({len(ticker_list)} tickers)[/]")
         else:
-            console.print(f"[dim]Screening {len(universes_used)} universes ({len(ticker_list)} unique tickers)[/]")
+            console.print(
+                f"[dim]Screening {len(universes_used)} universes"
+                f" ({len(ticker_list)} unique tickers)[/]"
+            )
             if excluded_universes:
                 console.print(f"[dim]Excluded: {', '.join(excluded_universes)}[/]")
 
@@ -402,7 +439,7 @@ def screen(
 
     # Footer
     console.print()
-    console.print(f"[dim]Use 'tradfi analyze <ticker>' for detailed analysis[/]")
+    console.print("[dim]Use 'tradfi analyze <ticker>' for detailed analysis[/]")
 
     if failed_tickers:
         console.print(f"[dim]({len(failed_tickers)} tickers failed to fetch)[/]")
@@ -453,11 +490,15 @@ def sort_stocks(stocks: list[Stock], sort_by: str) -> list[Stock]:
     elif sort_by in ("mos", "margin-of-safety"):
         return sorted(
             stocks,
-            key=lambda s: safe_sort_key(s, lambda x: x.fair_value.margin_of_safety_pct, reverse=True),
+            key=lambda s: safe_sort_key(
+                s, lambda x: x.fair_value.margin_of_safety_pct, reverse=True
+            ),
             reverse=True,
         )
     elif sort_by == "sector":
-        return sorted(stocks, key=lambda s: (s.sector or "ZZZ", s.valuation.pe_trailing or float("inf")))
+        return sorted(
+            stocks, key=lambda s: (s.sector or "ZZZ", s.valuation.pe_trailing or float("inf"))
+        )
     else:
         return stocks
 
@@ -545,7 +586,9 @@ def _display_grouped_by_sector(stocks: list[Stock], failed_tickers: list[str]) -
     # Sort sectors alphabetically
     sorted_sectors = sorted(sectors.keys())
 
-    console.print(f"\n[bold]Screening Results ({len(stocks)} stocks in {len(sorted_sectors)} sectors)[/]\n")
+    console.print(
+        f"\n[bold]Screening Results ({len(stocks)} stocks in {len(sorted_sectors)} sectors)[/]\n"
+    )
 
     for sector in sorted_sectors:
         sector_stocks = sectors[sector]
@@ -570,7 +613,11 @@ def _display_grouped_by_sector(stocks: list[Stock], failed_tickers: list[str]) -
         # Sort stocks within sector by P/E
         sector_stocks_sorted = sorted(
             sector_stocks,
-            key=lambda s: s.valuation.pe_trailing if s.valuation.pe_trailing and s.valuation.pe_trailing > 0 else float("inf")
+            key=lambda s: (
+                s.valuation.pe_trailing
+                if s.valuation.pe_trailing and s.valuation.pe_trailing > 0
+                else float("inf")
+            ),
         )
 
         for stock in sector_stocks_sorted:
@@ -604,7 +651,7 @@ def _display_grouped_by_sector(stocks: list[Stock], failed_tickers: list[str]) -
         console.print()
 
     # Footer
-    console.print(f"[dim]Use 'tradfi analyze <ticker>' for detailed analysis[/]")
+    console.print("[dim]Use 'tradfi analyze <ticker>' for detailed analysis[/]")
 
     if failed_tickers:
         console.print(f"[dim]({len(failed_tickers)} tickers failed to fetch)[/]")

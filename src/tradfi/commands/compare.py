@@ -17,7 +17,8 @@ def compare(
     list2: str = typer.Argument(None, help="Second list name (optional)"),
     metrics: str = typer.Option(
         "pe,roe,mos,rsi,div",
-        "--metrics", "-m",
+        "--metrics",
+        "-m",
         help="Comma-separated metrics to compare (pe,pb,roe,roa,mos,rsi,div,price)",
     ),
 ) -> None:
@@ -48,7 +49,7 @@ def compare(
             console.print(f"[red]List '{list2}' not found or empty.[/]")
             raise typer.Exit(1)
 
-    console.print(f"\n[bold cyan]Fetching data for comparison...[/]")
+    console.print("\n[bold cyan]Fetching data for comparison...[/]")
 
     # Fetch stock data
     stocks1 = _fetch_stocks(tickers1, list1)
@@ -83,16 +84,26 @@ def _calculate_metrics(stocks: list, metric_list: list[str]) -> dict:
     metrics = {}
 
     metric_extractors = {
-        "pe": lambda s: s.valuation.pe_trailing if s.valuation.pe_trailing and s.valuation.pe_trailing > 0 else None,
-        "pb": lambda s: s.valuation.pb_ratio if s.valuation.pb_ratio and s.valuation.pb_ratio > 0 else None,
-        "ps": lambda s: s.valuation.ps_ratio if s.valuation.ps_ratio and s.valuation.ps_ratio > 0 else None,
+        "pe": lambda s: (
+            s.valuation.pe_trailing
+            if s.valuation.pe_trailing and s.valuation.pe_trailing > 0
+            else None
+        ),
+        "pb": lambda s: (
+            s.valuation.pb_ratio if s.valuation.pb_ratio and s.valuation.pb_ratio > 0 else None
+        ),
+        "ps": lambda s: (
+            s.valuation.ps_ratio if s.valuation.ps_ratio and s.valuation.ps_ratio > 0 else None
+        ),
         "roe": lambda s: s.profitability.roe,
         "roa": lambda s: s.profitability.roa,
         "mos": lambda s: s.fair_value.margin_of_safety_pct,
         "rsi": lambda s: s.technical.rsi_14,
         "div": lambda s: s.dividends.dividend_yield,
         "price": lambda s: s.current_price,
-        "de": lambda s: s.financial_health.debt_to_equity / 100 if s.financial_health.debt_to_equity else None,
+        "de": lambda s: (
+            s.financial_health.debt_to_equity / 100 if s.financial_health.debt_to_equity else None
+        ),
     }
 
     for metric in metric_list:

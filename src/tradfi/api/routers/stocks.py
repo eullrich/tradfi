@@ -18,7 +18,9 @@ router = APIRouter(prefix="/stocks", tags=["stocks"])
 async def get_stock(
     ticker: str,
     use_cache: bool = Query(default=True, description="Use cached data if available"),
-    cache_only: bool = Query(default=False, description="Only return cached data, never hit yfinance"),
+    cache_only: bool = Query(
+        default=False, description="Only return cached data, never hit yfinance"
+    ),
 ):
     """
     Get complete analysis for a single stock.
@@ -85,7 +87,5 @@ async def get_quarterly_data(
     """
     trends = fetch_quarterly_financials(ticker.upper(), periods=periods)
     if trends is None:
-        raise HTTPException(
-            status_code=404, detail=f"Quarterly data for {ticker} not found"
-        )
+        raise HTTPException(status_code=404, detail=f"Quarterly data for {ticker} not found")
     return quarterly_trends_to_schema(trends)

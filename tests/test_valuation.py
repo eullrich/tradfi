@@ -1,6 +1,7 @@
 """Tests for valuation calculation functions."""
 
 import math
+
 import pytest
 
 from tradfi.core.valuation import (
@@ -206,23 +207,17 @@ class TestDCFFairValue:
 
     def test_none_fcf(self):
         """Test with None free cash flow returns None."""
-        result = calculate_dcf_fair_value(
-            free_cash_flow=None, shares_outstanding=100_000_000
-        )
+        result = calculate_dcf_fair_value(free_cash_flow=None, shares_outstanding=100_000_000)
         assert result is None
 
     def test_none_shares(self):
         """Test with None shares outstanding returns None."""
-        result = calculate_dcf_fair_value(
-            free_cash_flow=1_000_000_000, shares_outstanding=None
-        )
+        result = calculate_dcf_fair_value(free_cash_flow=1_000_000_000, shares_outstanding=None)
         assert result is None
 
     def test_zero_fcf(self):
         """Test with zero FCF returns None."""
-        result = calculate_dcf_fair_value(
-            free_cash_flow=0, shares_outstanding=100_000_000
-        )
+        result = calculate_dcf_fair_value(free_cash_flow=0, shares_outstanding=100_000_000)
         assert result is None
 
     def test_negative_fcf(self):
@@ -234,9 +229,7 @@ class TestDCFFairValue:
 
     def test_zero_shares(self):
         """Test with zero shares returns None."""
-        result = calculate_dcf_fair_value(
-            free_cash_flow=1_000_000_000, shares_outstanding=0
-        )
+        result = calculate_dcf_fair_value(free_cash_flow=1_000_000_000, shares_outstanding=0)
         assert result is None
 
     def test_invalid_terminal_growth(self):
@@ -310,9 +303,7 @@ class TestEarningsPowerValue:
 
     def test_zero_operating_income(self):
         """Test with zero operating income returns None."""
-        result = calculate_earnings_power_value(
-            operating_income=0, shares_outstanding=100_000_000
-        )
+        result = calculate_earnings_power_value(operating_income=0, shares_outstanding=100_000_000)
         assert result is None
 
     def test_negative_operating_income(self):

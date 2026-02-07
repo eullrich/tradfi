@@ -90,7 +90,9 @@ async def refresh_universe(universe: str, delay: float = 2.0) -> dict:
         # Log progress every 50 stocks
         if (i + 1) % 50 == 0:
             elapsed = time.time() - start_time
-            logger.info(f"Progress: {i + 1}/{len(tickers)} ({fetched} ok, {failed} failed) - {elapsed:.0f}s")
+            logger.info(
+                f"Progress: {i + 1}/{len(tickers)} ({fetched} ok, {failed} failed) - {elapsed:.0f}s"
+            )
 
     # Restore original delay
     set_rate_limit_delay(original_delay)
@@ -112,7 +114,9 @@ async def refresh_universe(universe: str, delay: float = 2.0) -> dict:
     _refresh_state["last_refresh_duration"] = round(elapsed, 1)
     _refresh_state["last_refresh_stats"] = stats
 
-    logger.info(f"Completed refresh for {universe}: {fetched} fetched, {failed} failed in {elapsed:.0f}s")
+    logger.info(
+        f"Completed refresh for {universe}: {fetched} fetched, {failed} failed in {elapsed:.0f}s"
+    )
 
     return stats
 

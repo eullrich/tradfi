@@ -57,7 +57,7 @@ class RemoteDataProvider:
             with httpx.Client(timeout=self.timeout) as client:
                 response = client.get(
                     f"{self.api_url}/api/v1/stocks/{ticker}",
-                    params={"cache_only": str(cache_only).lower()}
+                    params={"cache_only": str(cache_only).lower()},
                 )
 
             if response.status_code == 200:
@@ -85,8 +85,10 @@ class RemoteDataProvider:
             if response.status_code == 200:
                 data = response.json()
                 if isinstance(data, dict):
-                    return {ticker: self._schema_to_stock(stock_data)
-                            for ticker, stock_data in data.items()}
+                    return {
+                        ticker: self._schema_to_stock(stock_data)
+                        for ticker, stock_data in data.items()
+                    }
             return {}
         except (httpx.RequestError, json.JSONDecodeError):
             return {}
@@ -113,7 +115,7 @@ class RemoteDataProvider:
 
         result: dict[str, Stock] = {}
         for i in range(0, len(tickers), CHUNK_SIZE):
-            chunk = tickers[i:i + CHUNK_SIZE]
+            chunk = tickers[i : i + CHUNK_SIZE]
             result.update(self._fetch_stocks_batch_single(chunk))
         return result
 
@@ -121,16 +123,15 @@ class RemoteDataProvider:
         """Fetch a single batch of stocks (internal helper)."""
         try:
             with httpx.Client(timeout=60.0) as client:
-                response = client.post(
-                    f"{self.api_url}/api/v1/stocks/batch",
-                    json=tickers
-                )
+                response = client.post(f"{self.api_url}/api/v1/stocks/batch", json=tickers)
 
             if response.status_code == 200:
                 data = response.json()
                 if isinstance(data, dict):
-                    return {ticker: self._schema_to_stock(stock_data)
-                            for ticker, stock_data in data.items()}
+                    return {
+                        ticker: self._schema_to_stock(stock_data)
+                        for ticker, stock_data in data.items()
+                    }
             return {}
         except (httpx.RequestError, json.JSONDecodeError):
             return {}
@@ -148,8 +149,7 @@ class RemoteDataProvider:
         try:
             with httpx.Client(timeout=self.timeout) as client:
                 response = client.get(
-                    f"{self.api_url}/api/v1/stocks/{ticker}/quarterly",
-                    params={"periods": periods}
+                    f"{self.api_url}/api/v1/stocks/{ticker}/quarterly", params={"periods": periods}
                 )
 
             if response.status_code == 200:
@@ -164,18 +164,20 @@ class RemoteDataProvider:
         """Convert API response schema to QuarterlyTrends dataclass."""
         quarters = []
         for q_data in data.get("quarters", []):
-            quarters.append(QuarterlyData(
-                quarter=q_data.get("quarter", ""),
-                revenue=q_data.get("revenue"),
-                net_income=q_data.get("net_income"),
-                gross_profit=q_data.get("gross_profit"),
-                operating_income=q_data.get("operating_income"),
-                gross_margin=q_data.get("gross_margin"),
-                operating_margin=q_data.get("operating_margin"),
-                net_margin=q_data.get("net_margin"),
-                eps=q_data.get("eps"),
-                free_cash_flow=q_data.get("free_cash_flow"),
-            ))
+            quarters.append(
+                QuarterlyData(
+                    quarter=q_data.get("quarter", ""),
+                    revenue=q_data.get("revenue"),
+                    net_income=q_data.get("net_income"),
+                    gross_profit=q_data.get("gross_profit"),
+                    operating_income=q_data.get("operating_income"),
+                    gross_margin=q_data.get("gross_margin"),
+                    operating_margin=q_data.get("operating_margin"),
+                    net_margin=q_data.get("net_margin"),
+                    eps=q_data.get("eps"),
+                    free_cash_flow=q_data.get("free_cash_flow"),
+                )
+            )
         return QuarterlyTrends(quarters=quarters)
 
     def _schema_to_stock(self, data: dict) -> Stock:
@@ -313,8 +315,7 @@ class RemoteDataProvider:
         try:
             with httpx.Client(timeout=self.timeout) as client:
                 response = client.post(
-                    f"{self.api_url}/api/v1/lists",
-                    json={"name": name, "tickers": tickers}
+                    f"{self.api_url}/api/v1/lists", json={"name": name, "tickers": tickers}
                 )
             return response.status_code == 200
         except (httpx.RequestError, json.JSONDecodeError):
@@ -334,8 +335,7 @@ class RemoteDataProvider:
         try:
             with httpx.Client(timeout=self.timeout) as client:
                 response = client.post(
-                    f"{self.api_url}/api/v1/lists/{name}/items",
-                    json={"ticker": ticker.upper()}
+                    f"{self.api_url}/api/v1/lists/{name}/items", json={"ticker": ticker.upper()}
                 )
             return response.status_code == 200
         except (httpx.RequestError, json.JSONDecodeError):
@@ -371,7 +371,7 @@ class RemoteDataProvider:
                         "thesis": thesis,
                         "entry_price": entry_price,
                         "target_price": target_price,
-                    }
+                    },
                 )
             return response.status_code == 200
         except (httpx.RequestError, json.JSONDecodeError):
@@ -410,7 +410,7 @@ class RemoteDataProvider:
                         "entry_price": entry_price,
                         "target_price": target_price,
                         "thesis": thesis,
-                    }
+                    },
                 )
             return response.status_code == 200
         except (httpx.RequestError, json.JSONDecodeError):
@@ -467,9 +467,7 @@ class RemoteDataProvider:
         """
         try:
             with httpx.Client(timeout=self.timeout) as client:
-                response = client.get(
-                    f"{self.api_url}/api/lists/{list_name}/portfolio"
-                )
+                response = client.get(f"{self.api_url}/api/lists/{list_name}/portfolio")
             if response.status_code == 200:
                 return response.json()
             return None
@@ -487,9 +485,7 @@ class RemoteDataProvider:
         """
         try:
             with httpx.Client(timeout=self.timeout) as client:
-                response = client.get(
-                    f"{self.api_url}/api/lists/{list_name}/has-positions"
-                )
+                response = client.get(f"{self.api_url}/api/lists/{list_name}/has-positions")
             if response.status_code == 200:
                 data = response.json()
                 return data.get("has_positions", False)
@@ -515,8 +511,7 @@ class RemoteDataProvider:
         try:
             with httpx.Client(timeout=self.timeout) as client:
                 response = client.post(
-                    f"{self.api_url}/api/v1/watchlist",
-                    json={"ticker": ticker.upper()}
+                    f"{self.api_url}/api/v1/watchlist", json={"ticker": ticker.upper()}
                 )
             return response.status_code == 200
         except (httpx.RequestError, json.JSONDecodeError):
@@ -526,9 +521,7 @@ class RemoteDataProvider:
         """Remove a ticker from the watchlist."""
         try:
             with httpx.Client(timeout=self.timeout) as client:
-                response = client.delete(
-                    f"{self.api_url}/api/v1/watchlist/{ticker.upper()}"
-                )
+                response = client.delete(f"{self.api_url}/api/v1/watchlist/{ticker.upper()}")
             return response.status_code == 200
         except (httpx.RequestError, json.JSONDecodeError):
             return False
@@ -538,8 +531,7 @@ class RemoteDataProvider:
         try:
             with httpx.Client(timeout=self.timeout) as client:
                 response = client.put(
-                    f"{self.api_url}/api/v1/watchlist/{ticker.upper()}/notes",
-                    json={"notes": notes}
+                    f"{self.api_url}/api/v1/watchlist/{ticker.upper()}/notes", json={"notes": notes}
                 )
             return response.status_code == 200
         except (httpx.RequestError, json.JSONDecodeError):
@@ -563,8 +555,7 @@ class RemoteDataProvider:
         try:
             with httpx.Client(timeout=self.timeout) as client:
                 response = client.post(
-                    f"{self.api_url}/api/v1/lists/categories",
-                    json={"name": name, "icon": icon}
+                    f"{self.api_url}/api/v1/lists/categories", json={"name": name, "icon": icon}
                 )
             return response.status_code == 200
         except (httpx.RequestError, json.JSONDecodeError):
@@ -574,9 +565,7 @@ class RemoteDataProvider:
         """Delete a category."""
         try:
             with httpx.Client(timeout=self.timeout) as client:
-                response = client.delete(
-                    f"{self.api_url}/api/v1/lists/categories/{category_id}"
-                )
+                response = client.delete(f"{self.api_url}/api/v1/lists/categories/{category_id}")
             return response.status_code == 200
         except (httpx.RequestError, json.JSONDecodeError):
             return False

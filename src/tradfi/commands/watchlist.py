@@ -57,14 +57,18 @@ def watchlist_remove(
 
 @app.command("show")
 def watchlist_show(
-    fetch_data: bool = typer.Option(True, "--fetch/--no-fetch", help="Fetch current data for stocks"),
+    fetch_data: bool = typer.Option(
+        True, "--fetch/--no-fetch", help="Fetch current data for stocks"
+    ),
 ) -> None:
     """Show your watchlist with current metrics."""
     provider = _get_provider()
     watchlist = provider.get_watchlist()
 
     if not watchlist:
-        console.print("[dim]Your watchlist is empty. Use 'tradfi watchlist add <ticker>' to add stocks.[/]")
+        console.print(
+            "[dim]Your watchlist is empty. Use 'tradfi watchlist add <ticker>' to add stocks.[/]"
+        )
         return
 
     console.print()
@@ -111,9 +115,13 @@ def watchlist_show(
                 elif rsi_val is not None and rsi_val < 40:
                     rsi = f"[yellow]{rsi}[/]"
 
-                table.add_row(ticker, price, pe, rsi, vs_low, mos, signal, notes[:20] if notes else "")
+                table.add_row(
+                    ticker, price, pe, rsi, vs_low, mos, signal, notes[:20] if notes else ""
+                )
             else:
-                table.add_row(ticker, "[red]Error[/]", "", "", "", "", "", notes[:20] if notes else "")
+                table.add_row(
+                    ticker, "[red]Error[/]", "", "", "", "", "", notes[:20] if notes else ""
+                )
 
         console.print(table)
     else:

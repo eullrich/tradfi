@@ -102,7 +102,7 @@ def show_list(
     # Display in columns
     cols = 5
     for i in range(0, len(tickers), cols):
-        row = tickers[i:i+cols]
+        row = tickers[i : i + cols]
         console.print("  ".join(f"[cyan]{t:6}[/]" for t in row))
 
     console.print()
@@ -216,6 +216,7 @@ def remove_ticker(
 # Long/Short List Shared Logic
 # ============================================================================
 
+
 def _manage_position_list(
     list_key: str,
     display_name: str,
@@ -262,9 +263,12 @@ def _manage_position_list(
 # Long List Commands - for stocks you want to go long on
 # ============================================================================
 
+
 @app.command("long")
 def long_list(
-    ticker: Optional[str] = typer.Argument(None, help="Ticker to add to long list (omit to view list)"),
+    ticker: Optional[str] = typer.Argument(
+        None, help="Ticker to add to long list (omit to view list)"
+    ),
     remove: bool = typer.Option(False, "--remove", "-r", help="Remove ticker from long list"),
     clear: bool = typer.Option(False, "--clear", help="Clear all tickers from long list"),
 ) -> None:
@@ -284,9 +288,12 @@ def long_list(
 # Short List Commands - for stocks you want to short
 # ============================================================================
 
+
 @app.command("short")
 def short_list(
-    ticker: Optional[str] = typer.Argument(None, help="Ticker to add to short list (omit to view list)"),
+    ticker: Optional[str] = typer.Argument(
+        None, help="Ticker to add to short list (omit to view list)"
+    ),
     remove: bool = typer.Option(False, "--remove", "-r", help="Remove ticker from short list"),
     clear: bool = typer.Option(False, "--clear", help="Clear all tickers from short list"),
 ) -> None:
@@ -302,11 +309,14 @@ def short_list(
     _manage_position_list(SHORT_LIST, "Short list", "red", "short", ticker, remove, clear)
 
 
-def _display_position_list(provider: RemoteDataProvider, title: str, tickers: list[str], color: str, action: str) -> None:
+def _display_position_list(
+    provider: RemoteDataProvider, title: str, tickers: list[str], color: str, action: str
+) -> None:
     """Display a long or short position list with current prices."""
     if not tickers:
         console.print(f"[yellow]Your {title.lower()} is empty.[/]")
-        console.print(f"[dim]Add stocks with: tradfi list {'long' if action == 'buy' else 'short'} <TICKER>[/]")
+        cmd = "long" if action == "buy" else "short"
+        console.print(f"[dim]Add stocks with: tradfi list {cmd} <TICKER>[/]")
         return
 
     console.print(f"\n[bold {color}]{title}[/] ({len(tickers)} stocks)\n")
@@ -322,7 +332,12 @@ def _display_position_list(provider: RemoteDataProvider, title: str, tickers: li
         stock = provider.fetch_stock(ticker)
         if stock:
             price = f"${stock.current_price:.2f}" if stock.current_price else "-"
-            pe = f"{stock.valuation.pe_trailing:.1f}" if stock.valuation.pe_trailing and isinstance(stock.valuation.pe_trailing, (int, float)) else "-"
+            pe = (
+                f"{stock.valuation.pe_trailing:.1f}"
+                if stock.valuation.pe_trailing
+                and isinstance(stock.valuation.pe_trailing, (int, float))
+                else "-"
+            )
             pct_52wh = stock.technical.pct_from_52w_high
             high_52 = f"{pct_52wh:.0f}%" if pct_52wh else "-"
             rsi = f"{stock.technical.rsi_14:.0f}" if stock.technical.rsi_14 else "-"
@@ -332,7 +347,9 @@ def _display_position_list(provider: RemoteDataProvider, title: str, tickers: li
 
     console.print(table)
     console.print()
-    console.print(f"[dim]Remove: tradfi list {'long' if action == 'buy' else 'short'} <TICKER> -r[/]")
+    console.print(
+        f"[dim]Remove: tradfi list {'long' if action == 'buy' else 'short'} <TICKER> -r[/]"
+    )
     console.print(f"[dim]Export: tradfi list show {'_long' if action == 'buy' else '_short'} -e[/]")
 
 
@@ -381,7 +398,7 @@ def category_list() -> None:
 
     if not categories:
         console.print("[yellow]No categories found.[/]")
-        console.print("[dim]Create one with: tradfi list category create \"My Category\"[/]")
+        console.print('[dim]Create one with: tradfi list category create "My Category"[/]')
         return
 
     table = Table(
@@ -475,6 +492,7 @@ def unmove_list(
 # Enhanced Notes Commands
 # ============================================================================
 
+
 @app.command("note")
 def note_ticker(
     list_name: str = typer.Argument(..., help="Name of the list"),
@@ -525,6 +543,7 @@ def note_ticker(
 # Position/Portfolio Commands
 # ============================================================================
 
+
 @app.command("position")
 def set_position_cmd(
     list_name: str = typer.Argument(..., help="Name of the list"),
@@ -572,7 +591,9 @@ def set_position_cmd(
         console.print("[yellow]Specify at least one of: --shares, --entry, --target, --thesis[/]")
         raise typer.Exit(1)
 
-    if provider.set_position(list_name, ticker, shares=shares, entry_price=entry, target_price=target, thesis=thesis):
+    if provider.set_position(
+        list_name, ticker, shares=shares, entry_price=entry, target_price=target, thesis=thesis
+    ):
         parts = []
         if shares is not None:
             parts.append(f"{shares:.0f} shares")
@@ -580,7 +601,9 @@ def set_position_cmd(
             parts.append(f"${entry:.2f} entry")
         if target is not None:
             parts.append(f"${target:.2f} target")
-        console.print(f"[green]Set position for {ticker}: {', '.join(parts) if parts else 'updated'}[/]")
+        console.print(
+            f"[green]Set position for {ticker}: {', '.join(parts) if parts else 'updated'}[/]"
+        )
     else:
         console.print(f"[red]Failed to set position for {ticker}[/]")
 
@@ -609,7 +632,10 @@ def show_portfolio(
 
     if portfolio.get("position_count", 0) == 0:
         console.print(f"[yellow]No positions in '{list_name}'[/]")
-        console.print(f"[dim]Add positions with: tradfi list position {list_name} TICKER --shares 100 --entry 50[/]")
+        console.print(
+            f"[dim]Add positions with: tradfi list position"
+            f" {list_name} TICKER --shares 100 --entry 50[/]"
+        )
         return
 
     if export:
@@ -674,7 +700,9 @@ def _display_portfolio_table(portfolio: dict, list_name: str) -> None:
         f"Cost: [cyan]${portfolio.get('total_cost_basis', 0):,.0f}[/]  |  "
         f"Value: [cyan]${portfolio.get('total_current_value', 0):,.0f}[/]  |  "
         f"P&L: [{total_pnl_color}]${total_pnl:+,.0f}[/] "
-        f"({total_pnl_pct:+.1f}%)" if total_pnl_pct else ""
+        f"({total_pnl_pct:+.1f}%)"
+        if total_pnl_pct
+        else ""
     )
     console.print(f"[dim]Positions: {portfolio.get('position_count', 0)}[/]")
 

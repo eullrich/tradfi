@@ -1,4 +1,5 @@
 """Entry point for Railway deployment."""
+
 import os
 import sys
 from pathlib import Path
@@ -14,5 +15,6 @@ from tradfi.api.main import app  # noqa: E402
 # For running directly with `python main.py`
 if __name__ == "__main__":
     import uvicorn
+
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)

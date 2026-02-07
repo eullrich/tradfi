@@ -5,21 +5,20 @@ from pydantic import BaseModel
 
 from tradfi.core.currency import (
     CURRENCY_SYMBOLS,
-    SUPPORTED_CURRENCIES,
     DEFAULT_CURRENCY_CYCLE,
+    SUPPORTED_CURRENCIES,
+    clear_rate_cache,
     fetch_exchange_rate,
     fetch_exchange_rates,
     get_currency_symbol,
-    clear_rate_cache,
-    get_all_cached_rates,
 )
 from tradfi.utils.cache import (
+    cache_currency_rate,
+    clear_currency_rates,
+    get_all_cached_currency_rates,
+    get_currency_rate_ttl,
     get_display_currency,
     set_display_currency,
-    get_currency_rate_ttl,
-    cache_currency_rate,
-    get_all_cached_currency_rates,
-    clear_currency_rates,
 )
 
 router = APIRouter(prefix="/currency", tags=["currency"])
@@ -27,6 +26,7 @@ router = APIRouter(prefix="/currency", tags=["currency"])
 
 class ExchangeRateSchema(BaseModel):
     """Exchange rate information."""
+
     currency: str
     rate_to_usd: float
     symbol: str
@@ -34,6 +34,7 @@ class ExchangeRateSchema(BaseModel):
 
 class CurrencyConfigSchema(BaseModel):
     """Currency configuration."""
+
     display_currency: str
     display_symbol: str
     available_currencies: list[str]
@@ -43,6 +44,7 @@ class CurrencyConfigSchema(BaseModel):
 
 class MessageSchema(BaseModel):
     """Simple message response."""
+
     message: str
 
 
@@ -50,8 +52,11 @@ class MessageSchema(BaseModel):
 async def get_rates(
     currencies: str = Query(
         default=None,
-        description="Comma-separated currency codes (e.g., EUR,GBP,JPY). If omitted, returns all cached rates.",
-    )
+        description=(
+            "Comma-separated currency codes (e.g., EUR,GBP,JPY)."
+            " If omitted, returns all cached rates."
+        ),
+    ),
 ):
     """
     Get exchange rates for specified currencies.
@@ -163,7 +168,9 @@ async def get_currency_config():
 
 
 @router.put("/config", response_model=CurrencyConfigSchema)
-async def update_currency_config(currency: str = Query(..., description="Currency code to set as default")):
+async def update_currency_config(
+    currency: str = Query(..., description="Currency code to set as default"),
+):
     """Set the default display currency."""
     currency = currency.upper()
 
@@ -185,7 +192,4 @@ async def update_currency_config(currency: str = Query(..., description="Currenc
 @router.get("/symbols")
 async def get_symbols():
     """Get all supported currency symbols."""
-    return {
-        currency: symbol
-        for currency, symbol in CURRENCY_SYMBOLS.items()
-    }
+    return {currency: symbol for currency, symbol in CURRENCY_SYMBOLS.items()}

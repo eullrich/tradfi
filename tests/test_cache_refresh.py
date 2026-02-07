@@ -1,8 +1,6 @@
 """Tests for cache refresh functionality."""
 
-import asyncio
 import os
-import sqlite3
 import tempfile
 import time
 from unittest.mock import MagicMock, patch
@@ -16,13 +14,12 @@ os.environ["TRADFI_DB_PATH"] = TEST_DB_PATH
 os.environ["TRADFI_DATA_DIR"] = TEST_DB_DIR
 os.environ["TRADFI_CONFIG_PATH"] = os.path.join(TEST_DB_DIR, "config.json")
 
-from tradfi.api.scheduler import get_refresh_state, refresh_universe, _refresh_state
-from tradfi.utils.cache import (
+from tradfi.api.scheduler import _refresh_state, get_refresh_state, refresh_universe  # noqa: E402
+from tradfi.utils.cache import (  # noqa: E402
     cache_stock_data,
     clear_cache,
     get_cache_stats,
     get_cached_stock_data,
-    get_db_connection,
 )
 
 
@@ -119,7 +116,7 @@ class TestRefreshState:
 
         with patch("tradfi.api.scheduler.load_tickers", return_value=["AAPL", "MSFT"]):
             with patch("tradfi.api.scheduler.fetch_stock_from_api", side_effect=mock_fetch):
-                stats = await refresh_universe("dow30", delay=0.01)
+                await refresh_universe("dow30", delay=0.01)
 
         # Verify states during refresh
         assert len(states_during_refresh) == 2  # 2 tickers

@@ -1,6 +1,7 @@
 """Main CLI entry point for tradfi."""
 
 import os
+
 import typer
 from rich.console import Console
 
@@ -10,13 +11,13 @@ from tradfi import __version__
 DEFAULT_API_URL = os.environ.get("TRADFI_API_URL", "https://deepv-production.up.railway.app")
 # Admin API key for cache/refresh operations
 ADMIN_KEY = os.environ.get("TRADFI_ADMIN_KEY")
-from tradfi.commands.analyze import analyze
-from tradfi.commands.screen import screen
-from tradfi.commands.quarterly import quarterly
-from tradfi.commands.compare import compare
-from tradfi.commands.watchlist import app as watchlist_app
-from tradfi.commands.cache import app as cache_app
-from tradfi.commands.lists import app as lists_app
+from tradfi.commands.analyze import analyze  # noqa: E402
+from tradfi.commands.cache import app as cache_app  # noqa: E402
+from tradfi.commands.compare import compare  # noqa: E402
+from tradfi.commands.lists import app as lists_app  # noqa: E402
+from tradfi.commands.quarterly import quarterly  # noqa: E402
+from tradfi.commands.screen import screen  # noqa: E402
+from tradfi.commands.watchlist import app as watchlist_app  # noqa: E402
 
 console = Console()
 
@@ -79,7 +80,9 @@ def api(
     import uvicorn
 
     console.print(f"[green]Starting TradFi API server on {host}:{port}[/green]")
-    console.print(f"[blue]API docs: http://{host if host != '0.0.0.0' else 'localhost'}:{port}/docs[/blue]")
+    console.print(
+        f"[blue]API docs: http://{host if host != '0.0.0.0' else 'localhost'}:{port}/docs[/blue]"
+    )
 
     uvicorn.run(
         "tradfi.api.main:app",
@@ -100,6 +103,7 @@ def serve(
     Example: tradfi serve --port 8000
     """
     import uvicorn
+
     from tradfi.api import app as api_app
 
     console.print(f"[green]Starting TradFi API server on {host}:{port}[/]")
