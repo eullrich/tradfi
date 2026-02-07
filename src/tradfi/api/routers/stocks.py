@@ -50,7 +50,7 @@ async def analyze_stocks(request: AnalyzeRequestSchema):
     return results
 
 
-@router.get("/batch/all", response_model=dict[str, StockSchema])
+@router.get("/batch/all")
 async def get_all_stocks():
     """
     Get all cached stocks in a single request.
@@ -61,10 +61,16 @@ async def get_all_stocks():
     Returns dict mapping ticker to stock data.
     """
     stocks = fetch_stocks_batch()
-    return {ticker: stock_to_schema(stock) for ticker, stock in stocks.items()}
+    result = {}
+    for ticker, stock in stocks.items():
+        try:
+            result[ticker] = stock_to_schema(stock)
+        except Exception:
+            pass  # Skip stocks that fail schema conversion
+    return result
 
 
-@router.post("/batch", response_model=dict[str, StockSchema])
+@router.post("/batch")
 async def get_stocks_batch(tickers: list[str]):
     """
     Get multiple stocks by ticker in a single request.
@@ -72,7 +78,13 @@ async def get_stocks_batch(tickers: list[str]):
     Returns dict mapping ticker to stock data. Missing tickers are omitted.
     """
     stocks = fetch_stocks_batch(tickers)
-    return {ticker: stock_to_schema(stock) for ticker, stock in stocks.items()}
+    result = {}
+    for ticker, stock in stocks.items():
+        try:
+            result[ticker] = stock_to_schema(stock)
+        except Exception:
+            pass  # Skip stocks that fail schema conversion
+    return result
 
 
 @router.get("/{ticker}/quarterly", response_model=QuarterlyTrendsSchema)
