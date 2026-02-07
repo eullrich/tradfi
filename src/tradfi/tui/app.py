@@ -2171,7 +2171,7 @@ class StockDetailScreen(Screen):
 
         try:
             report = deep_research(self.stock.ticker)
-            self.call_from_thread(self._display_research, report)
+            self.app.call_from_thread(self._display_research, report)
         except Exception:
             # Screen may have been dismissed, silently ignore
             pass
@@ -2264,10 +2264,10 @@ class StockDetailScreen(Screen):
         """Background worker to fetch quarterly data from remote API."""
         try:
             trends = self.remote_provider.fetch_quarterly(self.stock.ticker, periods=8)
-            self.call_from_thread(self._display_quarterly, trends)
+            self.app.call_from_thread(self._display_quarterly, trends)
         except Exception as e:
             # Show error instead of silently ignoring
-            self.call_from_thread(self._display_quarterly_error, str(e))
+            self.app.call_from_thread(self._display_quarterly_error, str(e))
 
     def _display_quarterly_error(self, error: str) -> None:
         """Display error when quarterly fetch fails."""
@@ -2435,7 +2435,7 @@ class StockDetailScreen(Screen):
             # Find similar stocks
             similar = find_similar_stocks(self.stock, candidates, limit=8, min_score=20)
 
-            self.call_from_thread(self._display_similar, similar)
+            self.app.call_from_thread(self._display_similar, similar)
         except Exception:
             # Screen may have been dismissed, silently ignore
             pass
