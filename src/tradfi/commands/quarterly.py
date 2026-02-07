@@ -129,11 +129,11 @@ def _display_quarterly(ticker: str, periods: int) -> None:
     for q in trends.quarters[:6]:  # Show last 6 quarters
         table.add_row(
             q.quarter,
-            format_large_number(q.revenue) if q.revenue else "-",
-            format_large_number(q.net_income) if q.net_income else "-",
-            f"{q.gross_margin:.1f}%" if q.gross_margin else "-",
-            f"{q.operating_margin:.1f}%" if q.operating_margin else "-",
-            f"{q.net_margin:.1f}%" if q.net_margin else "-",
+            format_large_number(q.revenue) if q.revenue is not None else "-",
+            format_large_number(q.net_income) if q.net_income is not None else "-",
+            f"{q.gross_margin:.1f}%" if q.gross_margin is not None else "-",
+            f"{q.operating_margin:.1f}%" if q.operating_margin is not None else "-",
+            f"{q.net_margin:.1f}%" if q.net_margin is not None else "-",
         )
 
     console.print(table)

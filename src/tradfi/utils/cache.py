@@ -624,12 +624,12 @@ def add_to_watchlist(ticker: str, notes: str | None = None) -> bool:
     """Add a ticker to the watchlist. Returns True if added, False if already exists."""
     conn = get_db_connection()
     try:
-        conn.execute(
+        cursor = conn.execute(
             "INSERT OR IGNORE INTO watchlist (ticker, added_at, notes) VALUES (?, ?, ?)",
             (ticker.upper(), int(time.time()), notes)
         )
         conn.commit()
-        return conn.total_changes > 0
+        return cursor.rowcount > 0
     finally:
         conn.close()
 
@@ -1693,13 +1693,13 @@ def user_add_to_watchlist(user_id: int, ticker: str, notes: str | None = None) -
     """
     conn = get_db_connection()
     try:
-        conn.execute(
+        cursor = conn.execute(
             """INSERT OR IGNORE INTO user_watchlist (user_id, ticker, added_at, notes)
                VALUES (?, ?, ?, ?)""",
             (user_id, ticker.upper(), int(time.time()), notes)
         )
         conn.commit()
-        return conn.total_changes > 0
+        return cursor.rowcount > 0
     finally:
         conn.close()
 
@@ -1870,17 +1870,19 @@ def user_add_to_list(
             return False
 
         now = int(time.time())
-        conn.execute(
+        cursor = conn.execute(
             """INSERT OR IGNORE INTO user_saved_list_items (list_id, ticker, added_at, notes)
                VALUES (?, ?, ?, ?)""",
             (list_row["id"], ticker.upper(), now, notes)
         )
-        conn.execute(
-            "UPDATE user_saved_lists SET updated_at = ? WHERE id = ?",
-            (now, list_row["id"])
-        )
+        inserted = cursor.rowcount > 0
+        if inserted:
+            conn.execute(
+                "UPDATE user_saved_lists SET updated_at = ? WHERE id = ?",
+                (now, list_row["id"])
+            )
         conn.commit()
-        return conn.total_changes > 0
+        return inserted
     finally:
         conn.close()
 
