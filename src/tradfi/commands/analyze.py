@@ -1,25 +1,22 @@
 """Analyze command - deep dive into a single stock or compare multiple."""
 
-import json
 import csv
-from pathlib import Path
+import json
 from typing import Optional
-from dataclasses import asdict
 
 import typer
+from rich import box
 from rich.console import Console
 from rich.table import Table
-from rich import box
 
 from tradfi.core.data import fetch_stock
 from tradfi.models.stock import Stock
 from tradfi.utils.display import (
     display_stock_analysis,
+    format_large_number,
     format_number,
     format_pct,
-    format_large_number,
     get_signal_display,
-    get_margin_of_safety_display,
 )
 
 console = Console()
