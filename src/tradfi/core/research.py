@@ -7,11 +7,8 @@ import json
 import os
 import re
 from dataclasses import dataclass
-from datetime import datetime
-from io import BytesIO
-from typing import Literal
-from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 
 def _read_response(response) -> bytes:

@@ -3,10 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from typing import Optional
 
 
 @dataclass
@@ -190,32 +186,3 @@ def calculate_portfolio_metrics(
         position_metrics.append(pm)
 
     return PortfolioMetrics(positions=position_metrics)
-
-
-def calculate_position_metrics(
-    ticker: str,
-    shares: float,
-    entry_price: float,
-    current_price: float | None = None,
-    target_price: float | None = None,
-) -> PositionMetrics:
-    """
-    Calculate metrics for a single position.
-
-    Args:
-        ticker: Stock ticker symbol
-        shares: Number of shares
-        entry_price: Entry price per share
-        current_price: Current market price (optional)
-        target_price: Target price (optional)
-
-    Returns:
-        PositionMetrics with calculated values
-    """
-    return PositionMetrics(
-        ticker=ticker.upper(),
-        shares=shares,
-        entry_price=entry_price,
-        current_price=current_price,
-        target_price=target_price,
-    )

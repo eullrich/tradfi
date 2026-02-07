@@ -1,12 +1,11 @@
 """Watchlist command - manage stock watchlist."""
 
 import os
-from typing import Optional
 
 import typer
+from rich import box
 from rich.console import Console
 from rich.table import Table
-from rich import box
 
 from tradfi.core.remote_provider import RemoteDataProvider
 from tradfi.utils.display import format_number, format_pct, get_signal_display
@@ -18,9 +17,10 @@ DEFAULT_API_URL = "https://deepv-production.up.railway.app"
 
 
 def _get_provider() -> RemoteDataProvider:
-    """Get the remote data provider using API URL from environment."""
+    """Get the remote data provider using API URL and admin key from environment."""
     api_url = os.environ.get("TRADFI_API_URL", DEFAULT_API_URL)
-    return RemoteDataProvider(api_url)
+    admin_key = os.environ.get("TRADFI_ADMIN_KEY")
+    return RemoteDataProvider(api_url, admin_key=admin_key)
 
 
 # Create a Typer app for watchlist subcommands
