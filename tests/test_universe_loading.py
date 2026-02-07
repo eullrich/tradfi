@@ -74,30 +74,22 @@ class TestLoadTickers:
     def test_russell2000_has_substantial_tickers(self):
         """Russell 2000 should have >1000 tickers."""
         tickers = load_tickers("russell2000")
-        assert len(tickers) > 1000, (
-            f"russell2000 has only {len(tickers)} tickers, expected >1000"
-        )
+        assert len(tickers) > 1000, f"russell2000 has only {len(tickers)} tickers, expected >1000"
 
     def test_nasdaq_has_substantial_tickers(self):
         """NASDAQ composite should have >2000 tickers."""
         tickers = load_tickers("nasdaq")
-        assert len(tickers) > 2000, (
-            f"nasdaq has only {len(tickers)} tickers, expected >2000"
-        )
+        assert len(tickers) > 2000, f"nasdaq has only {len(tickers)} tickers, expected >2000"
 
     def test_sp500_has_expected_count(self):
         """S&P 500 should have ~500 tickers."""
         tickers = load_tickers("sp500")
-        assert 450 < len(tickers) < 550, (
-            f"sp500 has {len(tickers)} tickers, expected ~500"
-        )
+        assert 450 < len(tickers) < 550, f"sp500 has {len(tickers)} tickers, expected ~500"
 
     def test_dow30_has_expected_count(self):
         """Dow 30 should have ~30 tickers."""
         tickers = load_tickers("dow30")
-        assert 25 < len(tickers) < 40, (
-            f"dow30 has {len(tickers)} tickers, expected ~30"
-        )
+        assert 25 < len(tickers) < 40, f"dow30 has {len(tickers)} tickers, expected ~30"
 
     def test_tickers_are_nonempty_strings(self):
         """Every ticker in every universe should be a non-empty string."""
@@ -198,9 +190,7 @@ class TestFetchStockData:
         """All universes + category filter must use fetch_stocks_batch, not fetch_all."""
         from tradfi.tui.app import ScreenerApp
 
-        stub = self._make_app_stub(
-            selected_universes=set(), selected_categories={"REITs"}
-        )
+        stub = self._make_app_stub(selected_universes=set(), selected_categories={"REITs"})
         ScreenerApp._fetch_stock_data(stub)
 
         stub.remote_provider.fetch_stocks_batch.assert_called_once()
@@ -301,9 +291,7 @@ class TestBatchChunking:
 
         for c in mock_single.call_args_list:
             chunk = c[0][0]  # First positional arg
-            assert len(chunk) <= 500, (
-                f"Chunk has {len(chunk)} tickers, exceeds 500 limit"
-            )
+            assert len(chunk) <= 500, f"Chunk has {len(chunk)} tickers, exceeds 500 limit"
 
     @patch.object(RemoteDataProvider, "_fetch_stocks_batch_single")
     def test_chunking_preserves_all_tickers(self, mock_single):
@@ -323,7 +311,8 @@ class TestBatchChunking:
     @patch.object(RemoteDataProvider, "_fetch_stocks_batch_single")
     def test_chunked_results_merged(self, mock_single):
         """Results from all chunks must be merged into one dict."""
-        def side_effect(chunk):
+
+        def side_effect(chunk, **kwargs):
             return {t: _make_stock(t) for t in chunk[:2]}  # Return 2 per chunk
 
         mock_single.side_effect = side_effect

@@ -134,12 +134,18 @@ def fetch_stock(
     return None
 
 
-def fetch_stocks_batch(tickers: list[str] | None = None) -> dict[str, Stock]:
+def fetch_stocks_batch(
+    tickers: list[str] | None = None, fetch_missing: bool = False
+) -> dict[str, Stock]:
     """
     Fetch multiple stocks from cache in a single efficient query.
 
+    When fetch_missing is True and specific tickers are provided, any tickers
+    not found in cache will be fetched from yfinance via fetch_stock_from_api().
+
     Args:
         tickers: List of ticker symbols. If None, returns all cached stocks.
+        fetch_missing: If True, fetch uncached tickers from yfinance.
 
     Returns:
         Dict mapping ticker to Stock object.
@@ -151,6 +157,18 @@ def fetch_stocks_batch(tickers: list[str] | None = None) -> dict[str, Stock]:
             result[ticker] = _dict_to_stock(data)
         except Exception:
             pass  # Skip stocks with corrupt/incompatible cached data
+
+    # Fetch missing tickers from yfinance if requested
+    if fetch_missing and tickers:
+        missing_tickers = [t.upper() for t in tickers if t.upper() not in result]
+        for ticker in missing_tickers:
+            try:
+                stock = fetch_stock_from_api(ticker)
+                if stock:
+                    result[ticker] = stock
+            except Exception:
+                pass  # Individual failures don't break the batch
+
     return result
 
 

@@ -96,7 +96,9 @@ class RemoteDataProvider:
         except (httpx.RequestError, json.JSONDecodeError):
             return {}
 
-    def fetch_stocks_batch(self, tickers: list[str]) -> dict[str, Stock]:
+    def fetch_stocks_batch(
+        self, tickers: list[str], fetch_missing: bool = False
+    ) -> dict[str, Stock]:
         """Fetch multiple stocks by ticker in a single request.
 
         For large ticker lists (>500), requests are chunked to avoid
@@ -104,6 +106,7 @@ class RemoteDataProvider:
 
         Args:
             tickers: List of ticker symbols to fetch.
+            fetch_missing: If True, fetch uncached tickers from yfinance on the server.
 
         Returns:
             Dict mapping ticker to Stock object. Missing tickers are omitted.
@@ -114,19 +117,29 @@ class RemoteDataProvider:
         # Chunk large requests to avoid payload/SQL parameter limits
         CHUNK_SIZE = 500
         if len(tickers) <= CHUNK_SIZE:
-            return self._fetch_stocks_batch_single(tickers)
+            return self._fetch_stocks_batch_single(tickers, fetch_missing=fetch_missing)
 
         result: dict[str, Stock] = {}
         for i in range(0, len(tickers), CHUNK_SIZE):
             chunk = tickers[i : i + CHUNK_SIZE]
-            result.update(self._fetch_stocks_batch_single(chunk))
+            result.update(self._fetch_stocks_batch_single(chunk, fetch_missing=fetch_missing))
         return result
 
-    def _fetch_stocks_batch_single(self, tickers: list[str]) -> dict[str, Stock]:
+    def _fetch_stocks_batch_single(
+        self, tickers: list[str], fetch_missing: bool = False
+    ) -> dict[str, Stock]:
         """Fetch a single batch of stocks (internal helper)."""
         try:
-            with httpx.Client(timeout=60.0) as client:
-                response = client.post(f"{self.api_url}/api/v1/stocks/batch", json=tickers)
+            # When fetching missing tickers from yfinance, allow more time
+            # (e.g., 20 missing tickers * 2s rate limit = 40s + processing)
+            timeout = 180.0 if fetch_missing else 60.0
+            params = {"fetch_missing": "true"} if fetch_missing else None
+            with httpx.Client(timeout=timeout) as client:
+                response = client.post(
+                    f"{self.api_url}/api/v1/stocks/batch",
+                    json=tickers,
+                    params=params,
+                )
 
             if response.status_code == 200:
                 data = response.json()

@@ -3573,9 +3573,9 @@ class ScreenerApp(App):
                 return {}, []
 
             self.call_from_thread(
-                self._update_progress_batch, "Loading from cache...", 0, len(ticker_list), 0
+                self._update_progress_batch, "Loading stocks...", 0, len(ticker_list), 0
             )
-            all_stocks = self.remote_provider.fetch_stocks_batch(ticker_list)
+            all_stocks = self.remote_provider.fetch_stocks_batch(ticker_list, fetch_missing=True)
 
         return all_stocks, ticker_list
 
