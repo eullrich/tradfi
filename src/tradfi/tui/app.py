@@ -3750,6 +3750,19 @@ class ScreenerApp(App):
             self._cached_ticker_list = ticker_list
             self._stock_cache_key = cache_key
 
+            # Notify about partial cache coverage
+            if ticker_list and len(all_stocks) < len(ticker_list):
+                coverage_pct = int(len(all_stocks) / len(ticker_list) * 100)
+                self.call_from_thread(
+                    self.notify,
+                    f"Showing {len(all_stocks):,}/{len(ticker_list):,} stocks "
+                    f"({coverage_pct}% cached). "
+                    f"Press R to resync or use CLI: tradfi cache prefetch nasdaq",
+                    title="Partial Cache",
+                    severity="warning",
+                    timeout=10,
+                )
+
         if not ticker_list:
             return []
 
