@@ -32,6 +32,7 @@ def fetch_quarterly_financials(ticker_symbol: str, periods: int = 8) -> Optional
             return None
 
         quarters = []
+        quarter_shares: list[Optional[float]] = []  # shares outstanding per quarter
 
         # Get column dates (quarters) - most recent first
         dates = income_stmt.columns[:periods]
@@ -74,6 +75,7 @@ def fetch_quarterly_financials(ticker_symbol: str, periods: int = 8) -> Optional
 
             # Get book value per share from balance sheet
             book_value_per_share = None
+            shares = None
             if (
                 balance_sheet is not None
                 and not balance_sheet.empty
@@ -89,6 +91,7 @@ def fetch_quarterly_financials(ticker_symbol: str, periods: int = 8) -> Optional
                     shares = _safe_get(balance_sheet, "Share Issued", date)
                 if stockholders_equity is not None and shares is not None and shares > 0:
                     book_value_per_share = stockholders_equity / shares
+            quarter_shares.append(shares if shares is not None and shares > 0 else None)
 
             quarterly_data = QuarterlyData(
                 quarter=quarter_str,
@@ -136,6 +139,10 @@ def fetch_quarterly_financials(ticker_symbol: str, periods: int = 8) -> Optional
 
                     # Always store the quarter-end price
                     q.price_at_quarter_end = price_at_qend
+
+                    # Compute market cap = price * shares outstanding
+                    if i < len(quarter_shares) and quarter_shares[i] is not None:
+                        q.market_cap = price_at_qend * quarter_shares[i]
 
                     # Compute P/B ratio (independent of trailing EPS)
                     if q.book_value_per_share is not None and q.book_value_per_share > 0:

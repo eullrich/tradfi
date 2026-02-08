@@ -137,6 +137,7 @@ class QuarterlyDataSchema(BaseModel):
     book_value_per_share: float | None = None
     pb_ratio: float | None = None
     price_at_quarter_end: float | None = None
+    market_cap: float | None = None
 
 
 class QuarterlyTrendsSchema(BaseModel):

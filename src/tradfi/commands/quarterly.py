@@ -173,6 +173,7 @@ def _display_quarterly(ticker: str, periods: int) -> None:
     )
     table.add_column("Quarter", style="cyan")
     table.add_column("Revenue", justify="right")
+    table.add_column("Mkt Cap", justify="right")
     table.add_column("EPS", justify="right")
     table.add_column("P/E", justify="right")
     table.add_column("P/B", justify="right")
@@ -184,6 +185,9 @@ def _display_quarterly(ticker: str, periods: int) -> None:
     for q in trends.quarters:
         # Revenue
         rev_str = format_large_number(q.revenue) if q.revenue is not None else "-"
+
+        # Market Cap
+        mcap_str = format_large_number(q.market_cap) if q.market_cap is not None else "-"
 
         # EPS with color
         if q.eps is not None:
@@ -249,6 +253,7 @@ def _display_quarterly(ticker: str, periods: int) -> None:
         table.add_row(
             q.quarter,
             rev_str,
+            mcap_str,
             eps_str,
             pe_str,
             pb_str,

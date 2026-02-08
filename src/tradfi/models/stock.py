@@ -23,6 +23,7 @@ class QuarterlyData:
     book_value_per_share: Optional[float] = None
     pb_ratio: Optional[float] = None
     price_at_quarter_end: Optional[float] = None
+    market_cap: Optional[float] = None
 
 
 @dataclass
