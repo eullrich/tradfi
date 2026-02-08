@@ -32,6 +32,7 @@ FILTER_PILL_COLORS = {
     "preset": "green",
     "category": "magenta",
     "metric": "blue",
+    "text": "white",
 }
 
 # ETF category icons for quick visual recognition
@@ -651,12 +652,16 @@ class FilterPillsContainer(Horizontal):
         categories: set[str],
         preset: str | None,
         metric_filters: list[tuple[str, str, float]] | None = None,
+        text_filter: str = "",
     ) -> None:
         """Update the pills based on current filter state."""
         # Remove all existing children
         self.remove_children()
 
-        has_any = bool(universes or sectors or categories or preset or metric_filters)
+        has_any = bool(
+            universes or sectors or categories
+            or preset or metric_filters or text_filter
+        )
 
         if not has_any:
             self.remove_class("has-pills")
@@ -720,6 +725,16 @@ class FilterPillsContainer(Horizontal):
                     )
                 )
 
+        # Add text filter pill
+        if text_filter:
+            self.mount(
+                FilterPill(
+                    filter_type="text",
+                    filter_value=text_filter,
+                    display_name=f'"{text_filter}"',
+                )
+            )
+
         # Add Clear All button if we have multiple filters
         total_filters = (
             len(universes)
@@ -727,6 +742,7 @@ class FilterPillsContainer(Horizontal):
             + len(categories)
             + (1 if preset else 0)
             + (len(metric_filters) if metric_filters else 0)
+            + (1 if text_filter else 0)
         )
         if total_filters > 1:
             self.mount(ClearAllPill())
@@ -738,7 +754,7 @@ ACTION_MENU_ITEMS = {
         ("search", "/", "Search ticker"),
         ("universe", "u", "Filter by universe"),
         ("sector", "f", "Filter by sector/category"),
-        ("metric_filter", "g", "Filter by metric (pe<15 roe>10)"),
+        ("metric_filter", "g/n", "Filter table (name or pe<15 roe>10)"),
         ("clear", "c", "Clear all filters"),
     ],
     "Discovery": [
@@ -3236,8 +3252,7 @@ class ScreenerApp(App):
         text-align: center;
     }
 
-    #metric-filter-input {
-        display: none;
+    #table-filter-input {
         height: 1;
         min-height: 1;
         padding: 0 1;
@@ -3246,12 +3261,8 @@ class ScreenerApp(App):
         background: $surface-darken-1;
     }
 
-    #metric-filter-input.visible {
-        display: block;
-    }
-
-    #metric-filter-input:focus {
-        border: solid $success;
+    #table-filter-input:focus {
+        border: solid $accent;
     }
 
     #company-counter {
@@ -3280,8 +3291,9 @@ class ScreenerApp(App):
         # Column profile cycling
         Binding("v", "next_profile", "Next View", show=False),
         Binding("V", "prev_profile", "Prev View", show=False),
-        # Inline metric filter
+        # Table filter (unified text + metric)
         Binding("g", "metric_filter", "Metric Filter", show=False),
+        Binding("n", "focus_text_filter", "Filter", show=False),
         # Row pinning
         Binding("P", "toggle_pin", "Pin Row", show=False),
         Binding("ctrl+p", "show_pinned_only", "Pinned Only", show=False),
@@ -3617,6 +3629,7 @@ class ScreenerApp(App):
 
         # Metric filters (inline filter bar)
         self.metric_filters: list[tuple[str, str, float]] = []
+        self.table_filter_text: str = ""
         self._sectors_loaded: bool = False  # Track if sectors list is populated
         self._all_sectors: list[tuple[str, int]] = []  # Full list for filtering
 
@@ -3716,11 +3729,11 @@ class ScreenerApp(App):
                     id="loading",
                 ),
                 FilterPillsContainer(id="filter-pills"),
-                Input(
-                    placeholder="pe<15 roe>10 rsi<35 de<0.5 (Enter=apply Esc=cancel)",
-                    id="metric-filter-input",
-                ),
                 Static("", id="company-counter"),
+                Input(
+                    placeholder="Filter: name or pe<15 roe>10 rsi<35...",
+                    id="table-filter-input",
+                ),
                 DataTable(id="results-table"),
                 id="content",
             ),
@@ -4234,6 +4247,7 @@ class ScreenerApp(App):
                 categories=self.selected_categories,
                 preset=self.current_preset,
                 metric_filters=self.metric_filters,
+                text_filter=self.table_filter_text,
             )
         except NoMatches:
             pass  # Widget not yet mounted
@@ -4278,10 +4292,18 @@ class ScreenerApp(App):
                     for k, op, v in self.metric_filters
                     if f"{k}{op}{v:g}" != filter_value
                 ]
-                # Update pills and re-populate table (client-side filter only)
+                # Rebuild the filter input to reflect remaining filters
+                self._sync_filter_input()
                 self._update_filter_pills()
                 self._populate_table()
                 return  # Don't run screen again -- metric filters are client-side
+            elif filter_type == "text":
+                # Clear the text filter
+                self.table_filter_text = ""
+                self._sync_filter_input()
+                self._update_filter_pills()
+                self._populate_table()
+                return  # Client-side only
 
             # Update all UI components
             self._update_section_titles()
@@ -4955,6 +4977,14 @@ class ScreenerApp(App):
         if self.metric_filters:
             sorted_stocks = [s for s in sorted_stocks if self._passes_metric_filters(s)]
 
+        # Apply text filter (client-side)
+        if self.table_filter_text:
+            query = self.table_filter_text
+            sorted_stocks = [
+                s for s in sorted_stocks
+                if query in s.ticker.lower() or (s.name and query in s.name.lower())
+            ]
+
         # Apply pin filter
         if self.show_pinned_only and self.pinned_tickers:
             sorted_stocks = [s for s in sorted_stocks if s.ticker in self.pinned_tickers]
@@ -5085,11 +5115,15 @@ class ScreenerApp(App):
         self._run_screen()
 
     def action_back(self) -> None:
-        # If metric filter input is visible, hide it first
+        # If table filter input is focused, clear it and return focus to table
         try:
-            filter_input = self.query_one("#metric-filter-input", Input)
-            if filter_input.has_class("visible"):
-                filter_input.remove_class("visible")
+            text_filter = self.query_one("#table-filter-input", Input)
+            if text_filter.has_focus:
+                text_filter.value = ""
+                self.table_filter_text = ""
+                self.metric_filters = []
+                self._update_filter_pills()
+                self._populate_table()
                 self.query_one("#results-table", DataTable).focus()
                 return
         except NoMatches:
@@ -5452,22 +5486,8 @@ class ScreenerApp(App):
 
     # -- Inline metric filter --
     def action_metric_filter(self) -> None:
-        """Show/focus the metric filter input."""
-        try:
-            filter_input = self.query_one("#metric-filter-input", Input)
-            if filter_input.has_class("visible"):
-                # Toggle off
-                filter_input.remove_class("visible")
-                self.query_one("#results-table", DataTable).focus()
-            else:
-                filter_input.add_class("visible")
-                # Pre-fill with current expression
-                if self.metric_filters:
-                    expr = " ".join(f"{k}{op}{v:g}" for k, op, v in self.metric_filters)
-                    filter_input.value = expr
-                filter_input.focus()
-        except NoMatches:
-            pass
+        """Focus the table filter input (unified text + metric filter)."""
+        self.action_focus_text_filter()
 
     def _parse_metric_expression(self, expr: str) -> list[tuple[str, str, float]]:
         """Parse 'pe<15 roe>10' into [('pe', '<', 15.0), ...]."""
@@ -5485,6 +5505,36 @@ class ScreenerApp(App):
             self.metric_filters = []
         else:
             self.metric_filters = self._parse_metric_expression(expr)
+        self._update_filter_pills()
+        self._populate_table()
+
+    def _sync_filter_input(self) -> None:
+        """Sync the table filter input value from current metric_filters and table_filter_text."""
+        try:
+            parts: list[str] = []
+            if self.table_filter_text:
+                parts.append(self.table_filter_text)
+            for k, op, v in self.metric_filters:
+                parts.append(f"{k}{op}{v:g}")
+            text_filter = self.query_one("#table-filter-input", Input)
+            text_filter.value = " ".join(parts)
+        except NoMatches:
+            pass
+
+    def _apply_unified_filter(self, raw: str) -> None:
+        """Parse unified filter input: extract metric expressions and text filter."""
+        raw = raw.strip()
+        if not raw:
+            self.metric_filters = []
+            self.table_filter_text = ""
+        else:
+            # Extract metric expressions
+            self.metric_filters = self._parse_metric_expression(raw)
+            # Remainder after removing metric tokens is the text filter
+            remainder = re.sub(
+                r"[a-z0-9]+\s*[<>]=?\s*[-+]?\d*\.?\d+", "", raw.lower()
+            ).strip()
+            self.table_filter_text = remainder
         self._update_filter_pills()
         self._populate_table()
 
@@ -5525,6 +5575,13 @@ class ScreenerApp(App):
         search_input = self.query_one("#search-input", Input)
         search_input.focus()
 
+    def action_focus_text_filter(self) -> None:
+        """Focus the table filter input."""
+        try:
+            self.query_one("#table-filter-input", Input).focus()
+        except NoMatches:
+            pass
+
     def action_focus_universe(self) -> None:
         """Focus the universe selection list."""
         universe_select = self.query_one("#universe-select", SelectionList)
@@ -5563,8 +5620,14 @@ class ScreenerApp(App):
             preset_list = self.query_one("#preset-list", OptionList)
             preset_list.highlighted = 0  # Select "None (Custom)"
 
-            # Clear metric filters
+            # Clear metric filters and text filter
             self.metric_filters = []
+            self.table_filter_text = ""
+            try:
+                table_filter = self.query_one("#table-filter-input", Input)
+                table_filter.value = ""
+            except NoMatches:
+                pass
 
             # Clear pin-only mode
             self.show_pinned_only = False
@@ -5587,6 +5650,8 @@ class ScreenerApp(App):
         """Handle input changes for real-time filtering."""
         if event.input.id == "sector-search":
             self._display_filtered_sectors(event.value)
+        elif event.input.id == "table-filter-input":
+            self._apply_unified_filter(event.value)
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         """Handle input submission."""
@@ -5598,10 +5663,8 @@ class ScreenerApp(App):
         elif event.input.id == "sector-search":
             # Just filter on submit as well (already handled by on_input_changed)
             pass
-        elif event.input.id == "metric-filter-input":
-            # Apply metric filter and hide input
-            self._apply_metric_filters(event.value.strip())
-            event.input.remove_class("visible")
+        elif event.input.id == "table-filter-input":
+            # Filter is already applied reactively; just move focus to table
             self.query_one("#results-table", DataTable).focus()
 
     def _search_ticker(self, ticker: str) -> None:
