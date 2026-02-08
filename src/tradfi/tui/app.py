@@ -2400,16 +2400,92 @@ class StockDetailScreen(Screen):
 
             lines.append("")
 
-            # Recent quarters table
-            lines.append("[bold]Recent Quarters:[/]")
-            lines.append("[dim]Quarter   Revenue      Net Inc     Margin[/]")
-            for q in trends.quarters[:4]:
-                rev_str = format_large_number(q.revenue) if q.revenue else "N/A"
-                inc_str = format_large_number(q.net_income) if q.net_income else "N/A"
-                nm_str = f"{q.net_margin:.1f}%" if q.net_margin else "N/A"
-                lines.append(f"{q.quarter}   {rev_str:>10}  {inc_str:>10}  {nm_str:>6}")
+            # Valuation Evolution table
+            from rich import box
+            from rich.console import Group
+            from rich.table import Table as RichTable
+            from rich.text import Text
 
-            quarterly_panel.update("\n".join(lines))
+            def _cv(
+                val: float | None,
+                fmt: str,
+                thresholds: list[tuple[float, str]],
+                default_style: str = "",
+            ) -> str:
+                if val is None:
+                    return fmt
+                for threshold, style in thresholds:
+                    if val < threshold:
+                        return f"[{style}]{fmt}[/]"
+                return f"[{default_style}]{fmt}[/]" if default_style else fmt
+
+            table = RichTable(
+                show_header=True,
+                header_style="bold",
+                box=box.SIMPLE_HEAVY,
+                padding=(0, 1),
+            )
+            table.add_column("Quarter", style="cyan")
+            table.add_column("Revenue", justify="right")
+            table.add_column("Mkt Cap", justify="right")
+            table.add_column("EPS", justify="right")
+            table.add_column("P/E", justify="right")
+            table.add_column("P/B", justify="right")
+            table.add_column("Net %", justify="right")
+            table.add_column("Op %", justify="right")
+            table.add_column("FCF", justify="right")
+            table.add_column("PEG", justify="right")
+
+            for q in trends.quarters:
+                rev_s = format_large_number(q.revenue) if q.revenue is not None else "-"
+                mcap_s = (
+                    format_large_number(q.market_cap) if q.market_cap is not None else "-"
+                )
+                if q.eps is not None:
+                    ec = "green" if q.eps > 0 else "red"
+                    eps_s = f"[{ec}]{q.eps:.2f}[/]"
+                else:
+                    eps_s = "-"
+                pe_s = (
+                    _cv(q.pe_ratio, f"{q.pe_ratio:.1f}", [(15, "green"), (25, "yellow")], "red")
+                    if q.pe_ratio is not None
+                    else "-"
+                )
+                pb_s = (
+                    _cv(q.pb_ratio, f"{q.pb_ratio:.1f}", [(1.5, "green"), (3.0, "yellow")], "red")
+                    if q.pb_ratio is not None
+                    else "-"
+                )
+                if q.net_margin is not None:
+                    nc = "green" if q.net_margin > 0 else "red"
+                    nm_s = f"[{nc}]{q.net_margin:.1f}%[/]"
+                else:
+                    nm_s = "-"
+                if q.operating_margin is not None:
+                    oc = "green" if q.operating_margin > 0 else "red"
+                    om_s = f"[{oc}]{q.operating_margin:.1f}%[/]"
+                else:
+                    om_s = "-"
+                if q.free_cash_flow is not None:
+                    fc = "green" if q.free_cash_flow > 0 else "red"
+                    fcf_s = f"[{fc}]{format_large_number(q.free_cash_flow)}[/]"
+                else:
+                    fcf_s = "-"
+                peg_s = (
+                    _cv(
+                        q.peg_ratio,
+                        f"{q.peg_ratio:.2f}",
+                        [(1.0, "green"), (2.0, "yellow")],
+                        "red",
+                    )
+                    if q.peg_ratio is not None
+                    else "-"
+                )
+                table.add_row(
+                    q.quarter, rev_s, mcap_s, eps_s, pe_s, pb_s, nm_s, om_s, fcf_s, peg_s
+                )
+
+            quarterly_panel.update(Group(Text.from_markup("\n".join(lines)), table))
 
         except Exception as e:
             quarterly_panel.update(
