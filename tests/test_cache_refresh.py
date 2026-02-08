@@ -15,9 +15,11 @@ os.environ["TRADFI_DATA_DIR"] = TEST_DB_DIR
 os.environ["TRADFI_CONFIG_PATH"] = os.path.join(TEST_DB_DIR, "config.json")
 
 from tradfi.api.scheduler import _refresh_state, get_refresh_state, refresh_universe  # noqa: E402
+from tradfi.core.data import FetchOutcome, FetchResult  # noqa: E402
 from tradfi.utils.cache import (  # noqa: E402
     cache_stock_data,
     clear_cache,
+    get_batch_cache_freshness,
     get_cache_stats,
     get_cached_stock_data,
 )
@@ -42,6 +44,25 @@ def clean_cache():
     clear_cache()
     yield
     clear_cache()
+
+
+def _make_fresh_result(ticker: str) -> FetchResult:
+    """Create a FetchResult with FRESH outcome for testing."""
+    mock_stock = MagicMock()
+    mock_stock.model_dump.return_value = {"ticker": ticker, "price": 100.0}
+    return FetchResult(stock=mock_stock, outcome=FetchOutcome.FRESH)
+
+
+def _make_stale_result(ticker: str) -> FetchResult:
+    """Create a FetchResult with STALE outcome for testing."""
+    mock_stock = MagicMock()
+    mock_stock.model_dump.return_value = {"ticker": ticker, "price": 90.0}
+    return FetchResult(stock=mock_stock, outcome=FetchOutcome.STALE, error="rate limited")
+
+
+def _make_failed_result() -> FetchResult:
+    """Create a FetchResult with FAILED outcome for testing."""
+    return FetchResult(stock=None, outcome=FetchOutcome.FAILED, error="no data")
 
 
 class TestCacheBasics:
@@ -85,6 +106,37 @@ class TestCacheBasics:
         assert stats["total_cached"] == 0
 
 
+class TestBatchCacheFreshness:
+    """Test batch cache freshness checking."""
+
+    def test_all_missing(self, clean_cache):
+        """Test freshness check when nothing is cached."""
+        result = get_batch_cache_freshness(["AAPL", "MSFT"])
+        assert result["AAPL"] == "missing"
+        assert result["MSFT"] == "missing"
+
+    def test_all_fresh(self, clean_cache):
+        """Test freshness check when all are fresh."""
+        cache_stock_data("AAPL", {"ticker": "AAPL"})
+        cache_stock_data("MSFT", {"ticker": "MSFT"})
+
+        result = get_batch_cache_freshness(["AAPL", "MSFT"])
+        assert result["AAPL"] == "fresh"
+        assert result["MSFT"] == "fresh"
+
+    def test_mixed(self, clean_cache):
+        """Test freshness check with mixed results."""
+        cache_stock_data("AAPL", {"ticker": "AAPL"})
+
+        result = get_batch_cache_freshness(["AAPL", "MSFT"])
+        assert result["AAPL"] == "fresh"
+        assert result["MSFT"] == "missing"
+
+    def test_empty_list(self, clean_cache):
+        """Test freshness check with empty list."""
+        assert get_batch_cache_freshness([]) == {}
+
+
 class TestRefreshState:
     """Test refresh state tracking."""
 
@@ -98,24 +150,18 @@ class TestRefreshState:
     @pytest.mark.asyncio
     async def test_refresh_state_during_refresh(self, clean_cache):
         """Test refresh state updates during refresh."""
-        # Create a mock that tracks state during refresh
         states_during_refresh = []
 
         def mock_fetch(ticker):
             # Capture state during refresh
             states_during_refresh.append(get_refresh_state().copy())
-            # Return a mock stock object
-            mock_stock = MagicMock()
-            mock_stock.model_dump.return_value = {"ticker": ticker, "price": 100.0}
-            return mock_stock
-
-        # Create a tiny test universe file
-        test_universe_path = os.path.join(TEST_DB_DIR, "test_tickers.txt")
-        with open(test_universe_path, "w") as f:
-            f.write("AAPL\nMSFT\n")
+            return _make_fresh_result(ticker)
 
         with patch("tradfi.api.scheduler.load_tickers", return_value=["AAPL", "MSFT"]):
-            with patch("tradfi.api.scheduler.fetch_stock_from_api", side_effect=mock_fetch):
+            with patch(
+                "tradfi.api.scheduler.fetch_stock_from_api_with_result",
+                side_effect=mock_fetch,
+            ):
                 await refresh_universe("dow30", delay=0.01)
 
         # Verify states during refresh
@@ -129,19 +175,21 @@ class TestRefreshState:
         """Test refresh state after refresh completes."""
 
         def mock_fetch(ticker):
-            mock_stock = MagicMock()
-            mock_stock.model_dump.return_value = {"ticker": ticker}
-            return mock_stock
+            return _make_fresh_result(ticker)
 
         with patch("tradfi.api.scheduler.load_tickers", return_value=["AAPL"]):
-            with patch("tradfi.api.scheduler.fetch_stock_from_api", side_effect=mock_fetch):
+            with patch(
+                "tradfi.api.scheduler.fetch_stock_from_api_with_result",
+                side_effect=mock_fetch,
+            ):
                 await refresh_universe("dow30", delay=0.01)
 
         state = get_refresh_state()
         assert state["is_running"] is False
         assert state["last_refresh"] is not None
         assert state["last_refresh_stats"]["universe"] == "dow30"
-        assert state["last_refresh_stats"]["fetched"] == 1
+        assert state["last_refresh_stats"]["fresh"] == 1
+        assert state["last_refresh_stats"]["fetched"] == 1  # backwards compat
 
 
 class TestRefreshUniverse:
@@ -164,19 +212,20 @@ class TestRefreshUniverse:
         def mock_fetch(ticker):
             call_count[0] += 1
             if ticker == "FAIL":
-                return None  # Simulates a failed fetch
-            mock_stock = MagicMock()
-            mock_stock.model_dump.return_value = {"ticker": ticker}
-            return mock_stock
+                return _make_failed_result()
+            return _make_fresh_result(ticker)
 
         with patch("tradfi.api.scheduler.load_tickers", return_value=["AAPL", "FAIL", "MSFT"]):
-            with patch("tradfi.api.scheduler.fetch_stock_from_api", side_effect=mock_fetch):
-                stats = await refresh_universe("dow30", delay=0.01)
+            with patch(
+                "tradfi.api.scheduler.fetch_stock_from_api_with_result",
+                side_effect=mock_fetch,
+            ):
+                stats = await refresh_universe("dow30", delay=0.01, max_retries=0)
 
         assert stats["total"] == 3
-        assert stats["fetched"] == 2
+        assert stats["fresh"] == 2
         assert stats["failed"] == 1
-        assert call_count[0] == 3
+        assert stats["fetched"] == 2  # backwards compat: fresh + stale
 
     @pytest.mark.asyncio
     async def test_refresh_with_exceptions(self, clean_cache):
@@ -185,15 +234,16 @@ class TestRefreshUniverse:
         def mock_fetch(ticker):
             if ticker == "ERROR":
                 raise Exception("Network error")
-            mock_stock = MagicMock()
-            mock_stock.model_dump.return_value = {"ticker": ticker}
-            return mock_stock
+            return _make_fresh_result(ticker)
 
         with patch("tradfi.api.scheduler.load_tickers", return_value=["AAPL", "ERROR"]):
-            with patch("tradfi.api.scheduler.fetch_stock_from_api", side_effect=mock_fetch):
-                stats = await refresh_universe("dow30", delay=0.01)
+            with patch(
+                "tradfi.api.scheduler.fetch_stock_from_api_with_result",
+                side_effect=mock_fetch,
+            ):
+                stats = await refresh_universe("dow30", delay=0.01, max_retries=0)
 
-        assert stats["fetched"] == 1
+        assert stats["fresh"] == 1
         assert stats["failed"] == 1
 
     @pytest.mark.asyncio
@@ -201,14 +251,15 @@ class TestRefreshUniverse:
         """Test refresh actually caches the fetched data."""
 
         def mock_fetch(ticker):
-            mock_stock = MagicMock()
-            mock_stock.model_dump.return_value = {"ticker": ticker, "price": 100.0}
             # Actually cache the data
             cache_stock_data(ticker, {"ticker": ticker, "price": 100.0})
-            return mock_stock
+            return _make_fresh_result(ticker)
 
         with patch("tradfi.api.scheduler.load_tickers", return_value=["AAPL", "MSFT"]):
-            with patch("tradfi.api.scheduler.fetch_stock_from_api", side_effect=mock_fetch):
+            with patch(
+                "tradfi.api.scheduler.fetch_stock_from_api_with_result",
+                side_effect=mock_fetch,
+            ):
                 await refresh_universe("dow30", delay=0.01)
 
         # Verify data was cached
@@ -218,6 +269,51 @@ class TestRefreshUniverse:
         assert msft is not None
         assert aapl["ticker"] == "AAPL"
         assert msft["ticker"] == "MSFT"
+
+    @pytest.mark.asyncio
+    async def test_retry_recovers_stale(self, clean_cache):
+        """Test that retry passes recover stale results."""
+        attempt = {}
+
+        def mock_fetch(ticker):
+            attempt[ticker] = attempt.get(ticker, 0) + 1
+            if ticker == "SLOW" and attempt[ticker] == 1:
+                return _make_stale_result(ticker)  # First attempt: stale
+            return _make_fresh_result(ticker)  # Retry or other tickers: fresh
+
+        with patch("tradfi.api.scheduler.load_tickers", return_value=["AAPL", "SLOW"]):
+            with patch(
+                "tradfi.api.scheduler.fetch_stock_from_api_with_result",
+                side_effect=mock_fetch,
+            ):
+                with patch("tradfi.api.scheduler.INTER_RETRY_PAUSE", 0):
+                    stats = await refresh_universe("dow30", delay=0.01, max_retries=1)
+
+        assert stats["fresh"] == 2  # Both should be fresh after retry
+        assert stats["stale"] == 0
+        assert stats["retry_passes"] == 1
+
+    @pytest.mark.asyncio
+    async def test_retry_max_passes(self, clean_cache):
+        """Test that retries stop at max_retries."""
+        call_count = [0]
+
+        def mock_fetch(ticker):
+            call_count[0] += 1
+            return _make_failed_result()  # Always fail
+
+        with patch("tradfi.api.scheduler.load_tickers", return_value=["FAIL"]):
+            with patch(
+                "tradfi.api.scheduler.fetch_stock_from_api_with_result",
+                side_effect=mock_fetch,
+            ):
+                with patch("tradfi.api.scheduler.INTER_RETRY_PAUSE", 0):
+                    stats = await refresh_universe("dow30", delay=0.01, max_retries=2)
+
+        # 1 initial pass + 2 retries = 3 total calls
+        assert call_count[0] == 3
+        assert stats["failed"] == 1
+        assert stats["retry_passes"] == 2
 
 
 class TestRateLimiting:
@@ -230,14 +326,14 @@ class TestRateLimiting:
 
         def mock_fetch(ticker):
             fetch_times.append(time.time())
-            mock_stock = MagicMock()
-            mock_stock.model_dump.return_value = {"ticker": ticker}
-            return mock_stock
+            return _make_fresh_result(ticker)
 
         with patch("tradfi.api.scheduler.load_tickers", return_value=["AAPL", "MSFT", "GOOGL"]):
-            with patch("tradfi.api.scheduler.fetch_stock_from_api", side_effect=mock_fetch):
-                with patch("tradfi.api.scheduler.set_rate_limit_delay"):
-                    await refresh_universe("dow30", delay=0.1)
+            with patch(
+                "tradfi.api.scheduler.fetch_stock_from_api_with_result",
+                side_effect=mock_fetch,
+            ):
+                await refresh_universe("dow30", delay=0.1)
 
         # There should be delays between fetches (at least 2 intervals for 3 tickers)
         assert len(fetch_times) == 3

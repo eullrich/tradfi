@@ -1,4 +1,4 @@
-"""APScheduler setup for daily stock data refresh."""
+"""APScheduler setup for daily stock data refresh with retry and adaptive delay."""
 
 import asyncio
 import logging
@@ -9,14 +9,21 @@ from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from tradfi.core.data import fetch_stock_from_api
+from tradfi.core.data import FetchOutcome, fetch_stock_from_api_with_result
 from tradfi.core.screener import AVAILABLE_UNIVERSES, load_tickers
-from tradfi.utils.cache import get_config, set_rate_limit_delay
+from tradfi.utils.cache import get_config
 
 logger = logging.getLogger(__name__)
 
 # Global scheduler instance
 scheduler = AsyncIOScheduler()
+
+# Retry configuration
+MAX_RETRY_PASSES = 3  # Maximum number of retry passes after initial sweep
+FAILURE_RATE_THRESHOLD = 0.15  # If >15% of a pass fails, increase delay
+DELAY_INCREASE_FACTOR = 1.5  # Multiply delay by this on high failure rate
+MAX_DELAY = 15.0  # Never exceed this delay (seconds)
+INTER_RETRY_PAUSE = 30  # Seconds to pause between retry passes
 
 # Track refresh state
 _refresh_state = {
@@ -34,16 +41,25 @@ def get_refresh_state() -> dict:
     return _refresh_state.copy()
 
 
-async def refresh_universe(universe: str, delay: float = 2.0) -> dict:
+async def refresh_universe(
+    universe: str, delay: float = 2.0, max_retries: int = MAX_RETRY_PASSES
+) -> dict:
     """
-    Refresh all stocks in a universe.
+    Refresh all stocks in a universe with retry and adaptive delay.
+
+    Pass 0: Initial sweep of all tickers.
+    Pass 1..N: Retry tickers that were STALE or FAILED.
+
+    Adaptive delay: if failure rate exceeds threshold, delay is increased
+    to back off from potential yfinance rate limiting.
 
     Args:
         universe: Universe name (sp500, dow30, etc.)
-        delay: Delay between requests in seconds
+        delay: Initial delay between requests in seconds
+        max_retries: Maximum number of retry passes (default: 3)
 
     Returns:
-        Dict with refresh statistics
+        Dict with detailed refresh statistics
     """
     global _refresh_state
 
@@ -53,59 +69,133 @@ async def refresh_universe(universe: str, delay: float = 2.0) -> dict:
         logger.error(f"Unknown universe: {universe}")
         return {"error": f"Unknown universe: {universe}"}
 
-    logger.info(f"Starting refresh for {universe} ({len(tickers)} stocks)")
+    total = len(tickers)
+    logger.info(f"Starting refresh for {universe} ({total} stocks)")
 
     _refresh_state["is_running"] = True
     _refresh_state["current_universe"] = universe
-    _refresh_state["progress"] = {"total": len(tickers), "completed": 0, "failed": 0}
+    _refresh_state["progress"] = {"total": total, "completed": 0, "failed": 0}
 
-    # Set rate limit delay
-    original_config = get_config()
-    original_delay = original_config.rate_limit_delay
-    set_rate_limit_delay(delay)
+    # Set rate limit delay in-memory only (no disk I/O)
+    config = get_config()
+    original_delay = config.rate_limit_delay
+    config.rate_limit_delay = delay
 
     start_time = time.time()
-    fetched = 0
-    failed = 0
+    current_delay = delay
 
-    for i, ticker in enumerate(tickers):
-        try:
-            stock = fetch_stock_from_api(ticker)
-            if stock:
-                fetched += 1
-            else:
-                failed += 1
-                logger.warning(f"Failed to fetch {ticker}")
-        except Exception as e:
-            failed += 1
-            logger.error(f"Error fetching {ticker}: {e}")
+    # Track per-ticker outcomes
+    results: dict[str, str] = {}  # ticker -> "fresh" | "stale" | "failed"
 
-        _refresh_state["progress"] = {
-            "total": len(tickers),
-            "completed": i + 1,
-            "fetched": fetched,
-            "failed": failed,
-        }
+    pending = list(tickers)
+    pass_num = 0
 
-        # Log progress every 50 stocks
-        if (i + 1) % 50 == 0:
-            elapsed = time.time() - start_time
+    while pending and pass_num <= max_retries:
+        if pass_num > 0:
             logger.info(
-                f"Progress: {i + 1}/{len(tickers)} ({fetched} ok, {failed} failed) - {elapsed:.0f}s"
+                f"Retry pass {pass_num}/{max_retries}: {len(pending)} tickers "
+                f"(delay={current_delay:.1f}s)"
             )
+            await asyncio.sleep(INTER_RETRY_PAUSE)
 
-    # Restore original delay
-    set_rate_limit_delay(original_delay)
+        pass_fresh = 0
+        pass_stale = 0
+        pass_failed = 0
+
+        for i, ticker in enumerate(pending):
+            try:
+                result = await asyncio.to_thread(fetch_stock_from_api_with_result, ticker)
+                results[ticker] = result.outcome.value
+
+                if result.outcome == FetchOutcome.FRESH:
+                    pass_fresh += 1
+                elif result.outcome == FetchOutcome.STALE:
+                    pass_stale += 1
+                    logger.debug(f"Stale fallback for {ticker}: {result.error}")
+                else:
+                    pass_failed += 1
+                    logger.warning(f"Failed {ticker}: {result.error}")
+            except Exception as e:
+                results[ticker] = "failed"
+                pass_failed += 1
+                logger.error(f"Exception fetching {ticker}: {e}")
+
+            # Update progress
+            fresh_total = sum(1 for v in results.values() if v == "fresh")
+            stale_total = sum(1 for v in results.values() if v == "stale")
+            failed_total = sum(1 for v in results.values() if v == "failed")
+
+            _refresh_state["progress"] = {
+                "total": total,
+                "completed": len(results),
+                "fresh": fresh_total,
+                "stale": stale_total,
+                "failed": failed_total,
+                "pass": pass_num,
+                "pass_progress": f"{i + 1}/{len(pending)}",
+            }
+
+            # Log progress every 50 stocks
+            if (i + 1) % 50 == 0:
+                elapsed = time.time() - start_time
+                logger.info(
+                    f"Pass {pass_num} progress: {i + 1}/{len(pending)} "
+                    f"({pass_fresh} fresh, {pass_stale} stale, {pass_failed} failed) "
+                    f"- {elapsed:.0f}s"
+                )
+
+        # Adaptive delay: increase on high failure rate
+        pass_total = pass_fresh + pass_stale + pass_failed
+        if pass_total > 0:
+            failure_rate = (pass_stale + pass_failed) / pass_total
+            if failure_rate > FAILURE_RATE_THRESHOLD and current_delay < MAX_DELAY:
+                new_delay = min(current_delay * DELAY_INCREASE_FACTOR, MAX_DELAY)
+                logger.info(
+                    f"High failure rate ({failure_rate:.0%}), increasing delay "
+                    f"{current_delay:.1f}s -> {new_delay:.1f}s"
+                )
+                current_delay = new_delay
+                config.rate_limit_delay = current_delay
+
+        # Build list of tickers to retry (stale + failed only, not fresh)
+        pending = [t for t in pending if results.get(t) in ("stale", "failed")]
+        pass_num += 1
+
+    # Restore original delay in-memory
+    config.rate_limit_delay = original_delay
 
     elapsed = time.time() - start_time
+    fresh_count = sum(1 for v in results.values() if v == "fresh")
+    stale_count = sum(1 for v in results.values() if v == "stale")
+    failed_count = sum(1 for v in results.values() if v == "failed")
+
     stats = {
         "universe": universe,
-        "total": len(tickers),
-        "fetched": fetched,
-        "failed": failed,
+        "total": total,
+        "fresh": fresh_count,
+        "stale": stale_count,
+        "failed": failed_count,
+        "retry_passes": pass_num - 1,
+        "final_delay": round(current_delay, 1),
         "duration_seconds": round(elapsed, 1),
         "completed_at": datetime.utcnow().isoformat(),
+        # Legacy field for backwards compatibility
+        "fetched": fresh_count + stale_count,
     }
+
+    # Log failed/stale tickers for diagnosis
+    if failed_count > 0:
+        failed_tickers = [t for t, v in results.items() if v == "failed"]
+        logger.warning(
+            f"Failed tickers ({failed_count}): "
+            f"{failed_tickers[:20]}{'...' if failed_count > 20 else ''}"
+        )
+    if stale_count > 0:
+        stale_tickers = [t for t, v in results.items() if v == "stale"]
+        logger.warning(
+            f"Stale tickers ({stale_count}): "
+            f"{stale_tickers[:20]}{'...' if stale_count > 20 else ''}"
+        )
 
     _refresh_state["is_running"] = False
     _refresh_state["current_universe"] = None
@@ -115,7 +205,9 @@ async def refresh_universe(universe: str, delay: float = 2.0) -> dict:
     _refresh_state["last_refresh_stats"] = stats
 
     logger.info(
-        f"Completed refresh for {universe}: {fetched} fetched, {failed} failed in {elapsed:.0f}s"
+        f"Completed refresh for {universe}: "
+        f"{fresh_count} fresh, {stale_count} stale, {failed_count} failed "
+        f"in {elapsed:.0f}s ({pass_num - 1} retries)"
     )
 
     return stats

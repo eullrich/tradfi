@@ -13,7 +13,7 @@ from tradfi.api.scheduler import (
     refresh_universe,
 )
 from tradfi.core.screener import AVAILABLE_UNIVERSES, load_tickers
-from tradfi.utils.cache import get_cache_stats, get_cached_stock_data
+from tradfi.utils.cache import get_batch_cache_freshness, get_cache_stats
 
 router = APIRouter(prefix="/refresh", tags=["refresh"])
 
@@ -44,6 +44,8 @@ class UniverseStatsSchema(BaseModel):
     description: str
     total: int
     cached: int
+    fresh: int = 0
+    stale: int = 0
     missing: int
     est_refresh_minutes: float
 
@@ -113,24 +115,28 @@ async def get_universe_stats():
     """
     Get statistics for all available universes.
 
-    Shows how many stocks are cached vs missing for each universe.
+    Shows how many stocks are cached (fresh vs stale) vs missing for each universe.
     """
     results = []
 
     for name, description in AVAILABLE_UNIVERSES.items():
         try:
             tickers = load_tickers(name)
-            cached = sum(
-                1 for t in tickers if get_cached_stock_data(t, ignore_ttl=True) is not None
-            )
+            freshness = get_batch_cache_freshness(tickers)
+
+            fresh_count = sum(1 for v in freshness.values() if v == "fresh")
+            stale_count = sum(1 for v in freshness.values() if v == "stale")
+            missing_count = sum(1 for v in freshness.values() if v == "missing")
 
             results.append(
                 UniverseStatsSchema(
                     name=name,
                     description=description,
                     total=len(tickers),
-                    cached=cached,
-                    missing=len(tickers) - cached,
+                    cached=fresh_count + stale_count,
+                    fresh=fresh_count,
+                    stale=stale_count,
+                    missing=missing_count,
                     est_refresh_minutes=round(len(tickers) * 2 / 60, 1),  # 2s default delay
                 )
             )

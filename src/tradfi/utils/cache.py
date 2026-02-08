@@ -572,6 +572,45 @@ def get_cache_stats() -> dict:
         conn.close()
 
 
+def get_batch_cache_freshness(tickers: list[str]) -> dict[str, str]:
+    """Check cache freshness for multiple tickers in a single query.
+
+    Args:
+        tickers: List of ticker symbols to check.
+
+    Returns:
+        Dict mapping ticker to "fresh", "stale", or "missing".
+    """
+    if not tickers:
+        return {}
+
+    config = get_config()
+    now = int(time.time())
+    conn = get_db_connection()
+    try:
+        upper_tickers = [t.upper() for t in tickers]
+        placeholders = ",".join("?" * len(upper_tickers))
+        rows = conn.execute(
+            f"SELECT ticker, cached_at FROM stock_cache WHERE ticker IN ({placeholders})",
+            upper_tickers,
+        ).fetchall()
+
+        result: dict[str, str] = {}
+        cached_set = set()
+        for row in rows:
+            cached_set.add(row["ticker"])
+            age = now - row["cached_at"]
+            result[row["ticker"]] = "fresh" if age <= config.cache_ttl else "stale"
+
+        for t in upper_tickers:
+            if t not in cached_set:
+                result[t] = "missing"
+
+        return result
+    finally:
+        conn.close()
+
+
 def get_batch_cached_stocks(tickers: list[str] | None = None) -> dict[str, dict]:
     """Get multiple cached stocks in a single query.
 
