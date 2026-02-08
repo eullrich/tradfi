@@ -13,7 +13,7 @@ from tradfi.api.scheduler import (
     refresh_universe,
 )
 from tradfi.core.screener import AVAILABLE_UNIVERSES, load_tickers
-from tradfi.utils.cache import get_cache_stats, get_cached_stock_data
+from tradfi.utils.cache import get_all_cached_tickers, get_cache_stats
 
 router = APIRouter(prefix="/refresh", tags=["refresh"])
 
@@ -114,15 +114,15 @@ async def get_universe_stats():
     Get statistics for all available universes.
 
     Shows how many stocks are cached vs missing for each universe.
+    Uses a single DB query to get all cached tickers instead of N+1 lookups.
     """
+    all_cached = get_all_cached_tickers()
     results = []
 
     for name, description in AVAILABLE_UNIVERSES.items():
         try:
             tickers = load_tickers(name)
-            cached = sum(
-                1 for t in tickers if get_cached_stock_data(t, ignore_ttl=True) is not None
-            )
+            cached = sum(1 for t in tickers if t.upper() in all_cached)
 
             results.append(
                 UniverseStatsSchema(
