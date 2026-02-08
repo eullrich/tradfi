@@ -2812,7 +2812,7 @@ class StockDetailScreen(Screen):
 
     def _display_quarterly(self, trends) -> None:
         """Display quarterly trends in the panel."""
-        from tradfi.utils.sparkline import format_large_number, sparkline
+        from tradfi.utils.sparkline import format_large_number
 
         try:
             quarterly_panel = self.query_one("#quarterly-panel", Static)
@@ -2828,114 +2828,9 @@ class StockDetailScreen(Screen):
                 )
                 return
 
-            # Build formatted report
-            lines = [
-                f"[bold cyan]Quarterly Trends[/] [dim]({len(trends.quarters)} quarters)[/]",
-                "",
-            ]
-
-            # Revenue
-            revenues = trends.get_metric_values("revenue")
-            if revenues:
-                rev_spark = sparkline(list(reversed(revenues)), width=8)
-                latest_rev = format_large_number(revenues[0]) if revenues else "N/A"
-                qoq_rev = trends.latest_qoq_revenue_growth
-                qoq_str = (
-                    f" [{'green' if qoq_rev and qoq_rev > 0 else 'red'}]({qoq_rev:+.1f}% QoQ)[/]"
-                    if qoq_rev is not None
-                    else ""
-                )
-                lines.append(f"[bold]Revenue:[/]  {latest_rev}  {rev_spark}{qoq_str}")
-                lines.append(f"  Trend: [dim]{trends.revenue_trend}[/]")
-
-            # Net Income
-            incomes = trends.get_metric_values("net_income")
-            if incomes:
-                inc_spark = sparkline(list(reversed(incomes)), width=8)
-                latest_inc = format_large_number(incomes[0]) if incomes else "N/A"
-                qoq_earn = trends.latest_qoq_earnings_growth
-                qoq_str = (
-                    f" [{'green' if qoq_earn and qoq_earn > 0 else 'red'}]({qoq_earn:+.1f}% QoQ)[/]"
-                    if qoq_earn is not None
-                    else ""
-                )
-                lines.append(f"[bold]Earnings:[/] {latest_inc}  {inc_spark}{qoq_str}")
-
-            # Revenue QoQ growth sparkline
-            from tradfi.core.quarterly import calculate_qoq_growth
-
-            rev_growth = calculate_qoq_growth(trends.quarters, "revenue")
-            rev_growth_clean = [v for v in rev_growth if v is not None]
-            if rev_growth_clean:
-                growth_spark = sparkline(list(reversed(rev_growth_clean)), width=8)
-                latest_g = rev_growth[0] if rev_growth else None
-                g_color = "green" if latest_g and latest_g > 0 else "red" if latest_g else "dim"
-                g_str = f"[{g_color}]{latest_g:+.1f}%[/]" if latest_g is not None else "[dim]N/A[/]"
-                lines.append(f"[bold]Rev Growth:[/]  {g_str}  {growth_spark}")
-
-            # EPS QoQ growth sparkline
-            eps_growth = calculate_qoq_growth(trends.quarters, "eps")
-            eps_growth_clean = [v for v in eps_growth if v is not None]
-            if eps_growth_clean:
-                eg_spark = sparkline(list(reversed(eps_growth_clean)), width=8)
-                latest_eg = eps_growth[0] if eps_growth else None
-                eg_color = "green" if latest_eg and latest_eg > 0 else "red" if latest_eg else "dim"
-                eg_str = (
-                    f"[{eg_color}]{latest_eg:+.1f}%[/]" if latest_eg is not None else "[dim]N/A[/]"
-                )
-                lines.append(f"[bold]EPS Growth:[/]  {eg_str}  {eg_spark}")
-
-            # P/E sparkline (per quarter)
-            pe_values = [q.pe_ratio for q in trends.quarters if q.pe_ratio is not None]
-            if pe_values:
-                pe_spark = sparkline(list(reversed(pe_values)), width=8)
-                latest_pe = pe_values[0]
-                pe_color = "green" if latest_pe < 15 else "yellow" if latest_pe < 25 else "red"
-                lines.append(f"[bold]P/E:[/]         [{pe_color}]{latest_pe:.1f}[/]  {pe_spark}")
-
-            # PEG sparkline (per quarter)
-            peg_values = [q.peg_ratio for q in trends.quarters if q.peg_ratio is not None]
-            if peg_values:
-                peg_spark = sparkline(list(reversed(peg_values)), width=8)
-                latest_peg = peg_values[0]
-                peg_color = "green" if latest_peg < 1 else "yellow" if latest_peg < 2 else "red"
-                lines.append(f"[bold]PEG:[/]         [{peg_color}]{latest_peg:.2f}[/]  {peg_spark}")
-
-            # FCF sparkline
-            fcfs = trends.get_metric_values("free_cash_flow")
-            if fcfs:
-                fcf_spark = sparkline(list(reversed(fcfs)), width=8)
-                latest_fcf_val = fcfs[0]
-                fcf_str = format_large_number(latest_fcf_val) if latest_fcf_val else "N/A"
-                fcf_color = "green" if latest_fcf_val and latest_fcf_val > 0 else "red"
-                lines.append(f"[bold]FCF:[/]         [{fcf_color}]{fcf_str}[/]  {fcf_spark}")
-
-            lines.append("")
-
-            # Margins
-            lines.append(f"[bold]Margins:[/] [dim]({trends.margin_trend})[/]")
-            gm = trends.get_metric_values("gross_margin")
-            if gm:
-                gm_spark = sparkline(list(reversed(gm)), width=8)
-                lines.append(f"  Gross:     {gm[0]:.1f}%  {gm_spark}")
-
-            om = trends.get_metric_values("operating_margin")
-            if om:
-                om_spark = sparkline(list(reversed(om)), width=8)
-                lines.append(f"  Operating: {om[0]:.1f}%  {om_spark}")
-
-            nm = trends.get_metric_values("net_margin")
-            if nm:
-                nm_spark = sparkline(list(reversed(nm)), width=8)
-                lines.append(f"  Net:       {nm[0]:.1f}%  {nm_spark}")
-
-            lines.append("")
-
             # Valuation Evolution table
             from rich import box
-            from rich.console import Group
             from rich.table import Table as RichTable
-            from rich.text import Text
 
             def _cv(
                 val: float | None,
@@ -3016,7 +2911,7 @@ class StockDetailScreen(Screen):
                     q.quarter, rev_s, mcap_s, eps_s, pe_s, pb_s, nm_s, om_s, fcf_s, peg_s
                 )
 
-            quarterly_panel.update(Group(Text.from_markup("\n".join(lines)), table))
+            quarterly_panel.update(table)
 
         except Exception as e:
             quarterly_panel.update(

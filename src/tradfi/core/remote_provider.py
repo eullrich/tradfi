@@ -209,6 +209,12 @@ class RemoteDataProvider:
                     net_margin=q_data.get("net_margin"),
                     eps=q_data.get("eps"),
                     free_cash_flow=q_data.get("free_cash_flow"),
+                    pe_ratio=q_data.get("pe_ratio"),
+                    peg_ratio=q_data.get("peg_ratio"),
+                    book_value_per_share=q_data.get("book_value_per_share"),
+                    pb_ratio=q_data.get("pb_ratio"),
+                    price_at_quarter_end=q_data.get("price_at_quarter_end"),
+                    market_cap=q_data.get("market_cap"),
                 )
             )
         return QuarterlyTrends(quarters=quarters)
