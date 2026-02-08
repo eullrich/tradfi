@@ -116,6 +116,7 @@ async def get_universe_stats():
     Get statistics for all available universes.
 
     Shows how many stocks are cached (fresh vs stale) vs missing for each universe.
+    Uses a single DB query per universe to check freshness.
     """
     results = []
 

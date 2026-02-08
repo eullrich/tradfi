@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import re
+from dataclasses import dataclass
+from typing import Callable
+
+from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
@@ -26,6 +31,7 @@ FILTER_PILL_COLORS = {
     "sector": "yellow",
     "preset": "green",
     "category": "magenta",
+    "metric": "blue",
 }
 
 # ETF category icons for quick visual recognition
@@ -36,10 +42,507 @@ ETF_CATEGORY_ICONS = {
     "International": "🌍",
 }
 
-# Column configurations for different asset types
+# Column configurations for different asset types (legacy, used for ETF/mixed)
 STOCK_COLUMNS = ("Company", "Sector", "Price", "P/E", "ROE", "RSI", "MoS%", "Div", "Signal")
 ETF_COLUMNS = ("Company", "Category", "Price", "ExpRatio", "AUM", "YTD", "1Y", "Yield", "Signal")
 MIXED_COLUMNS = ("Company", "Type", "Sector", "Price", "Yield", "1Y", "RSI", "Signal")
+
+
+@dataclass
+class ColumnDef:
+    """Definition for a single table column in a stock profile."""
+
+    header: str
+    sort_key: str  # Key into SORT_OPTIONS
+    getter: Callable  # Extract raw value from Stock
+    formatter: Callable  # Format value -> str
+    colorizer: Callable | None  # Return Text with color, or None for plain
+
+
+def _fmt_ratio(v: float | None) -> str:
+    return f"{v:.1f}" if v is not None else "-"
+
+
+def _fmt_pct(v: float | None) -> str:
+    return f"{v:.0f}%" if v is not None else "-"
+
+
+def _fmt_pct1(v: float | None) -> str:
+    return f"{v:.1f}%" if v is not None else "-"
+
+
+def _fmt_signed_pct(v: float | None) -> str:
+    return f"{v:+.0f}%" if v is not None else "-"
+
+
+def _fmt_signed_pct1(v: float | None) -> str:
+    return f"{v:+.1f}%" if v is not None else "-"
+
+
+def _fmt_large(v: float | None) -> str:
+    if v is None:
+        return "-"
+    av = abs(v)
+    sign = "" if v >= 0 else "-"
+    if av >= 1_000_000_000:
+        return f"{sign}${av / 1_000_000_000:.1f}B"
+    if av >= 1_000_000:
+        return f"{sign}${av / 1_000_000:.0f}M"
+    if av >= 1_000:
+        return f"{sign}${av / 1_000:.0f}K"
+    return f"{sign}${av:.0f}"
+
+
+# -- Color threshold helpers (return Text objects) --
+def _color_pe(v: float | None) -> Text:
+    from tradfi.utils.display import color_value
+
+    return color_value(v, [("gt", 25, "red"), ("gt", 20, "yellow"), ("lt", 12, "green")], "{:.1f}")
+
+
+def _color_pe_fwd(v: float | None) -> Text:
+    from tradfi.utils.display import color_value
+
+    return color_value(v, [("gt", 22, "red"), ("gt", 18, "yellow"), ("lt", 12, "green")], "{:.1f}")
+
+
+def _color_pb(v: float | None) -> Text:
+    from tradfi.utils.display import color_value
+
+    return color_value(
+        v, [("gt", 3.0, "red"), ("gt", 1.5, "yellow"), ("lt", 1.0, "green")], "{:.2f}"
+    )
+
+
+def _color_ev_ebitda(v: float | None) -> Text:
+    from tradfi.utils.display import color_value
+
+    return color_value(v, [("gt", 15, "red"), ("gt", 12, "yellow"), ("lt", 8, "green")], "{:.1f}")
+
+
+def _color_ps(v: float | None) -> Text:
+    from tradfi.utils.display import color_value
+
+    return color_value(v, [("gt", 5, "red"), ("gt", 3, "yellow"), ("lt", 1, "green")], "{:.2f}")
+
+
+def _color_peg(v: float | None) -> Text:
+    from tradfi.utils.display import color_value
+
+    return color_value(v, [("gt", 2, "red"), ("gt", 1.5, "yellow"), ("lt", 1, "green")], "{:.2f}")
+
+
+def _color_roe(v: float | None) -> Text:
+    from tradfi.utils.display import color_value
+
+    return color_value(v, [("lt", 5, "red"), ("lt", 8, "yellow"), ("gt", 15, "green")], "{:.0f}%")
+
+
+def _color_roa(v: float | None) -> Text:
+    from tradfi.utils.display import color_value
+
+    return color_value(v, [("lt", 2, "red"), ("lt", 5, "yellow"), ("gt", 10, "green")], "{:.0f}%")
+
+
+def _color_margin(v: float | None) -> Text:
+    from tradfi.utils.display import color_value
+
+    return color_value(v, [("lt", 5, "red"), ("lt", 10, "yellow"), ("gt", 20, "green")], "{:.1f}%")
+
+
+def _color_net_margin(v: float | None) -> Text:
+    from tradfi.utils.display import color_value
+
+    return color_value(v, [("lt", 3, "red"), ("lt", 8, "yellow"), ("gt", 15, "green")], "{:.1f}%")
+
+
+def _color_de(v: float | None) -> Text:
+    if v is None:
+        return Text("-", style="dim")
+    # debt_to_equity from yfinance is in %, divide by 100
+    ratio = v / 100.0
+    from tradfi.utils.display import color_value
+
+    return color_value(
+        ratio, [("gt", 1.5, "red"), ("gt", 1.0, "yellow"), ("lt", 0.3, "green")], "{:.2f}"
+    )
+
+
+def _color_cr(v: float | None) -> Text:
+    from tradfi.utils.display import color_value
+
+    return color_value(v, [("lt", 1, "red"), ("lt", 1.5, "yellow"), ("gt", 2, "green")], "{:.2f}")
+
+
+def _color_ic(v: float | None) -> Text:
+    from tradfi.utils.display import color_value
+
+    return color_value(v, [("lt", 1.5, "red"), ("lt", 2, "yellow"), ("gt", 5, "green")], "{:.1f}")
+
+
+def _color_rsi(v: float | None) -> Text:
+    from tradfi.utils.display import color_value
+
+    return color_value(v, [("lt", 30, "green"), ("lt", 40, "yellow"), ("gt", 70, "red")], "{:.0f}")
+
+
+def _color_mos(v: float | None) -> Text:
+    from tradfi.utils.display import color_value
+
+    return color_value(v, [("lt", 0, "red"), ("lt", 20, "yellow"), ("gt", 20, "green")], "{:+.0f}%")
+
+
+def _color_fcf_yield(v: float | None) -> Text:
+    from tradfi.utils.display import color_value
+
+    return color_value(v, [("lt", 2, "red"), ("lt", 4, "yellow"), ("gt", 8, "green")], "{:.1f}%")
+
+
+def _color_return(v: float | None) -> Text:
+    from tradfi.utils.display import color_value
+
+    return color_value(v, [("lt", -10, "red"), ("gt", 5, "green")], "{:+.1f}%")
+
+
+def _color_from_high(v: float | None) -> Text:
+    from tradfi.utils.display import color_value
+
+    return color_value(v, [("lt", -30, "green"), ("lt", -10, "yellow")], "{:.0f}%", na_text="-")
+
+
+def _color_from_low(v: float | None) -> Text:
+    from tradfi.utils.display import color_value
+
+    return color_value(v, [("lt", 10, "green"), ("lt", 25, "yellow")], "{:+.0f}%")
+
+
+def _color_vs_ma(v: float | None) -> Text:
+    from tradfi.utils.display import color_value
+
+    return color_value(v, [("lt", -10, "green"), ("lt", 0, "yellow"), ("gt", 5, "red")], "{:+.1f}%")
+
+
+def _color_insider(v: float | None) -> Text:
+    from tradfi.utils.display import color_value
+
+    return color_value(v, [("lt", 1, "dim"), ("lt", 3, "yellow"), ("gt", 10, "green")], "{:.1f}%")
+
+
+def _color_div(v: float | None) -> Text:
+    from tradfi.utils.display import color_value
+
+    return color_value(v, [("gt", 3, "green"), ("gt", 1.5, "yellow")], "{:.1f}%")
+
+
+def _color_payout(v: float | None) -> Text:
+    from tradfi.utils.display import color_value
+
+    return color_value(v, [("gt", 90, "red"), ("gt", 75, "yellow"), ("lt", 50, "green")], "{:.0f}%")
+
+
+def _color_rev_growth(v: float | None) -> Text:
+    from tradfi.utils.display import color_value
+
+    return color_value(v, [("lt", 0, "red"), ("gt", 10, "green")], "{:+.0f}%")
+
+
+def _color_earn_growth(v: float | None) -> Text:
+    from tradfi.utils.display import color_value
+
+    return color_value(v, [("lt", -10, "red"), ("gt", 10, "green")], "{:+.0f}%")
+
+
+def _color_cashflow(v: float | None) -> Text:
+    if v is None:
+        return Text("-", style="dim")
+    formatted = _fmt_large(v)
+    return Text(formatted, style="green" if v > 0 else "red")
+
+
+def _no_color(v) -> Text | None:
+    return None  # Signal to use plain string
+
+
+# -- Getters --
+def _get_pe(s) -> float | None:
+    return (
+        s.valuation.pe_trailing
+        if s.valuation.pe_trailing and isinstance(s.valuation.pe_trailing, (int, float))
+        else None
+    )  # noqa: E501
+
+
+def _get_pef(s) -> float | None:
+    return s.valuation.pe_forward
+
+
+def _get_pb(s) -> float | None:
+    return s.valuation.pb_ratio
+
+
+def _get_ev_ebitda(s) -> float | None:
+    return s.valuation.ev_ebitda
+
+
+def _get_ps(s) -> float | None:
+    return s.valuation.ps_ratio
+
+
+def _get_peg(s) -> float | None:
+    return s.valuation.peg_ratio
+
+
+def _get_roe(s) -> float | None:
+    return s.profitability.roe
+
+
+def _get_roa(s) -> float | None:
+    return s.profitability.roa
+
+
+def _get_op_margin(s) -> float | None:
+    return s.profitability.operating_margin
+
+
+def _get_net_margin(s) -> float | None:
+    return s.profitability.net_margin
+
+
+def _get_de(s) -> float | None:
+    return s.financial_health.debt_to_equity
+
+
+def _get_cr(s) -> float | None:
+    return s.financial_health.current_ratio
+
+
+def _get_ic(s) -> float | None:
+    return s.financial_health.interest_coverage
+
+
+def _get_rsi(s) -> float | None:
+    return s.technical.rsi_14
+
+
+def _get_mos(s) -> float | None:
+    return s.fair_value.margin_of_safety_pct
+
+
+def _get_fcf_yield(s) -> float | None:
+    return s.buyback.fcf_yield_pct
+
+
+def _get_fcf(s) -> float | None:
+    return s.financial_health.free_cash_flow
+
+
+def _get_ocf(s) -> float | None:
+    return s.financial_health.operating_cash_flow
+
+
+def _get_cash_per_share(s) -> float | None:
+    return s.buyback.cash_per_share
+
+
+def _get_ev_fcf(s) -> float | None:
+    ev = s.valuation.enterprise_value
+    fcf = s.financial_health.free_cash_flow
+    if ev and fcf and fcf > 0:
+        return ev / fcf
+    return None
+
+
+def _get_total_debt(s) -> float | None:
+    return s.financial_health.total_debt
+
+
+def _get_total_cash(s) -> float | None:
+    return s.financial_health.total_cash
+
+
+def _get_net_income(s) -> float | None:
+    return s.financial_health.net_income
+
+
+def _get_vs50ma(s) -> float | None:
+    return s.technical.price_vs_ma_50_pct
+
+
+def _get_vs200ma(s) -> float | None:
+    return s.technical.price_vs_ma_200_pct
+
+
+def _get_from_52h(s) -> float | None:
+    return s.technical.pct_from_52w_high
+
+
+def _get_from_52l(s) -> float | None:
+    return s.technical.pct_from_52w_low
+
+
+def _get_1m(s) -> float | None:
+    return s.technical.return_1m
+
+
+def _get_6m(s) -> float | None:
+    return s.technical.return_6m
+
+
+def _get_1y(s) -> float | None:
+    return s.technical.return_1y
+
+
+def _get_insider(s) -> float | None:
+    return s.buyback.insider_ownership_pct
+
+
+def _get_instit(s) -> float | None:
+    return s.buyback.institutional_ownership_pct
+
+
+def _get_mktcap(s) -> float | None:
+    return s.valuation.market_cap
+
+
+def _get_div(s) -> float | None:
+    return s.dividends.dividend_yield
+
+
+def _get_payout(s) -> float | None:
+    return s.dividends.payout_ratio
+
+
+def _get_rev_growth(s) -> float | None:
+    return s.growth.revenue_growth_yoy
+
+
+def _get_earn_growth(s) -> float | None:
+    return s.growth.earnings_growth_yoy
+
+
+def _get_graham(s) -> float | None:
+    return s.fair_value.graham_number
+
+
+def _get_signal(s) -> str:
+    return s.signal
+
+
+# -- Column Profile Definitions --
+PROFILE_ORDER = ["overview", "value", "quality", "cashflow", "technical", "ownership"]
+
+PROFILE_DISPLAY_NAMES = {
+    "overview": "Overview",
+    "value": "Value",
+    "quality": "Quality",
+    "cashflow": "Cash Flow",
+    "technical": "Technical",
+    "ownership": "Ownership",
+}
+
+# Company and Price columns are shared across all profiles (added dynamically)
+COLUMN_PROFILES: dict[str, list[ColumnDef]] = {
+    "overview": [
+        ColumnDef("P/E", "pe", _get_pe, _fmt_ratio, _color_pe),
+        ColumnDef("EV/EBITDA", "ev", _get_ev_ebitda, _fmt_ratio, _color_ev_ebitda),
+        ColumnDef("ROE", "roe", _get_roe, _fmt_pct, _color_roe),
+        ColumnDef("D/E", "de", _get_de, lambda v: f"{v / 100:.2f}" if v else "-", _color_de),
+        ColumnDef("FCF Yld", "fcfy", _get_fcf_yield, _fmt_pct1, _color_fcf_yield),
+        ColumnDef("RSI", "rsi", _get_rsi, lambda v: f"{v:.0f}" if v else "-", _color_rsi),
+        ColumnDef("MoS%", "mos", _get_mos, _fmt_signed_pct, _color_mos),
+        ColumnDef("Signal", "signal", _get_signal, str, None),
+    ],
+    "value": [
+        ColumnDef("P/E", "pe", _get_pe, _fmt_ratio, _color_pe),
+        ColumnDef("P/E Fwd", "pef", _get_pef, _fmt_ratio, _color_pe_fwd),
+        ColumnDef("P/B", "pb", _get_pb, lambda v: f"{v:.2f}" if v else "-", _color_pb),
+        ColumnDef("EV/EBITDA", "ev", _get_ev_ebitda, _fmt_ratio, _color_ev_ebitda),
+        ColumnDef("P/S", "ps", _get_ps, lambda v: f"{v:.2f}" if v else "-", _color_ps),
+        ColumnDef("PEG", "peg", _get_peg, lambda v: f"{v:.2f}" if v else "-", _color_peg),
+        ColumnDef("MoS%", "mos", _get_mos, _fmt_signed_pct, _color_mos),
+        ColumnDef("Graham", "graham", _get_graham, lambda v: f"${v:.0f}" if v else "-", _no_color),
+    ],
+    "quality": [
+        ColumnDef("ROE", "roe", _get_roe, _fmt_pct, _color_roe),
+        ColumnDef("ROA", "roa", _get_roa, _fmt_pct, _color_roa),
+        ColumnDef("OpMarg", "opm", _get_op_margin, _fmt_pct1, _color_margin),
+        ColumnDef("NetMarg", "nm", _get_net_margin, _fmt_pct1, _color_net_margin),
+        ColumnDef("CurRat", "cr", _get_cr, lambda v: f"{v:.2f}" if v else "-", _color_cr),
+        ColumnDef("D/E", "de", _get_de, lambda v: f"{v / 100:.2f}" if v else "-", _color_de),
+        ColumnDef("IntCov", "ic", _get_ic, _fmt_ratio, _color_ic),
+        ColumnDef("RevGr", "revgr", _get_rev_growth, _fmt_signed_pct, _color_rev_growth),
+    ],
+    "cashflow": [
+        ColumnDef("FCF Yld", "fcfy", _get_fcf_yield, _fmt_pct1, _color_fcf_yield),
+        ColumnDef("FCF", "fcf", _get_fcf, _fmt_large, _color_cashflow),
+        ColumnDef("OCF", "ocf", _get_ocf, _fmt_large, _color_cashflow),
+        ColumnDef(
+            "Cash/Sh", "cashsh", _get_cash_per_share, lambda v: f"${v:.1f}" if v else "-", _no_color
+        ),
+        ColumnDef("EV/FCF", "evfcf", _get_ev_fcf, _fmt_ratio, _color_ev_ebitda),
+        ColumnDef("TotDebt", "tdebt", _get_total_debt, _fmt_large, _no_color),
+        ColumnDef("TotCash", "tcash", _get_total_cash, _fmt_large, _no_color),
+        ColumnDef("NetInc", "netinc", _get_net_income, _fmt_large, _color_cashflow),
+    ],
+    "technical": [
+        ColumnDef("RSI", "rsi", _get_rsi, lambda v: f"{v:.0f}" if v else "-", _color_rsi),
+        ColumnDef("vs50MA", "50ma", _get_vs50ma, _fmt_signed_pct1, _color_vs_ma),
+        ColumnDef("vs200MA", "200ma", _get_vs200ma, _fmt_signed_pct1, _color_vs_ma),
+        ColumnDef(
+            "Frm52H",
+            "52h",
+            _get_from_52h,
+            lambda v: f"{v:.0f}%" if v is not None else "-",
+            _color_from_high,
+        ),
+        ColumnDef("1M", "1m", _get_1m, _fmt_signed_pct1, _color_return),
+        ColumnDef("6M", "6m", _get_6m, _fmt_signed_pct1, _color_return),
+        ColumnDef("1Y", "1y", _get_1y, _fmt_signed_pct1, _color_return),
+        ColumnDef("Frm52L", "52l", _get_from_52l, _fmt_signed_pct, _color_from_low),
+    ],
+    "ownership": [
+        ColumnDef("Insider%", "ins", _get_insider, _fmt_pct1, _color_insider),
+        ColumnDef("Instit%", "inst", _get_instit, _fmt_pct1, _no_color),
+        ColumnDef("FCF Yld", "fcfy", _get_fcf_yield, _fmt_pct1, _color_fcf_yield),
+        ColumnDef("MktCap", "mcap", _get_mktcap, _fmt_large, _no_color),
+        ColumnDef("Div%", "div", _get_div, _fmt_pct1, _color_div),
+        ColumnDef("Payout", "payout", _get_payout, _fmt_pct, _color_payout),
+        ColumnDef("ErnGr", "erngr", _get_earn_growth, _fmt_signed_pct, _color_earn_growth),
+        ColumnDef("Signal", "signal", _get_signal, str, None),
+    ],
+}
+
+# Metric aliases for inline filter bar (abbreviation -> (display_name, getter))
+METRIC_ALIASES: dict[str, tuple[str, Callable]] = {
+    "pe": ("P/E", _get_pe),
+    "pef": ("P/E Fwd", _get_pef),
+    "pb": ("P/B", _get_pb),
+    "ps": ("P/S", _get_ps),
+    "peg": ("PEG", _get_peg),
+    "ev": ("EV/EBITDA", _get_ev_ebitda),
+    "roe": ("ROE", _get_roe),
+    "roa": ("ROA", _get_roa),
+    "opm": ("OpMarg", _get_op_margin),
+    "nm": ("NetMarg", _get_net_margin),
+    "cr": ("CurRat", _get_cr),
+    "de": ("D/E", lambda s: (_get_de(s) or 0) / 100 if _get_de(s) is not None else None),
+    "ic": ("IntCov", _get_ic),
+    "rsi": ("RSI", _get_rsi),
+    "mos": ("MoS%", _get_mos),
+    "div": ("Div%", _get_div),
+    "fcfy": ("FCF Yld", _get_fcf_yield),
+    "1m": ("1M", _get_1m),
+    "6m": ("6M", _get_6m),
+    "1y": ("1Y", _get_1y),
+    "52h": ("Frm52H", _get_from_52h),
+    "50ma": ("vs50MA", _get_vs50ma),
+    "200ma": ("vs200MA", _get_vs200ma),
+    "ins": ("Insider%", _get_insider),
+    "mcap": (
+        "MktCap($B)",
+        lambda s: (_get_mktcap(s) or 0) / 1e9 if _get_mktcap(s) is not None else None,
+    ),
+}
 
 
 class FilterPill(Static):
@@ -147,12 +650,13 @@ class FilterPillsContainer(Horizontal):
         sectors: set[str],
         categories: set[str],
         preset: str | None,
+        metric_filters: list[tuple[str, str, float]] | None = None,
     ) -> None:
         """Update the pills based on current filter state."""
         # Remove all existing children
         self.remove_children()
 
-        has_any = bool(universes or sectors or categories or preset)
+        has_any = bool(universes or sectors or categories or preset or metric_filters)
 
         if not has_any:
             self.remove_class("has-pills")
@@ -202,8 +706,28 @@ class FilterPillsContainer(Horizontal):
                 )
             )
 
+        # Add metric filter pills
+        if metric_filters:
+            for metric_key, op, value in metric_filters:
+                display_name, _ = METRIC_ALIASES.get(metric_key, (metric_key, None))
+                # Use the raw expression as the filter_value for removal matching
+                filter_expr = f"{metric_key}{op}{value:g}"
+                self.mount(
+                    FilterPill(
+                        filter_type="metric",
+                        filter_value=filter_expr,
+                        display_name=f"{display_name}{op}{value:g}",
+                    )
+                )
+
         # Add Clear All button if we have multiple filters
-        total_filters = len(universes) + len(sectors) + len(categories) + (1 if preset else 0)
+        total_filters = (
+            len(universes)
+            + len(sectors)
+            + len(categories)
+            + (1 if preset else 0)
+            + (len(metric_filters) if metric_filters else 0)
+        )
         if total_filters > 1:
             self.mount(ClearAllPill())
 
@@ -214,6 +738,7 @@ ACTION_MENU_ITEMS = {
         ("search", "/", "Search ticker"),
         ("universe", "u", "Filter by universe"),
         ("sector", "f", "Filter by sector/category"),
+        ("metric_filter", "g", "Filter by metric (pe<15 roe>10)"),
         ("clear", "c", "Clear all filters"),
     ],
     "Discovery": [
@@ -246,9 +771,15 @@ ACTION_MENU_ITEMS = {
     ],
     "View": [
         ("help", "?", "Show all shortcuts"),
+        ("next_view", "v", "Next column view"),
+        ("prev_view", "V", "Previous column view"),
         ("heatmap", "h", "Sector Heatmap"),
         ("scatter", "p", "Scatter Plot"),
         ("currency", "$", "Toggle display currency"),
+    ],
+    "Pin": [
+        ("pin_toggle", "P", "Pin/unpin current row"),
+        ("show_pinned", "^p", "Show only pinned rows"),
     ],
 }
 
@@ -2281,7 +2812,7 @@ class StockDetailScreen(Screen):
 
     def _display_quarterly(self, trends) -> None:
         """Display quarterly trends in the panel."""
-        from tradfi.utils.sparkline import format_large_number, sparkline
+        from tradfi.utils.sparkline import format_large_number
 
         try:
             quarterly_panel = self.query_one("#quarterly-panel", Static)
@@ -2297,119 +2828,90 @@ class StockDetailScreen(Screen):
                 )
                 return
 
-            # Build formatted report
-            lines = [
-                f"[bold cyan]Quarterly Trends[/] [dim]({len(trends.quarters)} quarters)[/]",
-                "",
-            ]
+            # Valuation Evolution table
+            from rich import box
+            from rich.table import Table as RichTable
 
-            # Revenue
-            revenues = trends.get_metric_values("revenue")
-            if revenues:
-                rev_spark = sparkline(list(reversed(revenues)), width=8)
-                latest_rev = format_large_number(revenues[0]) if revenues else "N/A"
-                qoq_rev = trends.latest_qoq_revenue_growth
-                qoq_str = (
-                    f" [{'green' if qoq_rev and qoq_rev > 0 else 'red'}]({qoq_rev:+.1f}% QoQ)[/]"
-                    if qoq_rev is not None
-                    else ""
+            def _cv(
+                val: float | None,
+                fmt: str,
+                thresholds: list[tuple[float, str]],
+                default_style: str = "",
+            ) -> str:
+                if val is None:
+                    return fmt
+                for threshold, style in thresholds:
+                    if val < threshold:
+                        return f"[{style}]{fmt}[/]"
+                return f"[{default_style}]{fmt}[/]" if default_style else fmt
+
+            table = RichTable(
+                show_header=True,
+                header_style="bold",
+                box=box.SIMPLE_HEAVY,
+                padding=(0, 1),
+            )
+            table.add_column("Quarter", style="cyan")
+            table.add_column("Revenue", justify="right")
+            table.add_column("Mkt Cap", justify="right")
+            table.add_column("EPS", justify="right")
+            table.add_column("P/E", justify="right")
+            table.add_column("P/B", justify="right")
+            table.add_column("Net %", justify="right")
+            table.add_column("Op %", justify="right")
+            table.add_column("FCF", justify="right")
+            table.add_column("PEG", justify="right")
+
+            for q in trends.quarters:
+                rev_s = format_large_number(q.revenue) if q.revenue is not None else "-"
+                mcap_s = (
+                    format_large_number(q.market_cap) if q.market_cap is not None else "-"
                 )
-                lines.append(f"[bold]Revenue:[/]  {latest_rev}  {rev_spark}{qoq_str}")
-                lines.append(f"  Trend: [dim]{trends.revenue_trend}[/]")
-
-            # Net Income
-            incomes = trends.get_metric_values("net_income")
-            if incomes:
-                inc_spark = sparkline(list(reversed(incomes)), width=8)
-                latest_inc = format_large_number(incomes[0]) if incomes else "N/A"
-                qoq_earn = trends.latest_qoq_earnings_growth
-                qoq_str = (
-                    f" [{'green' if qoq_earn and qoq_earn > 0 else 'red'}]({qoq_earn:+.1f}% QoQ)[/]"
-                    if qoq_earn is not None
-                    else ""
+                if q.eps is not None:
+                    ec = "green" if q.eps > 0 else "red"
+                    eps_s = f"[{ec}]{q.eps:.2f}[/]"
+                else:
+                    eps_s = "-"
+                pe_s = (
+                    _cv(q.pe_ratio, f"{q.pe_ratio:.1f}", [(15, "green"), (25, "yellow")], "red")
+                    if q.pe_ratio is not None
+                    else "-"
                 )
-                lines.append(f"[bold]Earnings:[/] {latest_inc}  {inc_spark}{qoq_str}")
-
-            # Revenue QoQ growth sparkline
-            from tradfi.core.quarterly import calculate_qoq_growth
-
-            rev_growth = calculate_qoq_growth(trends.quarters, "revenue")
-            rev_growth_clean = [v for v in rev_growth if v is not None]
-            if rev_growth_clean:
-                growth_spark = sparkline(list(reversed(rev_growth_clean)), width=8)
-                latest_g = rev_growth[0] if rev_growth else None
-                g_color = "green" if latest_g and latest_g > 0 else "red" if latest_g else "dim"
-                g_str = f"[{g_color}]{latest_g:+.1f}%[/]" if latest_g is not None else "[dim]N/A[/]"
-                lines.append(f"[bold]Rev Growth:[/]  {g_str}  {growth_spark}")
-
-            # EPS QoQ growth sparkline
-            eps_growth = calculate_qoq_growth(trends.quarters, "eps")
-            eps_growth_clean = [v for v in eps_growth if v is not None]
-            if eps_growth_clean:
-                eg_spark = sparkline(list(reversed(eps_growth_clean)), width=8)
-                latest_eg = eps_growth[0] if eps_growth else None
-                eg_color = "green" if latest_eg and latest_eg > 0 else "red" if latest_eg else "dim"
-                eg_str = (
-                    f"[{eg_color}]{latest_eg:+.1f}%[/]" if latest_eg is not None else "[dim]N/A[/]"
+                pb_s = (
+                    _cv(q.pb_ratio, f"{q.pb_ratio:.1f}", [(1.5, "green"), (3.0, "yellow")], "red")
+                    if q.pb_ratio is not None
+                    else "-"
                 )
-                lines.append(f"[bold]EPS Growth:[/]  {eg_str}  {eg_spark}")
+                if q.net_margin is not None:
+                    nc = "green" if q.net_margin > 0 else "red"
+                    nm_s = f"[{nc}]{q.net_margin:.1f}%[/]"
+                else:
+                    nm_s = "-"
+                if q.operating_margin is not None:
+                    oc = "green" if q.operating_margin > 0 else "red"
+                    om_s = f"[{oc}]{q.operating_margin:.1f}%[/]"
+                else:
+                    om_s = "-"
+                if q.free_cash_flow is not None:
+                    fc = "green" if q.free_cash_flow > 0 else "red"
+                    fcf_s = f"[{fc}]{format_large_number(q.free_cash_flow)}[/]"
+                else:
+                    fcf_s = "-"
+                peg_s = (
+                    _cv(
+                        q.peg_ratio,
+                        f"{q.peg_ratio:.2f}",
+                        [(1.0, "green"), (2.0, "yellow")],
+                        "red",
+                    )
+                    if q.peg_ratio is not None
+                    else "-"
+                )
+                table.add_row(
+                    q.quarter, rev_s, mcap_s, eps_s, pe_s, pb_s, nm_s, om_s, fcf_s, peg_s
+                )
 
-            # P/E sparkline (per quarter)
-            pe_values = [q.pe_ratio for q in trends.quarters if q.pe_ratio is not None]
-            if pe_values:
-                pe_spark = sparkline(list(reversed(pe_values)), width=8)
-                latest_pe = pe_values[0]
-                pe_color = "green" if latest_pe < 15 else "yellow" if latest_pe < 25 else "red"
-                lines.append(f"[bold]P/E:[/]         [{pe_color}]{latest_pe:.1f}[/]  {pe_spark}")
-
-            # PEG sparkline (per quarter)
-            peg_values = [q.peg_ratio for q in trends.quarters if q.peg_ratio is not None]
-            if peg_values:
-                peg_spark = sparkline(list(reversed(peg_values)), width=8)
-                latest_peg = peg_values[0]
-                peg_color = "green" if latest_peg < 1 else "yellow" if latest_peg < 2 else "red"
-                lines.append(f"[bold]PEG:[/]         [{peg_color}]{latest_peg:.2f}[/]  {peg_spark}")
-
-            # FCF sparkline
-            fcfs = trends.get_metric_values("free_cash_flow")
-            if fcfs:
-                fcf_spark = sparkline(list(reversed(fcfs)), width=8)
-                latest_fcf_val = fcfs[0]
-                fcf_str = format_large_number(latest_fcf_val) if latest_fcf_val else "N/A"
-                fcf_color = "green" if latest_fcf_val and latest_fcf_val > 0 else "red"
-                lines.append(f"[bold]FCF:[/]         [{fcf_color}]{fcf_str}[/]  {fcf_spark}")
-
-            lines.append("")
-
-            # Margins
-            lines.append(f"[bold]Margins:[/] [dim]({trends.margin_trend})[/]")
-            gm = trends.get_metric_values("gross_margin")
-            if gm:
-                gm_spark = sparkline(list(reversed(gm)), width=8)
-                lines.append(f"  Gross:     {gm[0]:.1f}%  {gm_spark}")
-
-            om = trends.get_metric_values("operating_margin")
-            if om:
-                om_spark = sparkline(list(reversed(om)), width=8)
-                lines.append(f"  Operating: {om[0]:.1f}%  {om_spark}")
-
-            nm = trends.get_metric_values("net_margin")
-            if nm:
-                nm_spark = sparkline(list(reversed(nm)), width=8)
-                lines.append(f"  Net:       {nm[0]:.1f}%  {nm_spark}")
-
-            lines.append("")
-
-            # Recent quarters table
-            lines.append("[bold]Recent Quarters:[/]")
-            lines.append("[dim]Quarter   Revenue      Net Inc     Margin[/]")
-            for q in trends.quarters[:4]:
-                rev_str = format_large_number(q.revenue) if q.revenue else "N/A"
-                inc_str = format_large_number(q.net_income) if q.net_income else "N/A"
-                nm_str = f"{q.net_margin:.1f}%" if q.net_margin else "N/A"
-                lines.append(f"{q.quarter}   {rev_str:>10}  {inc_str:>10}  {nm_str:>6}")
-
-            quarterly_panel.update("\n".join(lines))
+            quarterly_panel.update(table)
 
         except Exception as e:
             quarterly_panel.update(
@@ -2722,6 +3224,36 @@ class ScreenerApp(App):
         text-align: center;
     }
 
+    #view-indicator {
+        width: auto;
+        padding: 0 2;
+        text-align: center;
+    }
+
+    #pin-indicator {
+        width: auto;
+        padding: 0 2;
+        text-align: center;
+    }
+
+    #metric-filter-input {
+        display: none;
+        height: 1;
+        min-height: 1;
+        padding: 0 1;
+        margin: 0 0 0 0;
+        border: none;
+        background: $surface-darken-1;
+    }
+
+    #metric-filter-input.visible {
+        display: block;
+    }
+
+    #metric-filter-input:focus {
+        border: solid $success;
+    }
+
     #company-counter {
         height: auto;
         padding: 0 1;
@@ -2740,21 +3272,30 @@ class ScreenerApp(App):
         Binding("/", "focus_search", "Search", show=True),
         Binding("escape", "back", "Back", show=True),
         Binding("?", "help", "Help", show=False),
-        # Keep sort keys for power users but hide from footer
+        # Core actions
         Binding("s", "save_list", "Save List", show=False),
         Binding("u", "focus_universe", "Filter Universe", show=False),
         Binding("f", "focus_sector", "Filter Sector", show=False),
         Binding("c", "clear_filters", "Clear Filters", show=False),
-        Binding("1", "sort_ticker", "Sort: Ticker", show=False),
+        # Column profile cycling
+        Binding("v", "next_profile", "Next View", show=False),
+        Binding("V", "prev_profile", "Prev View", show=False),
+        # Inline metric filter
+        Binding("g", "metric_filter", "Metric Filter", show=False),
+        # Row pinning
+        Binding("P", "toggle_pin", "Pin Row", show=False),
+        Binding("ctrl+p", "show_pinned_only", "Pinned Only", show=False),
+        # Dynamic sort: 1-8 sort by visible columns 3-10
+        Binding("1", "sort_col_1", "Sort Col 1", show=False),
+        Binding("2", "sort_col_2", "Sort Col 2", show=False),
+        Binding("3", "sort_col_3", "Sort Col 3", show=False),
+        Binding("4", "sort_col_4", "Sort Col 4", show=False),
+        Binding("5", "sort_col_5", "Sort Col 5", show=False),
+        Binding("6", "sort_col_6", "Sort Col 6", show=False),
+        Binding("7", "sort_col_7", "Sort Col 7", show=False),
+        Binding("8", "sort_col_8", "Sort Col 8", show=False),
+        # Fixed sort keys
         Binding("i", "sort_sector", "Sort: Sector", show=False),
-        Binding("2", "sort_price", "Sort: Price", show=False),
-        Binding("3", "sort_1m", "Sort: 1M", show=False),
-        Binding("4", "sort_6m", "Sort: 6M", show=False),
-        Binding("5", "sort_1y", "Sort: 1Y", show=False),
-        Binding("6", "sort_pe", "Sort: P/E", show=False),
-        Binding("7", "sort_pb", "Sort: P/B", show=False),
-        Binding("8", "sort_roe", "Sort: ROE", show=False),
-        Binding("9", "sort_div", "Sort: Div", show=False),
         Binding("0", "sort_rsi", "Sort: RSI", show=False),
         Binding("-", "sort_mos", "Sort: MoS", show=False),
         Binding("$", "toggle_currency", "Currency", show=False),
@@ -2820,6 +3361,225 @@ class ScreenerApp(App):
             True,
             "MoS%",
         ),
+        # New profile-specific sort options
+        "ev": (
+            lambda s: (
+                s.valuation.ev_ebitda
+                if s.valuation.ev_ebitda and s.valuation.ev_ebitda > 0
+                else float("inf")
+            ),
+            False,
+            "EV/EBITDA",
+        ),
+        "pef": (
+            lambda s: (
+                s.valuation.pe_forward
+                if s.valuation.pe_forward and s.valuation.pe_forward > 0
+                else float("inf")
+            ),  # noqa: E501
+            False,
+            "P/E Fwd",
+        ),
+        "ps": (
+            lambda s: (
+                s.valuation.ps_ratio
+                if s.valuation.ps_ratio and s.valuation.ps_ratio > 0
+                else float("inf")
+            ),
+            False,
+            "P/S",
+        ),
+        "peg": (
+            lambda s: (
+                s.valuation.peg_ratio
+                if s.valuation.peg_ratio and s.valuation.peg_ratio > 0
+                else float("inf")
+            ),
+            False,
+            "PEG",
+        ),
+        "opm": (
+            lambda s: (
+                s.profitability.operating_margin
+                if s.profitability.operating_margin is not None
+                else float("-inf")
+            ),
+            True,
+            "OpMarg",
+        ),
+        "nm": (
+            lambda s: (
+                s.profitability.net_margin
+                if s.profitability.net_margin is not None
+                else float("-inf")
+            ),
+            True,
+            "NetMarg",
+        ),
+        "roa": (
+            lambda s: s.profitability.roa if s.profitability.roa else float("-inf"),
+            True,
+            "ROA",
+        ),
+        "de": (
+            lambda s: (
+                s.financial_health.debt_to_equity / 100
+                if s.financial_health.debt_to_equity is not None
+                else float("inf")
+            ),  # noqa: E501
+            False,
+            "D/E",
+        ),
+        "cr": (
+            lambda s: s.financial_health.current_ratio if s.financial_health.current_ratio else 0,
+            True,
+            "CurRat",
+        ),
+        "ic": (
+            lambda s: (
+                s.financial_health.interest_coverage
+                if s.financial_health.interest_coverage is not None
+                else float("-inf")
+            ),  # noqa: E501
+            True,
+            "IntCov",
+        ),
+        "fcfy": (
+            lambda s: s.buyback.fcf_yield_pct if s.buyback.fcf_yield_pct else 0,
+            True,
+            "FCF Yld",
+        ),
+        "fcf": (
+            lambda s: (
+                s.financial_health.free_cash_flow
+                if s.financial_health.free_cash_flow is not None
+                else float("-inf")
+            ),
+            True,
+            "FCF",
+        ),
+        "ocf": (
+            lambda s: (
+                s.financial_health.operating_cash_flow
+                if s.financial_health.operating_cash_flow is not None
+                else float("-inf")
+            ),  # noqa: E501
+            True,
+            "OCF",
+        ),
+        "cashsh": (
+            lambda s: s.buyback.cash_per_share if s.buyback.cash_per_share else 0,
+            True,
+            "Cash/Sh",
+        ),
+        "evfcf": (
+            lambda s: (
+                s.valuation.enterprise_value / s.financial_health.free_cash_flow
+                if s.valuation.enterprise_value
+                and s.financial_health.free_cash_flow
+                and s.financial_health.free_cash_flow > 0
+                else float("inf")
+            ),  # noqa: E501
+            False,
+            "EV/FCF",
+        ),
+        "tdebt": (
+            lambda s: s.financial_health.total_debt if s.financial_health.total_debt else 0,
+            True,
+            "TotDebt",
+        ),
+        "tcash": (
+            lambda s: s.financial_health.total_cash if s.financial_health.total_cash else 0,
+            True,
+            "TotCash",
+        ),
+        "netinc": (
+            lambda s: (
+                s.financial_health.net_income
+                if s.financial_health.net_income is not None
+                else float("-inf")
+            ),
+            True,
+            "NetInc",
+        ),
+        "50ma": (
+            lambda s: (
+                s.technical.price_vs_ma_50_pct
+                if s.technical.price_vs_ma_50_pct is not None
+                else float("inf")
+            ),
+            False,
+            "vs50MA",
+        ),
+        "200ma": (
+            lambda s: (
+                s.technical.price_vs_ma_200_pct
+                if s.technical.price_vs_ma_200_pct is not None
+                else float("inf")
+            ),
+            False,
+            "vs200MA",
+        ),
+        "52h": (
+            lambda s: (
+                s.technical.pct_from_52w_high if s.technical.pct_from_52w_high is not None else 0
+            ),
+            False,
+            "Frm52H",
+        ),
+        "52l": (
+            lambda s: (
+                s.technical.pct_from_52w_low
+                if s.technical.pct_from_52w_low is not None
+                else float("inf")
+            ),
+            False,
+            "Frm52L",
+        ),
+        "ins": (
+            lambda s: s.buyback.insider_ownership_pct if s.buyback.insider_ownership_pct else 0,
+            True,
+            "Insider%",
+        ),
+        "inst": (
+            lambda s: (
+                s.buyback.institutional_ownership_pct
+                if s.buyback.institutional_ownership_pct
+                else 0
+            ),
+            True,
+            "Instit%",
+        ),
+        "mcap": (lambda s: s.valuation.market_cap if s.valuation.market_cap else 0, True, "MktCap"),
+        "payout": (
+            lambda s: s.dividends.payout_ratio if s.dividends.payout_ratio is not None else 0,
+            True,
+            "Payout",
+        ),
+        "revgr": (
+            lambda s: (
+                s.growth.revenue_growth_yoy
+                if s.growth.revenue_growth_yoy is not None
+                else float("-inf")
+            ),
+            True,
+            "RevGr",
+        ),
+        "erngr": (
+            lambda s: (
+                s.growth.earnings_growth_yoy
+                if s.growth.earnings_growth_yoy is not None
+                else float("-inf")
+            ),
+            True,
+            "ErnGr",
+        ),
+        "graham": (
+            lambda s: s.fair_value.graham_number if s.fair_value.graham_number else 0,
+            True,
+            "Graham",
+        ),
+        "signal": (lambda s: s.signal, False, "Signal"),
         # ETF-specific sort options
         "exp": (
             lambda s: s.etf.expense_ratio if s.etf.expense_ratio is not None else float("inf"),
@@ -2847,6 +3607,16 @@ class ScreenerApp(App):
         self.selected_sectors: set[str] = set()  # Selected sectors (include)
         self.selected_universes: set[str] = set()  # Selected universes
         self.selected_categories: set[str] = set()  # Selected categories (for ETF universe)
+
+        # Column profile system
+        self.current_profile: str = "overview"
+
+        # Row pinning
+        self.pinned_tickers: set[str] = set()
+        self.show_pinned_only: bool = False
+
+        # Metric filters (inline filter bar)
+        self.metric_filters: list[tuple[str, str, float]] = []
         self._sectors_loaded: bool = False  # Track if sectors list is populated
         self._all_sectors: list[tuple[str, int]] = []  # Full list for filtering
 
@@ -2946,6 +3716,10 @@ class ScreenerApp(App):
                     id="loading",
                 ),
                 FilterPillsContainer(id="filter-pills"),
+                Input(
+                    placeholder="pe<15 roe>10 rsi<35 de<0.5 (Enter=apply Esc=cancel)",
+                    id="metric-filter-input",
+                ),
                 Static("", id="company-counter"),
                 DataTable(id="results-table"),
                 id="content",
@@ -2958,7 +3732,9 @@ class ScreenerApp(App):
                 " [bold]/[/] to search, [bold]r[/] to scan.",
                 id="status-bar",
             ),
+            Static("[bold magenta]Overview[/]", id="view-indicator"),
             Static("[cyan]Sort: P/E ↓[/]", id="sort-indicator"),
+            Static("", id="pin-indicator"),
             Static(f"[yellow]{self._display_currency}[/]", id="currency-indicator"),
             Static("[dim]Connecting...[/]", id="api-status"),
             id="bottom-bar",
@@ -2969,11 +3745,9 @@ class ScreenerApp(App):
         table = self.query_one("#results-table", DataTable)
         table.display = False
         table.cursor_type = "row"
-        # Simplified columns for cleaner view (9 instead of 14)
-        # Focus on key value metrics: Ticker, Sector, Price, P/E, ROE, RSI, MoS%, Div, Signal
-        table.add_columns(
-            "Company", "Sector", "Price", "P/E", "ROE", "RSI", "MoS%", "Div", "Signal"
-        )
+        # Use profile-driven columns (default: overview)
+        profile_cols = COLUMN_PROFILES[self.current_profile]
+        table.add_columns("Company", "Price", *[c.header for c in profile_cols])
 
         # Populate universe selection list
         self._populate_universes()
@@ -3459,6 +4233,7 @@ class ScreenerApp(App):
                 sectors=self.selected_sectors,
                 categories=self.selected_categories,
                 preset=self.current_preset,
+                metric_filters=self.metric_filters,
             )
         except NoMatches:
             pass  # Widget not yet mounted
@@ -3496,6 +4271,17 @@ class ScreenerApp(App):
                 # Also deselect in preset list
                 preset_list = self.query_one("#preset-list", OptionList)
                 preset_list.highlighted = 0  # Select "None (Custom)"
+            elif filter_type == "metric":
+                # Remove a specific metric filter by its expression string
+                self.metric_filters = [
+                    (k, op, v)
+                    for k, op, v in self.metric_filters
+                    if f"{k}{op}{v:g}" != filter_value
+                ]
+                # Update pills and re-populate table (client-side filter only)
+                self._update_filter_pills()
+                self._populate_table()
+                return  # Don't run screen again -- metric filters are client-side
 
             # Update all UI components
             self._update_section_titles()
@@ -3948,7 +4734,21 @@ class ScreenerApp(App):
         elif mode == "mixed":
             return MIXED_COLUMNS
         else:
-            return STOCK_COLUMNS
+            # Stock mode: use current column profile
+            profile_cols = COLUMN_PROFILES[self.current_profile]
+            headers = ["Company", "Price"]
+            sort_key_for_current = self.current_sort
+            _, default_reverse, sort_name = self.SORT_OPTIONS.get(
+                sort_key_for_current, (None, False, "")
+            )
+            reverse = default_reverse != self.sort_reverse
+            direction = "↓" if reverse else "↑"
+            for col in profile_cols:
+                h = col.header
+                if col.sort_key == sort_key_for_current:
+                    h = f"{h} {direction}"
+                headers.append(h)
+            return tuple(headers)
 
     def _format_etf_row(self, stock, format_price_func) -> tuple:
         """Format a row for ETF display."""
@@ -4009,15 +4809,17 @@ class ScreenerApp(App):
         return (company, category, price, exp_ratio, aum, ytd, return_1y, div, signal)
 
     def _format_stock_row(self, stock, format_price_func) -> tuple:
-        """Format a row for stock display."""
-        # Company name with ticker
+        """Format a row for stock display using current column profile."""
+        # Company name with ticker (+ pin marker)
         company_name = stock.name or stock.ticker
         if len(company_name) > 25:
             company_name = company_name[:22] + "..."
         company = f"{company_name} ({stock.ticker})"
-
-        # Sector
-        sector = _truncate_sector(stock.sector) if stock.sector else "-"
+        if stock.ticker in self.pinned_tickers:
+            company_text = Text(f"* {company}")
+            company_text.stylize("bold yellow", 0, 1)
+        else:
+            company_text = Text(company)
 
         # Price
         stock_currency = stock.currency or "USD"
@@ -4032,31 +4834,30 @@ class ScreenerApp(App):
             else "-"
         )
 
-        # P/E
-        pe = (
-            f"{stock.valuation.pe_trailing:.1f}"
-            if stock.valuation.pe_trailing and isinstance(stock.valuation.pe_trailing, (int, float))
-            else "-"
-        )
+        # Build profile-driven columns
+        profile_cols = COLUMN_PROFILES[self.current_profile]
+        row: list = [company_text, price]
+        for col in profile_cols:
+            raw_value = col.getter(stock)
+            if col.colorizer is not None and col.colorizer is not _no_color:
+                cell = col.colorizer(raw_value)
+                row.append(cell)
+            elif col.header == "Signal":
+                # Use signal coloring
+                sig = str(raw_value) if raw_value else "NO_SIGNAL"
+                style_map = {
+                    "STRONG_BUY": "bold green",
+                    "BUY": "green",
+                    "WATCH": "yellow",
+                    "NEUTRAL": "dim",
+                    "NO_SIGNAL": "dim",
+                }
+                row.append(Text(sig, style=style_map.get(sig, "dim")))
+            else:
+                formatted = col.formatter(raw_value) if raw_value is not None else "-"
+                row.append(formatted)
 
-        # ROE
-        roe = f"{stock.profitability.roe:.0f}%" if stock.profitability.roe else "-"
-
-        # RSI
-        rsi = f"{stock.technical.rsi_14:.0f}" if stock.technical.rsi_14 else "-"
-
-        # Margin of Safety
-        mos_val = stock.fair_value.margin_of_safety_pct
-        mos = f"{mos_val:+.0f}%" if mos_val else "-"
-
-        # Dividend yield
-        div_val = stock.dividends.dividend_yield
-        div = f"{div_val:.1f}%" if div_val else "-"
-
-        # Signal
-        signal = stock.signal
-
-        return (company, sector, price, pe, roe, rsi, mos, div, signal)
+        return tuple(row)
 
     def _format_mixed_row(self, stock, format_price_func) -> tuple:
         """Format a row for mixed stock/ETF display."""
@@ -4103,6 +4904,25 @@ class ScreenerApp(App):
 
         return (company, type_str, sector, price, div, return_1y, rsi, signal)
 
+    def _passes_metric_filters(self, stock) -> bool:
+        """Check if a stock passes all active metric filters."""
+        for metric_key, op, value in self.metric_filters:
+            _, getter = METRIC_ALIASES.get(metric_key, (None, None))
+            if getter is None:
+                continue
+            actual = getter(stock)
+            if actual is None:
+                return False
+            if op == "<" and not (actual < value):
+                return False
+            if op == "<=" and not (actual <= value):
+                return False
+            if op == ">" and not (actual > value):
+                return False
+            if op == ">=" and not (actual >= value):
+                return False
+        return True
+
     def _populate_table(self) -> None:
         loading = self.query_one("#loading", Container)
         table = self.query_one("#results-table", DataTable)
@@ -4114,13 +4934,10 @@ class ScreenerApp(App):
         view_mode = self._get_view_mode(self.stocks)
         columns = self._get_columns_for_mode(view_mode)
 
-        # If we were in portfolio mode or columns changed, reconfigure
-        if self._portfolio_mode or len(table.columns) != len(columns):
-            table.clear(columns=True)
-            table.add_columns(*columns)
-            self._portfolio_mode = False
-        else:
-            table.clear()
+        # Always reconfigure columns (profile/sort arrows may have changed)
+        table.clear(columns=True)
+        table.add_columns(*columns)
+        self._portfolio_mode = False
 
         # Handle empty results with helpful feedback
         if not self.stocks:
@@ -4133,6 +4950,14 @@ class ScreenerApp(App):
         # XOR with sort_reverse to toggle direction
         reverse = default_reverse != self.sort_reverse
         sorted_stocks = sorted(self.stocks, key=sort_key, reverse=reverse)
+
+        # Apply metric filters (client-side)
+        if self.metric_filters:
+            sorted_stocks = [s for s in sorted_stocks if self._passes_metric_filters(s)]
+
+        # Apply pin filter
+        if self.show_pinned_only and self.pinned_tickers:
+            sorted_stocks = [s for s in sorted_stocks if s.ticker in self.pinned_tickers]
 
         # Add rows based on view mode
         from tradfi.utils.display import format_price
@@ -4149,7 +4974,8 @@ class ScreenerApp(App):
 
         # Update company counter above the table
         counter = self.query_one("#company-counter", Static)
-        count = len(self.stocks)
+        displayed = len(sorted_stocks)
+        total = len(self.stocks)
         if self._viewing_list:
             context = self._viewing_list
         elif self.current_preset and self.current_preset in PRESET_INFO:
@@ -4160,15 +4986,18 @@ class ScreenerApp(App):
             context = f"{len(self.selected_universes)} universes"
         else:
             context = "All"
-        label = "company" if count == 1 else "companies"
-        counter.update(f"[bold cyan]{count}[/] {label} [dim]|[/] [dim]{context}[/]")
+        label = "company" if displayed == 1 else "companies"
+        filter_note = f" [dim](of {total})[/]" if displayed != total else ""
+        counter.update(
+            f"[bold cyan]{displayed}[/] {label}{filter_note} [dim]|[/] [dim]{context}[/]"
+        )
 
         # Update status with sort info and active filters
         direction = "↓" if reverse else "↑"
         if self._viewing_list:
             # Viewing a position list
             self._update_status(
-                f"{self._viewing_list}: {len(self.stocks)} stocks. "
+                f"{self._viewing_list}: {displayed} stocks. "
                 f"Sort: {sort_name} {direction}. Space=actions, Enter=details."
             )
         else:
@@ -4180,6 +5009,8 @@ class ScreenerApp(App):
             if self.selected_sectors:
                 count = len(self.selected_sectors)
                 filter_parts.append(f"{count} sec")
+            if self.metric_filters:
+                filter_parts.append(f"{len(self.metric_filters)} metric")
 
             filter_info = f" [{', '.join(filter_parts)}]" if filter_parts else ""
             preset_info = f" ({self.current_preset})" if self.current_preset else ""
@@ -4193,7 +5024,7 @@ class ScreenerApp(App):
                 universe_display = f"{len(self.selected_universes)} universes"
 
             self._update_status(
-                f"Found {len(self.stocks)} in {universe_display}{preset_info}{filter_info}. "
+                f"Found {displayed} in {universe_display}{preset_info}{filter_info}. "
                 f"Sort: {sort_name} {direction}. Space=actions, Enter=details."
             )
 
@@ -4254,6 +5085,15 @@ class ScreenerApp(App):
         self._run_screen()
 
     def action_back(self) -> None:
+        # If metric filter input is visible, hide it first
+        try:
+            filter_input = self.query_one("#metric-filter-input", Input)
+            if filter_input.has_class("visible"):
+                filter_input.remove_class("visible")
+                self.query_one("#results-table", DataTable).focus()
+                return
+        except NoMatches:
+            pass
         if len(self.screen_stack) > 1:
             self.pop_screen()
 
@@ -4281,23 +5121,30 @@ class ScreenerApp(App):
                 "preset_turnaround": self.action_preset_turnaround,
                 "preset_oversold": self.action_preset_oversold,
                 "preset_dividend": self.action_preset_dividend,
-                # Visualizations
+                # Visualizations & view
                 "heatmap": self.action_show_heatmap,
                 "scatter": self.action_show_scatter,
                 "currency": self.action_toggle_currency,
-                # Sort options
-                "sort_pe": self.action_sort_pe,
-                "sort_mos": self.action_sort_mos,
-                "sort_rsi": self.action_sort_rsi,
-                "sort_roe": self.action_sort_roe,
-                "sort_div": self.action_sort_div,
-                "sort_price": self.action_sort_price,
-                "sort_1m": self.action_sort_1m,
-                "sort_6m": self.action_sort_6m,
-                "sort_1y": self.action_sort_1y,
-                "sort_ticker": self.action_sort_ticker,
+                "next_view": self.action_next_profile,
+                "prev_view": self.action_prev_profile,
+                # Filter
+                "metric_filter": self.action_metric_filter,
+                # Pin
+                "pin_toggle": self.action_toggle_pin,
+                "show_pinned": self.action_show_pinned_only,
+                # Sort options (dynamic: map to col index)
+                "sort_pe": lambda: self._sort_by("pe"),
+                "sort_mos": lambda: self._sort_by("mos"),
+                "sort_rsi": lambda: self._sort_by("rsi"),
+                "sort_roe": lambda: self._sort_by("roe"),
+                "sort_div": lambda: self._sort_by("div"),
+                "sort_price": lambda: self._sort_by("price"),
+                "sort_1m": lambda: self._sort_by("1m"),
+                "sort_6m": lambda: self._sort_by("6m"),
+                "sort_1y": lambda: self._sort_by("1y"),
+                "sort_ticker": lambda: self._sort_by("ticker"),
                 "sort_sector": self.action_sort_sector,
-                "sort_pb": self.action_sort_pb,
+                "sort_pb": lambda: self._sort_by("pb"),
             }
             if action_id in action_map:
                 action_map[action_id]()
@@ -4307,16 +5154,18 @@ class ScreenerApp(App):
     def action_help(self) -> None:
         self.notify(
             "Quick Keys:\n"
-            "Space - Action menu (all commands)\n"
-            "/ - Search ticker | r - Refresh | q - Quit\n"
+            "Space - Action menu | / - Search | r - Refresh | q - Quit\n"
             "Enter - View details | Esc - Go back\n"
             "\n"
-            "In action menu, press any key to execute that action.\n"
+            "Views: v/V - Cycle column profiles (Overview,Value,Quality,...)\n"
+            "Filter: g - Metric filter (pe<15 roe>10) | c - Clear all\n"
+            "Pin: P - Pin row | Ctrl+P - Show pinned only\n"
+            "Sort: 1-8 - Sort by column | Click header to sort\n"
             "\n"
-            "Detail view: l=Long x=Short w=Watchlist d=Research m=Similar\n"
-            "Visualizations: h=Heatmap p=Scatter | $=Currency",
+            "Detail: l=Long x=Short w=Watch d=Research m=Similar\n"
+            "Viz: h=Heatmap p=Scatter | $=Currency",
             title="Help",
-            timeout=10,
+            timeout=12,
         )
 
     def action_toggle_currency(self) -> None:
@@ -4477,41 +5326,167 @@ class ScreenerApp(App):
         except Exception:
             pass
 
-    def action_sort_ticker(self) -> None:
-        self._sort_by("ticker")
+    # -- Dynamic column sort (1-8 maps to visible profile columns) --
+    def _sort_by_col_index(self, col_index: int) -> None:
+        """Sort by the Nth data column in the current profile (0-based)."""
+        profile_cols = COLUMN_PROFILES.get(self.current_profile, [])
+        if col_index < len(profile_cols):
+            sort_key = profile_cols[col_index].sort_key
+            if sort_key in self.SORT_OPTIONS:
+                self._sort_by(sort_key)
+
+    def action_sort_col_1(self) -> None:
+        self._sort_by_col_index(0)
+
+    def action_sort_col_2(self) -> None:
+        self._sort_by_col_index(1)
+
+    def action_sort_col_3(self) -> None:
+        self._sort_by_col_index(2)
+
+    def action_sort_col_4(self) -> None:
+        self._sort_by_col_index(3)
+
+    def action_sort_col_5(self) -> None:
+        self._sort_by_col_index(4)
+
+    def action_sort_col_6(self) -> None:
+        self._sort_by_col_index(5)
+
+    def action_sort_col_7(self) -> None:
+        self._sort_by_col_index(6)
+
+    def action_sort_col_8(self) -> None:
+        self._sort_by_col_index(7)
 
     def action_sort_sector(self) -> None:
         self._sort_by("sector")
-
-    def action_sort_price(self) -> None:
-        self._sort_by("price")
-
-    def action_sort_1m(self) -> None:
-        self._sort_by("1m")
-
-    def action_sort_6m(self) -> None:
-        self._sort_by("6m")
-
-    def action_sort_1y(self) -> None:
-        self._sort_by("1y")
-
-    def action_sort_pe(self) -> None:
-        self._sort_by("pe")
-
-    def action_sort_pb(self) -> None:
-        self._sort_by("pb")
-
-    def action_sort_roe(self) -> None:
-        self._sort_by("roe")
-
-    def action_sort_div(self) -> None:
-        self._sort_by("div")
 
     def action_sort_rsi(self) -> None:
         self._sort_by("rsi")
 
     def action_sort_mos(self) -> None:
         self._sort_by("mos")
+
+    def on_data_table_header_selected(self, event: DataTable.HeaderSelected) -> None:
+        """Handle click-to-sort on column headers."""
+        col_index = event.column_index
+        # Columns 0=Company, 1=Price, 2..N = profile columns
+        if col_index == 0:
+            self._sort_by("ticker")
+        elif col_index == 1:
+            self._sort_by("price")
+        elif col_index >= 2:
+            self._sort_by_col_index(col_index - 2)
+
+    # -- Column profile cycling --
+    def action_next_profile(self) -> None:
+        """Cycle to the next column profile."""
+        idx = PROFILE_ORDER.index(self.current_profile)
+        self.current_profile = PROFILE_ORDER[(idx + 1) % len(PROFILE_ORDER)]
+        self._update_view_indicator()
+        self._populate_table()
+
+    def action_prev_profile(self) -> None:
+        """Cycle to the previous column profile."""
+        idx = PROFILE_ORDER.index(self.current_profile)
+        self.current_profile = PROFILE_ORDER[(idx - 1) % len(PROFILE_ORDER)]
+        self._update_view_indicator()
+        self._populate_table()
+
+    def _update_view_indicator(self) -> None:
+        """Update the view indicator in the bottom bar."""
+        try:
+            indicator = self.query_one("#view-indicator", Static)
+            name = PROFILE_DISPLAY_NAMES.get(self.current_profile, self.current_profile)
+            indicator.update(f"[bold magenta]{name}[/]")
+        except Exception:
+            pass
+
+    # -- Row pinning --
+    def action_toggle_pin(self) -> None:
+        """Pin/unpin the currently highlighted row."""
+        try:
+            table = self.query_one("#results-table", DataTable)
+            if table.cursor_row is not None:
+                cursor_row = table.cursor_row
+                row_key_value = None
+                for i, key in enumerate(table.rows):
+                    if i == cursor_row:
+                        row_key_value = str(key.value)
+                        break
+                if row_key_value:
+                    if row_key_value in self.pinned_tickers:
+                        self.pinned_tickers.discard(row_key_value)
+                        self.notify(f"Unpinned {row_key_value}", timeout=2)
+                    else:
+                        self.pinned_tickers.add(row_key_value)
+                        self.notify(f"Pinned {row_key_value}", timeout=2)
+                    self._update_pin_indicator()
+                    self._populate_table()
+        except Exception:
+            pass
+
+    def action_show_pinned_only(self) -> None:
+        """Toggle showing only pinned rows."""
+        if not self.pinned_tickers:
+            self.notify("No pinned rows. Press P to pin a row.", timeout=3)
+            return
+        self.show_pinned_only = not self.show_pinned_only
+        mode = "ON" if self.show_pinned_only else "OFF"
+        self.notify(f"Pinned only: {mode}", timeout=2)
+        self._update_pin_indicator()
+        self._populate_table()
+
+    def _update_pin_indicator(self) -> None:
+        """Update the pin indicator in the bottom bar."""
+        try:
+            indicator = self.query_one("#pin-indicator", Static)
+            if self.pinned_tickers:
+                prefix = "[bold yellow]*[/] " if self.show_pinned_only else ""
+                indicator.update(f"{prefix}[yellow]Pinned: {len(self.pinned_tickers)}[/]")
+            else:
+                indicator.update("")
+        except Exception:
+            pass
+
+    # -- Inline metric filter --
+    def action_metric_filter(self) -> None:
+        """Show/focus the metric filter input."""
+        try:
+            filter_input = self.query_one("#metric-filter-input", Input)
+            if filter_input.has_class("visible"):
+                # Toggle off
+                filter_input.remove_class("visible")
+                self.query_one("#results-table", DataTable).focus()
+            else:
+                filter_input.add_class("visible")
+                # Pre-fill with current expression
+                if self.metric_filters:
+                    expr = " ".join(f"{k}{op}{v:g}" for k, op, v in self.metric_filters)
+                    filter_input.value = expr
+                filter_input.focus()
+        except NoMatches:
+            pass
+
+    def _parse_metric_expression(self, expr: str) -> list[tuple[str, str, float]]:
+        """Parse 'pe<15 roe>10' into [('pe', '<', 15.0), ...]."""
+        filters: list[tuple[str, str, float]] = []
+        pattern = re.compile(r"([a-z0-9]+)\s*([<>]=?)\s*([-+]?\d*\.?\d+)")
+        for match in pattern.finditer(expr.lower()):
+            metric, op, value = match.groups()
+            if metric in METRIC_ALIASES:
+                filters.append((metric, op, float(value)))
+        return filters
+
+    def _apply_metric_filters(self, expr: str) -> None:
+        """Parse and apply metric filter expression."""
+        if not expr:
+            self.metric_filters = []
+        else:
+            self.metric_filters = self._parse_metric_expression(expr)
+        self._update_filter_pills()
+        self._populate_table()
 
     def action_save_list(self) -> None:
         """Save current screen results to a named list."""
@@ -4567,7 +5542,7 @@ class ScreenerApp(App):
             sector_select.focus()
 
     def action_clear_filters(self) -> None:
-        """Clear all universe, category, and sector selections."""
+        """Clear all universe, category, sector, and metric selections."""
         try:
             universe_select = self.query_one("#universe-select", SelectionList)
             universe_select.deselect_all()
@@ -4587,6 +5562,13 @@ class ScreenerApp(App):
             self.current_preset = None
             preset_list = self.query_one("#preset-list", OptionList)
             preset_list.highlighted = 0  # Select "None (Custom)"
+
+            # Clear metric filters
+            self.metric_filters = []
+
+            # Clear pin-only mode
+            self.show_pinned_only = False
+            self._update_pin_indicator()
 
             # Reset visibility to default (show Sectors)
             self._update_filter_section_visibility()
@@ -4616,6 +5598,11 @@ class ScreenerApp(App):
         elif event.input.id == "sector-search":
             # Just filter on submit as well (already handled by on_input_changed)
             pass
+        elif event.input.id == "metric-filter-input":
+            # Apply metric filter and hide input
+            self._apply_metric_filters(event.value.strip())
+            event.input.remove_class("visible")
+            self.query_one("#results-table", DataTable).focus()
 
     def _search_ticker(self, ticker: str) -> None:
         """Search for a single ticker and display it."""

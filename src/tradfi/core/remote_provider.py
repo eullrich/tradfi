@@ -23,7 +23,11 @@ from tradfi.models.stock import (
 
 
 class RemoteDataProvider:
-    """Fetches stock data from a remote TradFi API server."""
+    """Fetches stock data from a remote TradFi API server.
+
+    Uses a persistent httpx.Client with connection pooling for performance.
+    Creating a new HTTP client per request wastes ~100-300ms on DNS + TCP + TLS.
+    """
 
     def __init__(self, api_url: str, timeout: float = 30.0, admin_key: str | None = None):
         """Initialize the remote data provider.
@@ -36,6 +40,26 @@ class RemoteDataProvider:
         self.api_url = api_url.rstrip("/")
         self.timeout = timeout
         self.admin_key = admin_key
+        self._client = httpx.Client(
+            base_url=self.api_url,
+            timeout=self.timeout,
+            headers={"X-Admin-Key": admin_key} if admin_key else {},
+            limits=httpx.Limits(
+                max_connections=10,
+                max_keepalive_connections=5,
+                keepalive_expiry=30.0,
+            ),
+        )
+
+    def close(self) -> None:
+        """Close the HTTP client connection pool."""
+        self._client.close()
+
+    def __del__(self) -> None:
+        try:
+            self._client.close()
+        except Exception:
+            pass
 
     def _admin_headers(self) -> dict[str, str]:
         """Get headers for admin operations."""
@@ -54,11 +78,10 @@ class RemoteDataProvider:
             Stock object or None if not found/error
         """
         try:
-            with httpx.Client(timeout=self.timeout) as client:
-                response = client.get(
-                    f"{self.api_url}/api/v1/stocks/{ticker}",
-                    params={"cache_only": str(cache_only).lower()},
-                )
+            response = self._client.get(
+                f"/api/v1/stocks/{ticker}",
+                params={"cache_only": str(cache_only).lower()},
+            )
 
             if response.status_code == 200:
                 data = response.json()
@@ -79,8 +102,7 @@ class RemoteDataProvider:
             Dict mapping ticker to Stock object.
         """
         try:
-            with httpx.Client(timeout=60.0) as client:  # Longer timeout for bulk
-                response = client.get(f"{self.api_url}/api/v1/stocks/batch/all")
+            response = self._client.get("/api/v1/stocks/batch/all", timeout=60.0)
 
             if response.status_code == 200:
                 data = response.json()
@@ -128,11 +150,11 @@ class RemoteDataProvider:
     def _fetch_stocks_batch_single(self, tickers: list[str]) -> dict[str, Stock]:
         """Fetch a single batch of stocks (internal helper)."""
         try:
-            with httpx.Client(timeout=180.0) as client:
-                response = client.post(
-                    f"{self.api_url}/api/v1/stocks/batch",
-                    json=tickers,
-                )
+            response = self._client.post(
+                "/api/v1/stocks/batch",
+                json=tickers,
+                timeout=180.0,
+            )
 
             if response.status_code == 200:
                 data = response.json()
@@ -159,10 +181,9 @@ class RemoteDataProvider:
             QuarterlyTrends object or None if not found/error
         """
         try:
-            with httpx.Client(timeout=self.timeout) as client:
-                response = client.get(
-                    f"{self.api_url}/api/v1/stocks/{ticker}/quarterly", params={"periods": periods}
-                )
+            response = self._client.get(
+                f"/api/v1/stocks/{ticker}/quarterly", params={"periods": periods}
+            )
 
             if response.status_code == 200:
                 data = response.json()
@@ -188,6 +209,12 @@ class RemoteDataProvider:
                     net_margin=q_data.get("net_margin"),
                     eps=q_data.get("eps"),
                     free_cash_flow=q_data.get("free_cash_flow"),
+                    pe_ratio=q_data.get("pe_ratio"),
+                    peg_ratio=q_data.get("peg_ratio"),
+                    book_value_per_share=q_data.get("book_value_per_share"),
+                    pb_ratio=q_data.get("pb_ratio"),
+                    price_at_quarter_end=q_data.get("price_at_quarter_end"),
+                    market_cap=q_data.get("market_cap"),
                 )
             )
         return QuarterlyTrends(quarters=quarters)
@@ -311,8 +338,7 @@ class RemoteDataProvider:
     def get_lists(self) -> list[str]:
         """Get all saved list names."""
         try:
-            with httpx.Client(timeout=self.timeout) as client:
-                response = client.get(f"{self.api_url}/api/v1/lists")
+            response = self._client.get("/api/v1/lists")
             if response.status_code == 200:
                 return response.json()
             return []
@@ -322,8 +348,7 @@ class RemoteDataProvider:
     def get_list(self, name: str) -> dict | None:
         """Get a saved list by name with all items and notes."""
         try:
-            with httpx.Client(timeout=self.timeout) as client:
-                response = client.get(f"{self.api_url}/api/v1/lists/{name}")
+            response = self._client.get(f"/api/v1/lists/{name}")
             if response.status_code == 200:
                 return response.json()
             return None
@@ -333,10 +358,7 @@ class RemoteDataProvider:
     def create_list(self, name: str, tickers: list[str]) -> bool:
         """Create a new stock list."""
         try:
-            with httpx.Client(timeout=self.timeout) as client:
-                response = client.post(
-                    f"{self.api_url}/api/v1/lists", json={"name": name, "tickers": tickers}
-                )
+            response = self._client.post("/api/v1/lists", json={"name": name, "tickers": tickers})
             return response.status_code == 200
         except (httpx.RequestError, json.JSONDecodeError):
             return False
@@ -344,8 +366,7 @@ class RemoteDataProvider:
     def delete_list(self, name: str) -> bool:
         """Delete a saved list."""
         try:
-            with httpx.Client(timeout=self.timeout) as client:
-                response = client.delete(f"{self.api_url}/api/v1/lists/{name}")
+            response = self._client.delete(f"/api/v1/lists/{name}")
             return response.status_code == 200
         except (httpx.RequestError, json.JSONDecodeError):
             return False
@@ -353,10 +374,9 @@ class RemoteDataProvider:
     def add_to_list(self, name: str, ticker: str) -> bool:
         """Add a ticker to a list."""
         try:
-            with httpx.Client(timeout=self.timeout) as client:
-                response = client.post(
-                    f"{self.api_url}/api/v1/lists/{name}/items", json={"ticker": ticker.upper()}
-                )
+            response = self._client.post(
+                f"/api/v1/lists/{name}/items", json={"ticker": ticker.upper()}
+            )
             return response.status_code == 200
         except (httpx.RequestError, json.JSONDecodeError):
             return False
@@ -364,10 +384,7 @@ class RemoteDataProvider:
     def remove_from_list(self, name: str, ticker: str) -> bool:
         """Remove a ticker from a list."""
         try:
-            with httpx.Client(timeout=self.timeout) as client:
-                response = client.delete(
-                    f"{self.api_url}/api/v1/lists/{name}/items/{ticker.upper()}"
-                )
+            response = self._client.delete(f"/api/v1/lists/{name}/items/{ticker.upper()}")
             return response.status_code == 200
         except (httpx.RequestError, json.JSONDecodeError):
             return False
@@ -383,16 +400,15 @@ class RemoteDataProvider:
     ) -> bool:
         """Update notes for a list item."""
         try:
-            with httpx.Client(timeout=self.timeout) as client:
-                response = client.put(
-                    f"{self.api_url}/api/v1/lists/{name}/items/{ticker.upper()}/notes",
-                    json={
-                        "notes": notes,
-                        "thesis": thesis,
-                        "entry_price": entry_price,
-                        "target_price": target_price,
-                    },
-                )
+            response = self._client.put(
+                f"/api/v1/lists/{name}/items/{ticker.upper()}/notes",
+                json={
+                    "notes": notes,
+                    "thesis": thesis,
+                    "entry_price": entry_price,
+                    "target_price": target_price,
+                },
+            )
             return response.status_code == 200
         except (httpx.RequestError, json.JSONDecodeError):
             return False
@@ -422,16 +438,15 @@ class RemoteDataProvider:
             True if successful
         """
         try:
-            with httpx.Client(timeout=self.timeout) as client:
-                response = client.put(
-                    f"{self.api_url}/api/lists/{list_name}/items/{ticker.upper()}/position",
-                    json={
-                        "shares": shares,
-                        "entry_price": entry_price,
-                        "target_price": target_price,
-                        "thesis": thesis,
-                    },
-                )
+            response = self._client.put(
+                f"/api/lists/{list_name}/items/{ticker.upper()}/position",
+                json={
+                    "shares": shares,
+                    "entry_price": entry_price,
+                    "target_price": target_price,
+                    "thesis": thesis,
+                },
+            )
             return response.status_code == 200
         except (httpx.RequestError, json.JSONDecodeError):
             return False
@@ -447,10 +462,7 @@ class RemoteDataProvider:
             Position data dict or None
         """
         try:
-            with httpx.Client(timeout=self.timeout) as client:
-                response = client.get(
-                    f"{self.api_url}/api/lists/{list_name}/items/{ticker.upper()}/position"
-                )
+            response = self._client.get(f"/api/lists/{list_name}/items/{ticker.upper()}/position")
             if response.status_code == 200:
                 return response.json()
             return None
@@ -468,10 +480,9 @@ class RemoteDataProvider:
             True if successful
         """
         try:
-            with httpx.Client(timeout=self.timeout) as client:
-                response = client.delete(
-                    f"{self.api_url}/api/lists/{list_name}/items/{ticker.upper()}/position"
-                )
+            response = self._client.delete(
+                f"/api/lists/{list_name}/items/{ticker.upper()}/position"
+            )
             return response.status_code == 200
         except (httpx.RequestError, json.JSONDecodeError):
             return False
@@ -486,8 +497,7 @@ class RemoteDataProvider:
             Portfolio data dict with items and totals, or None
         """
         try:
-            with httpx.Client(timeout=self.timeout) as client:
-                response = client.get(f"{self.api_url}/api/lists/{list_name}/portfolio")
+            response = self._client.get(f"/api/lists/{list_name}/portfolio")
             if response.status_code == 200:
                 return response.json()
             return None
@@ -504,8 +514,7 @@ class RemoteDataProvider:
             True if list has positions
         """
         try:
-            with httpx.Client(timeout=self.timeout) as client:
-                response = client.get(f"{self.api_url}/api/lists/{list_name}/has-positions")
+            response = self._client.get(f"/api/lists/{list_name}/has-positions")
             if response.status_code == 200:
                 data = response.json()
                 return data.get("has_positions", False)
@@ -518,8 +527,7 @@ class RemoteDataProvider:
     def get_watchlist(self) -> list[dict]:
         """Get all watchlist items."""
         try:
-            with httpx.Client(timeout=self.timeout) as client:
-                response = client.get(f"{self.api_url}/api/v1/watchlist")
+            response = self._client.get("/api/v1/watchlist")
             if response.status_code == 200:
                 return response.json()
             return []
@@ -529,10 +537,7 @@ class RemoteDataProvider:
     def add_to_watchlist(self, ticker: str, notes: str | None = None) -> bool:
         """Add a ticker to the watchlist."""
         try:
-            with httpx.Client(timeout=self.timeout) as client:
-                response = client.post(
-                    f"{self.api_url}/api/v1/watchlist", json={"ticker": ticker.upper()}
-                )
+            response = self._client.post("/api/v1/watchlist", json={"ticker": ticker.upper()})
             return response.status_code == 200
         except (httpx.RequestError, json.JSONDecodeError):
             return False
@@ -540,8 +545,7 @@ class RemoteDataProvider:
     def remove_from_watchlist(self, ticker: str) -> bool:
         """Remove a ticker from the watchlist."""
         try:
-            with httpx.Client(timeout=self.timeout) as client:
-                response = client.delete(f"{self.api_url}/api/v1/watchlist/{ticker.upper()}")
+            response = self._client.delete(f"/api/v1/watchlist/{ticker.upper()}")
             return response.status_code == 200
         except (httpx.RequestError, json.JSONDecodeError):
             return False
@@ -549,10 +553,9 @@ class RemoteDataProvider:
     def update_watchlist_notes(self, ticker: str, notes: str) -> bool:
         """Update notes for a watchlist item."""
         try:
-            with httpx.Client(timeout=self.timeout) as client:
-                response = client.put(
-                    f"{self.api_url}/api/v1/watchlist/{ticker.upper()}/notes", json={"notes": notes}
-                )
+            response = self._client.put(
+                f"/api/v1/watchlist/{ticker.upper()}/notes", json={"notes": notes}
+            )
             return response.status_code == 200
         except (httpx.RequestError, json.JSONDecodeError):
             return False
@@ -562,8 +565,7 @@ class RemoteDataProvider:
     def get_categories(self) -> list[dict]:
         """Get all categories."""
         try:
-            with httpx.Client(timeout=self.timeout) as client:
-                response = client.get(f"{self.api_url}/api/v1/lists/categories")
+            response = self._client.get("/api/v1/lists/categories")
             if response.status_code == 200:
                 return response.json()
             return []
@@ -573,10 +575,9 @@ class RemoteDataProvider:
     def create_category(self, name: str, icon: str | None = None) -> bool:
         """Create a new category."""
         try:
-            with httpx.Client(timeout=self.timeout) as client:
-                response = client.post(
-                    f"{self.api_url}/api/v1/lists/categories", json={"name": name, "icon": icon}
-                )
+            response = self._client.post(
+                "/api/v1/lists/categories", json={"name": name, "icon": icon}
+            )
             return response.status_code == 200
         except (httpx.RequestError, json.JSONDecodeError):
             return False
@@ -584,8 +585,7 @@ class RemoteDataProvider:
     def delete_category(self, category_id: int) -> bool:
         """Delete a category."""
         try:
-            with httpx.Client(timeout=self.timeout) as client:
-                response = client.delete(f"{self.api_url}/api/v1/lists/categories/{category_id}")
+            response = self._client.delete(f"/api/v1/lists/categories/{category_id}")
             return response.status_code == 200
         except (httpx.RequestError, json.JSONDecodeError):
             return False
@@ -593,10 +593,9 @@ class RemoteDataProvider:
     def add_list_to_category(self, list_name: str, category_id: int) -> bool:
         """Add a list to a category."""
         try:
-            with httpx.Client(timeout=self.timeout) as client:
-                response = client.post(
-                    f"{self.api_url}/api/v1/lists/categories/{category_id}/lists/{list_name}"
-                )
+            response = self._client.post(
+                f"/api/v1/lists/categories/{category_id}/lists/{list_name}"
+            )
             return response.status_code == 200
         except (httpx.RequestError, json.JSONDecodeError):
             return False
@@ -604,10 +603,9 @@ class RemoteDataProvider:
     def remove_list_from_category(self, list_name: str, category_id: int) -> bool:
         """Remove a list from a category."""
         try:
-            with httpx.Client(timeout=self.timeout) as client:
-                response = client.delete(
-                    f"{self.api_url}/api/v1/lists/categories/{category_id}/lists/{list_name}"
-                )
+            response = self._client.delete(
+                f"/api/v1/lists/categories/{category_id}/lists/{list_name}"
+            )
             return response.status_code == 200
         except (httpx.RequestError, json.JSONDecodeError):
             return False
@@ -617,8 +615,7 @@ class RemoteDataProvider:
     def get_cache_stats(self) -> dict:
         """Get cache statistics."""
         try:
-            with httpx.Client(timeout=self.timeout) as client:
-                response = client.get(f"{self.api_url}/api/v1/cache/stats")
+            response = self._client.get("/api/v1/cache/stats")
             if response.status_code == 200:
                 return response.json()
             return {}
@@ -633,13 +630,12 @@ class RemoteDataProvider:
                      returns all sectors from cache.
         """
         try:
-            with httpx.Client(timeout=self.timeout) as client:
-                # Check explicitly for None to handle empty list [] correctly
-                params = {"tickers": tickers} if tickers is not None else None
-                response = client.get(
-                    f"{self.api_url}/api/v1/cache/sectors",
-                    params=params,
-                )
+            # Check explicitly for None to handle empty list [] correctly
+            params = {"tickers": tickers} if tickers is not None else None
+            response = self._client.get(
+                "/api/v1/cache/sectors",
+                params=params,
+            )
             if response.status_code == 200:
                 data = response.json()
                 if isinstance(data, list):
@@ -658,11 +654,10 @@ class RemoteDataProvider:
         Requires admin_key to be set if server has TRADFI_ADMIN_KEY configured.
         """
         try:
-            with httpx.Client(timeout=self.timeout) as client:
-                response = client.post(
-                    f"{self.api_url}/api/v1/cache/clear",
-                    headers=self._admin_headers(),
-                )
+            response = self._client.post(
+                "/api/v1/cache/clear",
+                headers=self._admin_headers(),
+            )
             if response.status_code == 200:
                 data = response.json()
                 if isinstance(data, dict):
@@ -682,11 +677,10 @@ class RemoteDataProvider:
         Requires admin_key to be set if server has TRADFI_ADMIN_KEY configured.
         """
         try:
-            with httpx.Client(timeout=self.timeout) as client:
-                response = client.post(
-                    f"{self.api_url}/api/v1/refresh/{universe}",
-                    headers=self._admin_headers(),
-                )
+            response = self._client.post(
+                f"/api/v1/refresh/{universe}",
+                headers=self._admin_headers(),
+            )
             if response.status_code == 200:
                 return response.json()
             elif response.status_code in (401, 403):
@@ -698,8 +692,7 @@ class RemoteDataProvider:
     def get_refresh_status(self) -> dict:
         """Get current refresh status (running job info)."""
         try:
-            with httpx.Client(timeout=self.timeout) as client:
-                response = client.get(f"{self.api_url}/api/v1/refresh/status")
+            response = self._client.get("/api/v1/refresh/status")
             if response.status_code == 200:
                 return response.json()
             return {}
@@ -709,8 +702,7 @@ class RemoteDataProvider:
     def get_universe_stats(self) -> list[dict]:
         """Get cache statistics for all universes."""
         try:
-            with httpx.Client(timeout=self.timeout) as client:
-                response = client.get(f"{self.api_url}/api/v1/refresh/universes")
+            response = self._client.get("/api/v1/refresh/universes")
             if response.status_code == 200:
                 return response.json()
             return []
@@ -720,8 +712,7 @@ class RemoteDataProvider:
     def get_refresh_health(self) -> dict:
         """Get refresh system health and next scheduled time."""
         try:
-            with httpx.Client(timeout=self.timeout) as client:
-                response = client.get(f"{self.api_url}/api/v1/refresh/health")
+            response = self._client.get("/api/v1/refresh/health")
             if response.status_code == 200:
                 return response.json()
             return {}
