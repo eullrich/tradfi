@@ -1,8 +1,9 @@
-"""Tests for batch stock fetching with automatic yfinance fallback.
+"""Tests for batch stock fetching (cache-only).
 
-Verifies that fetch_stocks_batch uses implicit semantics:
-  - Specific tickers: cache first, then yfinance for missing
-  - tickers=None: cache-only (all cached stocks)
+Verifies that fetch_stocks_batch only reads from cache:
+  - Specific tickers: returns only those found in cache
+  - tickers=None: returns all cached stocks
+  - Never hits yfinance — cache population is handled by the refresh system
 """
 
 import os
@@ -88,115 +89,68 @@ def clean_test_cache():
 
 
 class TestFetchStocksBatch:
-    """Test fetch_stocks_batch with implicit fetch-missing semantics."""
+    """Test fetch_stocks_batch with cache-only semantics."""
 
-    @patch("tradfi.core.data.fetch_stock_from_api")
-    def test_specific_tickers_fetches_uncached(self, mock_api):
-        """Specific tickers: cached ones from cache, missing ones from yfinance."""
+    def test_returns_cached_tickers(self):
+        """Cached tickers are returned, uncached are omitted."""
         cache_stock_data("AAPL", _make_stock_dict("AAPL"))
-        mock_api.return_value = _make_stock("GOOGL")
 
         result = fetch_stocks_batch(["AAPL", "GOOGL"])
 
         assert "AAPL" in result
-        assert "GOOGL" in result
-        mock_api.assert_called_once_with("GOOGL")
+        assert "GOOGL" not in result
 
-    @patch("tradfi.core.data.fetch_stock_from_api")
-    def test_none_tickers_does_not_call_yfinance(self, mock_api):
-        """tickers=None returns all cached stocks without hitting yfinance."""
+    def test_none_tickers_returns_all_cached(self):
+        """tickers=None returns all cached stocks."""
         cache_stock_data("AAPL", _make_stock_dict("AAPL"))
 
         result = fetch_stocks_batch(tickers=None)
 
-        mock_api.assert_not_called()
         assert "AAPL" in result
 
-    @patch("tradfi.core.data.fetch_stock_from_api")
-    def test_empty_list_does_not_call_yfinance(self, mock_api):
-        """Empty list returns empty dict without hitting yfinance."""
+    def test_empty_list_returns_empty(self):
+        """Empty list returns empty dict."""
         result = fetch_stocks_batch([])
 
-        mock_api.assert_not_called()
         assert result == {}
 
-    @patch("tradfi.core.data.fetch_stock_from_api")
-    def test_only_fetches_missing_tickers(self, mock_api):
-        """fetch_stock_from_api is only called for tickers NOT in cache."""
+    def test_returns_only_cached_subset(self):
+        """Only cached tickers are returned from a mixed request."""
         cache_stock_data("AAPL", _make_stock_dict("AAPL"))
         cache_stock_data("MSFT", _make_stock_dict("MSFT"))
-        mock_api.return_value = _make_stock("GOOGL")
 
         result = fetch_stocks_batch(["AAPL", "MSFT", "GOOGL"])
 
-        assert len(result) == 3
-        mock_api.assert_called_once_with("GOOGL")
+        assert len(result) == 2
+        assert "AAPL" in result
+        assert "MSFT" in result
+        assert "GOOGL" not in result
 
-    @patch("tradfi.core.data.fetch_stock_from_api")
-    def test_multiple_uncached(self, mock_api):
-        """Multiple missing tickers are each fetched from yfinance."""
+    def test_uncached_tickers_omitted(self):
+        """Multiple uncached tickers are simply omitted."""
         cache_stock_data("AAPL", _make_stock_dict("AAPL"))
-        mock_api.side_effect = lambda t: _make_stock(t)
 
         result = fetch_stocks_batch(["AAPL", "GOOGL", "AMZN", "NFLX"])
 
-        assert len(result) == 4
-        assert mock_api.call_count == 3  # GOOGL, AMZN, NFLX
-
-    @patch("tradfi.core.data.fetch_stock_from_api")
-    def test_handles_none_return(self, mock_api):
-        """If fetch_stock_from_api returns None, ticker is skipped."""
-        cache_stock_data("AAPL", _make_stock_dict("AAPL"))
-        mock_api.return_value = None
-
-        result = fetch_stocks_batch(["AAPL", "FAIL"])
-
+        assert len(result) == 1
         assert "AAPL" in result
-        assert "FAIL" not in result
 
-    @patch("tradfi.core.data.fetch_stock_from_api")
-    def test_handles_exception(self, mock_api):
-        """If fetch_stock_from_api raises, ticker is skipped."""
-        cache_stock_data("AAPL", _make_stock_dict("AAPL"))
-        mock_api.side_effect = Exception("Network error")
-
-        result = fetch_stocks_batch(["AAPL", "ERROR"])
-
-        assert "AAPL" in result
-        assert "ERROR" not in result
-
-    @patch("tradfi.core.data.fetch_stock_from_api")
-    def test_partial_failure(self, mock_api):
-        """Some missing tickers fail, others succeed."""
-        cache_stock_data("CACHED", _make_stock_dict("CACHED"))
-
-        def mock_fetch(ticker):
-            if ticker == "FAIL":
-                return None
-            if ticker == "ERROR":
-                raise Exception("Timeout")
-            return _make_stock(ticker)
-
-        mock_api.side_effect = mock_fetch
-
-        result = fetch_stocks_batch(["CACHED", "OK1", "FAIL", "ERROR", "OK2"])
-
-        assert "CACHED" in result
-        assert "OK1" in result
-        assert "OK2" in result
-        assert "FAIL" not in result
-        assert "ERROR" not in result
-
-    @patch("tradfi.core.data.fetch_stock_from_api")
-    def test_all_cached_no_yfinance_call(self, mock_api):
-        """When all requested tickers are cached, yfinance is not called."""
+    def test_all_cached(self):
+        """When all requested tickers are cached, all are returned."""
         cache_stock_data("AAPL", _make_stock_dict("AAPL"))
         cache_stock_data("MSFT", _make_stock_dict("MSFT"))
 
         result = fetch_stocks_batch(["AAPL", "MSFT"])
 
-        mock_api.assert_not_called()
         assert len(result) == 2
+
+    @patch("tradfi.core.data.fetch_stock_from_api")
+    def test_never_calls_yfinance(self, mock_api):
+        """fetch_stocks_batch never calls yfinance regardless of cache misses."""
+        result = fetch_stocks_batch(["AAPL", "GOOGL"])
+
+        mock_api.assert_not_called()
+        assert result == {}
 
 
 # ---------------------------------------------------------------------------

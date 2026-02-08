@@ -137,11 +137,7 @@ def fetch_stock(
 
 def fetch_stocks_batch(tickers: list[str] | None = None) -> dict[str, Stock]:
     """
-    Fetch multiple stocks, using cache first and falling back to yfinance.
-
-    When specific tickers are provided, any not found in cache are fetched
-    from yfinance via fetch_stock_from_api(). When tickers is None, returns
-    all cached stocks without hitting yfinance.
+    Fetch multiple stocks from cache.
 
     Args:
         tickers: List of ticker symbols, or None for all cached stocks.
@@ -156,17 +152,6 @@ def fetch_stocks_batch(tickers: list[str] | None = None) -> dict[str, Stock]:
             result[ticker] = _dict_to_stock(data)
         except Exception:
             pass  # Skip stocks with corrupt/incompatible cached data
-
-    # When specific tickers requested, fetch any missing from yfinance
-    if tickers:
-        missing_tickers = [t.upper() for t in tickers if t.upper() not in result]
-        for ticker in missing_tickers:
-            try:
-                stock = fetch_stock_from_api(ticker)
-                if stock:
-                    result[ticker] = stock
-            except Exception:
-                pass  # Individual failures don't break the batch
 
     return result
 
@@ -377,9 +362,7 @@ def fetch_stock_from_api(ticker_symbol: str) -> Stock | None:
             terminal_growth=0.03,
         )
 
-        epv_value = calculate_earnings_power_value(
-            stock.operating_income, stock.shares_outstanding
-        )
+        epv_value = calculate_earnings_power_value(stock.operating_income, stock.shares_outstanding)
 
         best_fair_value = dcf_value or graham_number or pe_fair_value
         margin_of_safety = None
