@@ -12,8 +12,20 @@ from tradfi.api.schemas import (
 )
 from tradfi.core.data import fetch_stock, fetch_stocks_batch
 from tradfi.core.quarterly import fetch_quarterly_financials
+from tradfi.models.stock import Stock
 
 router = APIRouter(prefix="/stocks", tags=["stocks"])
+
+
+def _convert_stocks_batch(stocks: dict[str, Stock]) -> dict[str, StockSchema]:
+    """Convert a dict of Stock dataclasses to schemas, skipping failures."""
+    result: dict[str, StockSchema] = {}
+    for ticker, stock in stocks.items():
+        try:
+            result[ticker] = stock_to_schema(stock)
+        except Exception:
+            pass  # Skip stocks that fail schema conversion
+    return result
 
 
 @router.get("/{ticker}", response_model=StockSchema)
@@ -63,13 +75,7 @@ async def get_all_stocks():
     Returns dict mapping ticker to stock data.
     """
     stocks = fetch_stocks_batch()
-    result = {}
-    for ticker, stock in stocks.items():
-        try:
-            result[ticker] = stock_to_schema(stock)
-        except Exception:
-            pass  # Skip stocks that fail schema conversion
-    return result
+    return _convert_stocks_batch(stocks)
 
 
 @router.post("/batch")
@@ -83,13 +89,7 @@ async def get_stocks_batch(tickers: list[str]):
     # fetch_stock_from_api uses time.sleep for rate limiting - run in thread
     # to avoid blocking the async event loop
     stocks = await asyncio.to_thread(fetch_stocks_batch, tickers)
-    result = {}
-    for ticker, stock in stocks.items():
-        try:
-            result[ticker] = stock_to_schema(stock)
-        except Exception:
-            pass  # Skip stocks that fail schema conversion
-    return result
+    return _convert_stocks_batch(stocks)
 
 
 @router.get("/{ticker}/quarterly", response_model=QuarterlyTrendsSchema)

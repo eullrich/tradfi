@@ -1,26 +1,14 @@
 """Watchlist command - manage stock watchlist."""
 
-import os
-
 import typer
 from rich import box
 from rich.console import Console
 from rich.table import Table
 
-from tradfi.core.remote_provider import RemoteDataProvider
-from tradfi.utils.display import format_number, format_pct, get_signal_display
+from tradfi.utils.display import colorize_rsi, format_number, format_pct, get_signal_display
+from tradfi.utils.provider import get_provider as _get_provider
 
 console = Console()
-
-# Default API URL - can be overridden with TRADFI_API_URL env var
-DEFAULT_API_URL = "https://deepv-production.up.railway.app"
-
-
-def _get_provider() -> RemoteDataProvider:
-    """Get the remote data provider using API URL and admin key from environment."""
-    api_url = os.environ.get("TRADFI_API_URL", DEFAULT_API_URL)
-    admin_key = os.environ.get("TRADFI_ADMIN_KEY")
-    return RemoteDataProvider(api_url, admin_key=admin_key)
 
 
 # Create a Typer app for watchlist subcommands
@@ -108,12 +96,7 @@ def watchlist_show(
                 mos = format_pct(stock.fair_value.margin_of_safety_pct)
                 signal = get_signal_display(stock.signal)
 
-                # Color RSI
-                rsi_val = stock.technical.rsi_14
-                if rsi_val is not None and rsi_val < 30:
-                    rsi = f"[green]{rsi}[/]"
-                elif rsi_val is not None and rsi_val < 40:
-                    rsi = f"[yellow]{rsi}[/]"
+                rsi = colorize_rsi(rsi, stock.technical.rsi_14)
 
                 table.add_row(
                     ticker, price, pe, rsi, vs_low, mos, signal, notes[:20] if notes else ""
