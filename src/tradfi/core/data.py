@@ -131,7 +131,10 @@ def fetch_stock(
     # Only serve from cache - never hit yfinance
     cached = get_cached_stock_data(ticker_symbol, ignore_ttl=True)
     if cached:
-        return _dict_to_stock(cached)
+        try:
+            return _dict_to_stock(cached)
+        except Exception:
+            pass  # Skip stocks with corrupt/incompatible cached data
     return None
 
 
@@ -255,6 +258,7 @@ def fetch_stock_from_api(ticker_symbol: str) -> Stock | None:
         stock.growth = GrowthMetrics(
             revenue_growth_yoy=_to_pct(info.get("revenueGrowth")),
             earnings_growth_yoy=_to_pct(info.get("earningsGrowth")),
+            eps_growth_5y=_to_pct(info.get("earningsQuarterlyGrowth")),
         )
 
         # Dividend info
@@ -496,6 +500,16 @@ def _stock_to_dict(stock: Stock) -> dict:
     }
 
 
+def _filter_fields(cls: type, d: dict) -> dict:
+    """Filter dict to only keys that are valid dataclass fields.
+
+    Prevents TypeError when cached data contains fields that were
+    removed from the dataclass in a later version.
+    """
+    valid = cls.__dataclass_fields__
+    return {k: v for k, v in d.items() if k in valid}
+
+
 def _dict_to_stock(data: dict) -> Stock:
     """Convert cached dictionary back to Stock object."""
     return Stock(
@@ -510,13 +524,21 @@ def _dict_to_stock(data: dict) -> Stock:
         book_value_per_share=data.get("book_value_per_share"),
         shares_outstanding=data.get("shares_outstanding"),
         operating_income=data.get("operating_income"),
-        valuation=ValuationMetrics(**data.get("valuation", {})),
-        profitability=ProfitabilityMetrics(**data.get("profitability", {})),
-        financial_health=FinancialHealth(**data.get("financial_health", {})),
-        growth=GrowthMetrics(**data.get("growth", {})),
-        dividends=DividendInfo(**data.get("dividends", {})),
-        technical=TechnicalIndicators(**data.get("technical", {})),
-        fair_value=FairValueEstimates(**data.get("fair_value", {})),
-        buyback=BuybackInfo(**data.get("buyback", {})),
-        etf=ETFMetrics(**data.get("etf", {})),
+        valuation=ValuationMetrics(**_filter_fields(ValuationMetrics, data.get("valuation", {}))),
+        profitability=ProfitabilityMetrics(
+            **_filter_fields(ProfitabilityMetrics, data.get("profitability", {}))
+        ),
+        financial_health=FinancialHealth(
+            **_filter_fields(FinancialHealth, data.get("financial_health", {}))
+        ),
+        growth=GrowthMetrics(**_filter_fields(GrowthMetrics, data.get("growth", {}))),
+        dividends=DividendInfo(**_filter_fields(DividendInfo, data.get("dividends", {}))),
+        technical=TechnicalIndicators(
+            **_filter_fields(TechnicalIndicators, data.get("technical", {}))
+        ),
+        fair_value=FairValueEstimates(
+            **_filter_fields(FairValueEstimates, data.get("fair_value", {}))
+        ),
+        buyback=BuybackInfo(**_filter_fields(BuybackInfo, data.get("buyback", {}))),
+        etf=ETFMetrics(**_filter_fields(ETFMetrics, data.get("etf", {}))),
     )
