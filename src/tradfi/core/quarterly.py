@@ -25,7 +25,7 @@ def fetch_quarterly_financials(ticker_symbol: str, periods: int = 8) -> Optional
         # Get quarterly financial statements
         # yfinance returns these as DataFrames with dates as columns
         income_stmt = ticker.quarterly_income_stmt
-        _balance_sheet = ticker.quarterly_balance_sheet
+        balance_sheet = ticker.quarterly_balance_sheet
         cashflow = ticker.quarterly_cashflow
 
         if income_stmt is None or income_stmt.empty:
@@ -72,6 +72,24 @@ def fetch_quarterly_financials(ticker_symbol: str, periods: int = 8) -> Optional
                 if operating_cf is not None and capex is not None:
                     fcf = operating_cf + capex  # capex is negative
 
+            # Get book value per share from balance sheet
+            book_value_per_share = None
+            if (
+                balance_sheet is not None
+                and not balance_sheet.empty
+                and date in balance_sheet.columns
+            ):
+                stockholders_equity = _safe_get(balance_sheet, "Stockholders Equity", date)
+                if stockholders_equity is None:
+                    stockholders_equity = _safe_get(
+                        balance_sheet, "Total Equity Gross Minority Interest", date
+                    )
+                shares = _safe_get(balance_sheet, "Ordinary Shares Number", date)
+                if shares is None:
+                    shares = _safe_get(balance_sheet, "Share Issued", date)
+                if stockholders_equity is not None and shares is not None and shares > 0:
+                    book_value_per_share = stockholders_equity / shares
+
             quarterly_data = QuarterlyData(
                 quarter=quarter_str,
                 revenue=revenue,
@@ -83,6 +101,7 @@ def fetch_quarterly_financials(ticker_symbol: str, periods: int = 8) -> Optional
                 net_margin=net_margin,
                 eps=eps,
                 free_cash_flow=fcf,
+                book_value_per_share=book_value_per_share,
             )
             quarters.append(quarterly_data)
 
@@ -114,6 +133,13 @@ def fetch_quarterly_financials(ticker_symbol: str, periods: int = 8) -> Optional
                             continue
                     except (IndexError, KeyError):
                         continue
+
+                    # Always store the quarter-end price
+                    q.price_at_quarter_end = price_at_qend
+
+                    # Compute P/B ratio (independent of trailing EPS)
+                    if q.book_value_per_share is not None and q.book_value_per_share > 0:
+                        q.pb_ratio = round(price_at_qend / q.book_value_per_share, 2)
 
                     # Compute trailing 4Q EPS (sum of this quarter + prior 3)
                     eps_values = []

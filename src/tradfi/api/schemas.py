@@ -132,6 +132,11 @@ class QuarterlyDataSchema(BaseModel):
     net_margin: float | None = None
     eps: float | None = None
     free_cash_flow: float | None = None
+    pe_ratio: float | None = None
+    peg_ratio: float | None = None
+    book_value_per_share: float | None = None
+    pb_ratio: float | None = None
+    price_at_quarter_end: float | None = None
 
 
 class QuarterlyTrendsSchema(BaseModel):
