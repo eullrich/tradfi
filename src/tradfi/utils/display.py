@@ -19,6 +19,40 @@ from tradfi.utils.cache import get_display_currency
 console = Console()
 
 
+def color_value(
+    value: float | None,
+    thresholds: list[tuple[str, float, str]],
+    format_str: str = "{:.1f}",
+    na_text: str = "-",
+) -> Text:
+    """Color a numeric value based on threshold rules.
+
+    Args:
+        value: The numeric value to format and color.
+        thresholds: List of (comparison, threshold, rich_style) tuples.
+            Evaluated top-to-bottom, first match wins.
+            comparison: "lt", "gt", "le", "ge"
+        format_str: Python format string for the value.
+        na_text: Text shown when value is None.
+    """
+    if value is None:
+        return Text(na_text, style="dim")
+
+    formatted = format_str.format(value)
+
+    for comparison, threshold, style in thresholds:
+        if comparison == "lt" and value < threshold:
+            return Text(formatted, style=style)
+        elif comparison == "gt" and value > threshold:
+            return Text(formatted, style=style)
+        elif comparison == "le" and value <= threshold:
+            return Text(formatted, style=style)
+        elif comparison == "ge" and value >= threshold:
+            return Text(formatted, style=style)
+
+    return Text(formatted)
+
+
 def format_number(
     value: float | None, decimals: int = 2, prefix: str = "", suffix: str = ""
 ) -> str:
