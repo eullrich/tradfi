@@ -1,30 +1,24 @@
 """List management commands - view, manage, and export saved stock lists."""
 
-import os
-from typing import Optional
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Optional
 
 import typer
 from rich import box
 from rich.console import Console
 from rich.table import Table
 
-from tradfi.core.remote_provider import RemoteDataProvider
+from tradfi.utils.provider import get_provider as _get_provider
+
+if TYPE_CHECKING:
+    from tradfi.core.remote_provider import RemoteDataProvider
 
 console = Console()
 
 # Reserved list names for long/short positions
 LONG_LIST = "_long"
 SHORT_LIST = "_short"
-
-# Default API URL - can be overridden with TRADFI_API_URL env var
-DEFAULT_API_URL = "https://deepv-production.up.railway.app"
-
-
-def _get_provider() -> RemoteDataProvider:
-    """Get the remote data provider using API URL and admin key from environment."""
-    api_url = os.environ.get("TRADFI_API_URL", DEFAULT_API_URL)
-    admin_key = os.environ.get("TRADFI_ADMIN_KEY")
-    return RemoteDataProvider(api_url, admin_key=admin_key)
 
 
 app = typer.Typer(

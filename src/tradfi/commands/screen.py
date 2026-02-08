@@ -19,7 +19,7 @@ from tradfi.core.screener import (
 )
 from tradfi.models.stock import Stock
 from tradfi.utils.cache import save_list
-from tradfi.utils.display import format_number, format_pct, get_signal_display
+from tradfi.utils.display import colorize_rsi, format_number, format_pct, get_signal_display
 
 console = Console()
 
@@ -397,13 +397,7 @@ def screen(
         # Format sector (compact)
         sector_display = _truncate_sector(stock.sector) if stock.sector else "N/A"
 
-        # Color RSI
-        rsi_val = stock.technical.rsi_14
-        if rsi_val is not None:
-            if rsi_val < 30:
-                rsi = f"[green]{rsi}[/]"
-            elif rsi_val < 40:
-                rsi = f"[yellow]{rsi}[/]"
+        rsi = colorize_rsi(rsi, stock.technical.rsi_14)
 
         # Color vs 52W Low
         low_val = stock.technical.pct_from_52w_low
@@ -627,13 +621,7 @@ def _display_grouped_by_sector(stocks: list[Stock], failed_tickers: list[str]) -
             roe = format_pct(stock.profitability.roe)
             rsi = format_number(stock.technical.rsi_14, 0)
 
-            # Color RSI
-            rsi_val = stock.technical.rsi_14
-            if rsi_val is not None:
-                if rsi_val < 30:
-                    rsi = f"[green]{rsi}[/]"
-                elif rsi_val < 40:
-                    rsi = f"[yellow]{rsi}[/]"
+            rsi = colorize_rsi(rsi, stock.technical.rsi_14)
 
             signal = get_signal_display(stock.signal)
 

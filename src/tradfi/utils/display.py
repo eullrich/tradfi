@@ -124,6 +124,17 @@ def format_price(
     return f"{symbol}{value:,.{decimals}f}"
 
 
+def colorize_rsi(rsi_str: str, rsi_val: float | None) -> str:
+    """Apply Rich markup color to a pre-formatted RSI string based on thresholds."""
+    if rsi_val is None:
+        return rsi_str
+    if rsi_val < 30:
+        return f"[green]{rsi_str}[/]"
+    if rsi_val < 40:
+        return f"[yellow]{rsi_str}[/]"
+    return rsi_str
+
+
 def get_signal_display(signal: str) -> Text:
     """Get colored signal display."""
     signal_map = {

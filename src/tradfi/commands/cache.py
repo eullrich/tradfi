@@ -1,6 +1,5 @@
 """Cache management commands - status, clear, and refresh via remote API."""
 
-import os
 from datetime import datetime
 from typing import Optional
 
@@ -9,20 +8,10 @@ from rich import box
 from rich.console import Console
 from rich.table import Table
 
-from tradfi.core.remote_provider import RemoteDataProvider
 from tradfi.core.screener import AVAILABLE_UNIVERSES
+from tradfi.utils.provider import get_provider as _get_provider
 
 console = Console()
-
-# Default API URL - can be overridden with TRADFI_API_URL env var
-DEFAULT_API_URL = "https://deepv-production.up.railway.app"
-
-
-def _get_provider() -> RemoteDataProvider:
-    """Get the remote data provider using API URL and admin key from environment."""
-    api_url = os.environ.get("TRADFI_API_URL", DEFAULT_API_URL)
-    admin_key = os.environ.get("TRADFI_ADMIN_KEY")
-    return RemoteDataProvider(api_url, admin_key=admin_key)
 
 
 app = typer.Typer(
@@ -45,7 +34,7 @@ def cache_status() -> None:
 
     if not stats:
         console.print("[red]Could not fetch cache stats from server.[/]")
-        console.print(f"[dim]API URL: {os.environ.get('TRADFI_API_URL', DEFAULT_API_URL)}[/]")
+        console.print(f"[dim]API URL: {provider.api_url}[/]")
         return
 
     console.print()
