@@ -6,8 +6,10 @@ import json
 import os
 import secrets
 import sqlite3
+import threading
 import time
 from dataclasses import dataclass
+from functools import wraps
 from pathlib import Path
 
 # Default cache location - supports environment variable overrides for cloud deployment
@@ -21,6 +23,34 @@ DEFAULT_CACHE_TTL = int(os.environ.get("TRADFI_CACHE_TTL", 24 * 60 * 60))  # 24 
 # Using 2 seconds as default - aggressive but usually works for small batches
 # For large prefetches, recommend using 5-10 seconds
 DEFAULT_RATE_LIMIT_DELAY = 2.0  # seconds between requests
+
+
+def ttl_cache(seconds: float = 5.0):
+    """Simple TTL cache decorator for functions with hashable arguments.
+
+    Caches results for `seconds` before re-executing. Much lighter than
+    hitting SQLite on every call for aggregate queries like stats/sectors.
+    """
+
+    def decorator(func):
+        _cache: dict = {}
+
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            key = (args, tuple(sorted(kwargs.items())))
+            now = time.time()
+            if key in _cache:
+                result, cached_at = _cache[key]
+                if now - cached_at < seconds:
+                    return result
+            result = func(*args, **kwargs)
+            _cache[key] = (result, now)
+            return result
+
+        wrapper.cache_clear = lambda: _cache.clear()
+        return wrapper
+
+    return decorator
 
 
 @dataclass
@@ -224,13 +254,58 @@ def clear_currency_rates() -> int:
         conn.close()
 
 
+_db_initialized: bool = False
+_local = threading.local()
+
+
+class _PersistentConnection:
+    """Wrapper that prevents accidental connection closing.
+
+    Existing code calls conn.close() in finally: blocks. With connection
+    pooling, we want to keep the connection alive, so close() is a no-op.
+    """
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+
+    def close(self) -> None:
+        pass  # Intentionally no-op — connection is managed by the pool
+
+    def __getattr__(self, name: str):
+        return getattr(self._conn, name)
+
+
 def get_db_connection() -> sqlite3.Connection:
-    """Get a connection to the cache database, creating it if needed."""
+    """Get a thread-local connection to the cache database.
+
+    Uses connection pooling (one connection per thread) and applies
+    performance-tuned PRAGMAs on first connection. Schema initialization
+    runs only once per process.
+    """
+    global _db_initialized
+
+    conn = getattr(_local, "conn", None)
+    if conn is not None:
+        return _PersistentConnection(conn)
+
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(CACHE_DB)
+    conn = sqlite3.connect(CACHE_DB, check_same_thread=False)
     conn.row_factory = sqlite3.Row
-    _init_db(conn)
-    return conn
+
+    # Performance PRAGMAs — applied once per connection
+    conn.execute("PRAGMA journal_mode=WAL")  # ~5x faster concurrent reads
+    conn.execute("PRAGMA synchronous=NORMAL")  # Safe with WAL, ~2x faster writes
+    conn.execute("PRAGMA busy_timeout=5000")  # Wait 5s on lock instead of failing
+    conn.execute("PRAGMA cache_size=-64000")  # 64MB page cache
+    conn.execute("PRAGMA mmap_size=268435456")  # 256MB memory-mapped I/O
+    conn.execute("PRAGMA temp_store=MEMORY")  # Temp tables in RAM
+
+    if not _db_initialized:
+        _init_db(conn)
+        _db_initialized = True
+
+    _local.conn = conn
+    return _PersistentConnection(conn)
 
 
 def _init_db(conn: sqlite3.Connection) -> None:
@@ -373,6 +448,24 @@ def _init_db(conn: sqlite3.Connection) -> None:
             rate_to_usd REAL NOT NULL,
             updated_at INTEGER NOT NULL
         );
+
+        -- Performance indexes (tables with PRIMARY KEY already have implicit indexes)
+        CREATE INDEX IF NOT EXISTS idx_stock_cache_cached_at
+            ON stock_cache(cached_at);
+        CREATE INDEX IF NOT EXISTS idx_alerts_ticker
+            ON alerts(ticker);
+        CREATE INDEX IF NOT EXISTS idx_auth_tokens_token_type
+            ON auth_tokens(token, token_type);
+        CREATE INDEX IF NOT EXISTS idx_user_watchlist_user_ticker
+            ON user_watchlist(user_id, ticker);
+        CREATE INDEX IF NOT EXISTS idx_user_saved_lists_user
+            ON user_saved_lists(user_id);
+        CREATE INDEX IF NOT EXISTS idx_user_list_items_list_id
+            ON user_saved_list_items(list_id);
+        CREATE INDEX IF NOT EXISTS idx_list_item_notes_list_name
+            ON list_item_notes(list_name);
+        CREATE INDEX IF NOT EXISTS idx_list_category_membership_category
+            ON list_category_membership(category_id);
     """)
     conn.commit()
 
@@ -417,6 +510,9 @@ def cache_stock_data(ticker: str, data: dict) -> None:
         conn.commit()
     finally:
         conn.close()
+    # Invalidate TTL caches that depend on stock_cache
+    get_cache_stats.cache_clear()
+    get_all_cached_sectors.cache_clear()
 
 
 def get_cached_stock_data(
@@ -473,29 +569,25 @@ def get_cache_age(ticker: str) -> float | None:
         conn.close()
 
 
+@ttl_cache(seconds=30.0)
 def get_all_cached_sectors() -> list[tuple[str, int]]:
     """Get all unique sectors from cached stocks with counts.
+
+    Uses SQL json_extract() to avoid deserializing every row in Python.
 
     Returns:
         List of (sector_name, count) tuples sorted by count descending.
     """
-    from collections import Counter
-
     conn = get_db_connection()
     try:
-        rows = conn.execute("SELECT data FROM stock_cache").fetchall()
-
-        sector_counts: Counter = Counter()
-        for row in rows:
-            try:
-                data = json.loads(row["data"])
-                sector = data.get("sector")
-                if sector:
-                    sector_counts[sector] += 1
-            except (json.JSONDecodeError, KeyError):
-                pass
-
-        return sector_counts.most_common()
+        rows = conn.execute("""
+            SELECT json_extract(data, '$.sector') as sector, COUNT(*) as cnt
+            FROM stock_cache
+            WHERE json_extract(data, '$.sector') IS NOT NULL
+            GROUP BY sector
+            ORDER BY cnt DESC
+        """).fetchall()
+        return [(row["sector"], row["cnt"]) for row in rows]
     finally:
         conn.close()
 
@@ -503,70 +595,68 @@ def get_all_cached_sectors() -> list[tuple[str, int]]:
 def get_sectors_for_tickers(tickers: list[str]) -> list[tuple[str, int]]:
     """Get unique sectors from cached stocks for specific tickers.
 
+    Uses SQL json_extract() to avoid deserializing every row in Python.
+
     Args:
         tickers: List of ticker symbols to filter by.
 
     Returns:
         List of (sector_name, count) tuples sorted by count descending.
     """
-    from collections import Counter
-
     if not tickers:
         return get_all_cached_sectors()
 
     conn = get_db_connection()
     try:
-        # Use parameterized query for the ticker list
-        # Uppercase tickers to match database storage format
         upper_tickers = [t.upper() for t in tickers]
         placeholders = ",".join("?" * len(upper_tickers))
-        query = f"SELECT data FROM stock_cache WHERE ticker IN ({placeholders})"
-        rows = conn.execute(query, upper_tickers).fetchall()
-
-        sector_counts: Counter = Counter()
-        for row in rows:
-            try:
-                data = json.loads(row["data"])
-                sector = data.get("sector")
-                if sector:
-                    sector_counts[sector] += 1
-            except (json.JSONDecodeError, KeyError):
-                pass
-
-        return sector_counts.most_common()
+        rows = conn.execute(
+            f"""
+            SELECT json_extract(data, '$.sector') as sector, COUNT(*) as cnt
+            FROM stock_cache
+            WHERE ticker IN ({placeholders})
+              AND json_extract(data, '$.sector') IS NOT NULL
+            GROUP BY sector
+            ORDER BY cnt DESC
+            """,
+            upper_tickers,
+        ).fetchall()
+        return [(row["sector"], row["cnt"]) for row in rows]
     finally:
         conn.close()
 
 
+@ttl_cache(seconds=5.0)
 def get_cache_stats() -> dict:
-    """Get cache statistics."""
+    """Get cache statistics in a single query."""
     config = get_config()
+    now = int(time.time())
     conn = get_db_connection()
     try:
-        total = conn.execute("SELECT COUNT(*) FROM stock_cache").fetchone()[0]
-        fresh = conn.execute(
-            "SELECT COUNT(*) FROM stock_cache WHERE ? - cached_at <= ?",
-            (int(time.time()), config.cache_ttl),
-        ).fetchone()[0]
-        stale = total - fresh
+        row = conn.execute(
+            """
+            SELECT
+                COUNT(*) as total,
+                SUM(CASE WHEN ? - cached_at <= ? THEN 1 ELSE 0 END) as fresh,
+                MAX(cached_at) as last_updated,
+                MIN(cached_at) as oldest_entry
+            FROM stock_cache
+            """,
+            (now, config.cache_ttl),
+        ).fetchone()
 
-        # Get most recent cache update time
-        last_update_row = conn.execute("SELECT MAX(cached_at) FROM stock_cache").fetchone()
-        last_updated = last_update_row[0] if last_update_row and last_update_row[0] else None
-
-        # Get oldest cache entry time
-        oldest_row = conn.execute("SELECT MIN(cached_at) FROM stock_cache").fetchone()
-        oldest_entry = oldest_row[0] if oldest_row and oldest_row[0] else None
+        total = row["total"]
+        fresh = row["fresh"] or 0
 
         return {
             "total_cached": total,
             "fresh": fresh,
-            "stale": stale,
+            "stale": total - fresh,
             "cache_ttl_minutes": config.cache_ttl // 60,
             "cache_enabled": config.cache_enabled,
             "rate_limit_delay": config.rate_limit_delay,
-            "last_updated": last_updated,
-            "oldest_entry": oldest_entry,
+            "last_updated": row["last_updated"],
+            "oldest_entry": row["oldest_entry"],
         }
     finally:
         conn.close()
@@ -607,15 +697,32 @@ def get_batch_cached_stocks(tickers: list[str] | None = None) -> dict[str, dict]
         conn.close()
 
 
+def get_all_cached_tickers() -> set[str]:
+    """Get the set of all cached ticker symbols without loading data.
+
+    This is much faster than get_batch_cached_stocks() when you only need
+    to check existence (e.g., universe stats). Avoids deserializing JSON.
+    """
+    conn = get_db_connection()
+    try:
+        rows = conn.execute("SELECT ticker FROM stock_cache").fetchall()
+        return {row["ticker"] for row in rows}
+    finally:
+        conn.close()
+
+
 def clear_cache() -> int:
     """Clear all cached stock data. Returns number of entries cleared."""
     conn = get_db_connection()
     try:
         cursor = conn.execute("DELETE FROM stock_cache")
         conn.commit()
-        return cursor.rowcount
+        count = cursor.rowcount
     finally:
         conn.close()
+    get_cache_stats.cache_clear()
+    get_all_cached_sectors.cache_clear()
+    return count
 
 
 # Watchlist functions
@@ -774,9 +881,10 @@ def save_list(name: str, tickers: list[str], description: str | None = None) -> 
             )
 
         conn.commit()
-        return True
     finally:
         conn.close()
+    list_saved_lists.cache_clear()
+    return True
 
 
 def get_saved_list(name: str) -> list[str] | None:
@@ -805,6 +913,37 @@ def get_saved_list(name: str) -> list[str] | None:
         conn.close()
 
 
+def get_saved_list_with_notes(name: str) -> tuple[list[str], list[dict]] | None:
+    """Get a saved list's tickers and all item notes in one connection.
+
+    Combines get_saved_list() + get_all_item_notes() into a single DB round-trip.
+
+    Returns:
+        Tuple of (tickers, notes_list) or None if list doesn't exist.
+    """
+    name = name.lower().replace(" ", "-")
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT name FROM saved_lists WHERE name = ?", (name,)).fetchone()
+        if row is None:
+            return None
+
+        tickers_rows = conn.execute(
+            "SELECT ticker FROM saved_list_items WHERE list_name = ? ORDER BY added_at", (name,)
+        ).fetchall()
+        tickers = [r["ticker"] for r in tickers_rows]
+
+        notes_rows = conn.execute(
+            "SELECT * FROM list_item_notes WHERE list_name = ? ORDER BY ticker", (name,)
+        ).fetchall()
+        notes = [dict(r) for r in notes_rows]
+
+        return tickers, notes
+    finally:
+        conn.close()
+
+
+@ttl_cache(seconds=10.0)
 def list_saved_lists() -> list[dict]:
     """
     Get all saved lists with their metadata.
@@ -848,9 +987,11 @@ def delete_saved_list(name: str) -> bool:
         conn.execute("DELETE FROM saved_list_items WHERE list_name = ?", (name,))
         cursor = conn.execute("DELETE FROM saved_lists WHERE name = ?", (name,))
         conn.commit()
-        return cursor.rowcount > 0
+        deleted = cursor.rowcount > 0
     finally:
         conn.close()
+    list_saved_lists.cache_clear()
+    return deleted
 
 
 def add_to_saved_list(name: str, ticker: str) -> bool:

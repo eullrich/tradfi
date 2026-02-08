@@ -18,8 +18,8 @@ from tradfi.utils.cache import (
     create_category,
     delete_category,
     delete_saved_list,
-    get_all_item_notes,
     get_saved_list,
+    get_saved_list_with_notes,
     list_categories,
     list_saved_lists,
     remove_from_saved_list,
@@ -48,12 +48,11 @@ async def create_list(request: CreateListSchema):
 @router.get("/{name}", response_model=SavedListSchema)
 async def get_list(name: str):
     """Get a saved list by name with all items and notes."""
-    tickers = get_saved_list(name)
-    if tickers is None:
+    result = get_saved_list_with_notes(name)
+    if result is None:
         raise HTTPException(status_code=404, detail=f"List '{name}' not found")
 
-    # Get notes for all items and convert list to dict keyed by ticker
-    notes_list = get_all_item_notes(name)
+    tickers, notes_list = result
     notes = {note["ticker"]: note for note in notes_list}
     items = []
     for ticker in tickers:
