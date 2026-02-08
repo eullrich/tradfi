@@ -113,6 +113,12 @@ def quarterly_trends_to_schema(trends: QuarterlyTrends) -> QuarterlyTrendsSchema
             net_margin=q.net_margin,
             eps=q.eps,
             free_cash_flow=q.free_cash_flow,
+            pe_ratio=q.pe_ratio,
+            peg_ratio=q.peg_ratio,
+            book_value_per_share=q.book_value_per_share,
+            pb_ratio=q.pb_ratio,
+            price_at_quarter_end=q.price_at_quarter_end,
+            market_cap=q.market_cap,
         )
         for q in trends.quarters
     ]

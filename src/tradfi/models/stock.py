@@ -20,6 +20,10 @@ class QuarterlyData:
     free_cash_flow: Optional[float] = None
     pe_ratio: Optional[float] = None
     peg_ratio: Optional[float] = None
+    book_value_per_share: Optional[float] = None
+    pb_ratio: Optional[float] = None
+    price_at_quarter_end: Optional[float] = None
+    market_cap: Optional[float] = None
 
 
 @dataclass

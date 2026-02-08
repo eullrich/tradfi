@@ -1,6 +1,7 @@
 """CLI command for quarterly financial analysis."""
 
 import typer
+from rich import box
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -52,6 +53,29 @@ def quarterly(
                 console.print()  # Spacing between tickers
 
 
+def _color_value(
+    value: float | None,
+    formatted: str,
+    thresholds: list[tuple[float, str]],
+    default_style: str = "",
+) -> str:
+    """Apply Rich color markup based on value thresholds.
+
+    Args:
+        value: The numeric value to evaluate
+        formatted: The pre-formatted string to wrap
+        thresholds: List of (threshold, style) pairs, checked in order.
+                    First threshold where value < threshold wins.
+        default_style: Style if no threshold matches
+    """
+    if value is None:
+        return formatted
+    for threshold, style in thresholds:
+        if value < threshold:
+            return f"[{style}]{formatted}[/]"
+    return f"[{default_style}]{formatted}[/]" if default_style else formatted
+
+
 def _display_quarterly(ticker: str, periods: int) -> None:
     """Display quarterly analysis for a single ticker."""
     console.print(f"\n[bold cyan]Fetching quarterly data for {ticker}...[/]")
@@ -74,7 +98,7 @@ def _display_quarterly(ticker: str, periods: int) -> None:
         )
     )
 
-    # Revenue section
+    # Revenue sparkline
     revenues = trends.get_metric_values("revenue")
     rev_spark = sparkline(list(reversed(revenues)), width=periods)
     rev_trend = trend_indicator(list(reversed(revenues)))
@@ -86,7 +110,7 @@ def _display_quarterly(ticker: str, periods: int) -> None:
     console.print(f"  Trend:    {rev_spark}  {rev_trend}  [dim]({summary['revenue_trend']})[/]")
     console.print(f"  QoQ:      {qoq_rev_str}")
 
-    # Earnings section
+    # Earnings sparkline
     earnings = trends.get_metric_values("net_income")
     earn_spark = sparkline(list(reversed(earnings)), width=periods)
     earn_trend = trend_indicator(list(reversed(earnings)))
@@ -98,7 +122,7 @@ def _display_quarterly(ticker: str, periods: int) -> None:
     console.print(f"  Trend:    {earn_spark}  {earn_trend}")
     console.print(f"  QoQ:      {qoq_earn_str}")
 
-    # Margins section
+    # Margins sparkline
     gross_margins = trends.get_metric_values("gross_margin")
     gm_spark = sparkline(list(reversed(gross_margins)), width=periods)
     gm_latest = summary.get("gross_margin")
@@ -119,24 +143,124 @@ def _display_quarterly(ticker: str, periods: int) -> None:
     console.print(f"  Operating:{om_str:>8}  {om_spark}")
     console.print(f"  Net:      {nm_str:>8}  {nm_spark}")
 
-    # Quarterly detail table
-    console.print("\n[bold magenta]Quarter Detail[/]")
-    table = Table(show_header=True, header_style="bold")
+    # P/E sparkline
+    pe_values = trends.get_metric_values("pe_ratio")
+    if pe_values:
+        pe_spark = sparkline(list(reversed(pe_values)), width=periods)
+        pe_trend = trend_indicator(list(reversed(pe_values)))
+        pe_latest = pe_values[0]
+        pe_color = "green" if pe_latest < 15 else "yellow" if pe_latest < 25 else "red"
+        console.print("\n[bold magenta]Trailing P/E[/]")
+        console.print(f"  Latest:   [{pe_color}]{pe_latest:.1f}[/]")
+        console.print(f"  Trend:    {pe_spark}  {pe_trend}")
+
+    # FCF sparkline
+    fcfs = trends.get_metric_values("free_cash_flow")
+    if fcfs:
+        fcf_spark = sparkline(list(reversed(fcfs)), width=periods)
+        fcf_trend = trend_indicator(list(reversed(fcfs)))
+        console.print("\n[bold magenta]Free Cash Flow[/]")
+        console.print(f"  Latest:   {format_large_number(fcfs[0])}")
+        console.print(f"  Trend:    {fcf_spark}  {fcf_trend}")
+
+    # Valuation Evolution Table
+    console.print("\n[bold magenta]Valuation Evolution[/]")
+    table = Table(
+        show_header=True,
+        header_style="bold",
+        box=box.SIMPLE_HEAVY,
+        padding=(0, 1),
+    )
     table.add_column("Quarter", style="cyan")
     table.add_column("Revenue", justify="right")
-    table.add_column("Net Inc", justify="right")
-    table.add_column("Gross %", justify="right")
-    table.add_column("Op %", justify="right")
+    table.add_column("Mkt Cap", justify="right")
+    table.add_column("EPS", justify="right")
+    table.add_column("P/E", justify="right")
+    table.add_column("P/B", justify="right")
     table.add_column("Net %", justify="right")
+    table.add_column("Op %", justify="right")
+    table.add_column("FCF", justify="right")
+    table.add_column("PEG", justify="right")
 
-    for q in trends.quarters[:6]:  # Show last 6 quarters
+    for q in trends.quarters:
+        # Revenue
+        rev_str = format_large_number(q.revenue) if q.revenue is not None else "-"
+
+        # Market Cap
+        mcap_str = format_large_number(q.market_cap) if q.market_cap is not None else "-"
+
+        # EPS with color
+        if q.eps is not None:
+            eps_color = "green" if q.eps > 0 else "red"
+            eps_str = f"[{eps_color}]{q.eps:.2f}[/]"
+        else:
+            eps_str = "-"
+
+        # P/E with Graham thresholds
+        if q.pe_ratio is not None:
+            pe_str = _color_value(
+                q.pe_ratio,
+                f"{q.pe_ratio:.1f}",
+                [(15, "green"), (25, "yellow")],
+                default_style="red",
+            )
+        else:
+            pe_str = "-"
+
+        # P/B with Graham thresholds
+        if q.pb_ratio is not None:
+            pb_str = _color_value(
+                q.pb_ratio,
+                f"{q.pb_ratio:.1f}",
+                [(1.5, "green"), (3.0, "yellow")],
+                default_style="red",
+            )
+        else:
+            pb_str = "-"
+
+        # Net margin
+        if q.net_margin is not None:
+            nm_color = "green" if q.net_margin > 0 else "red"
+            nm_str_cell = f"[{nm_color}]{q.net_margin:.1f}%[/]"
+        else:
+            nm_str_cell = "-"
+
+        # Operating margin
+        if q.operating_margin is not None:
+            om_color = "green" if q.operating_margin > 0 else "red"
+            om_str_cell = f"[{om_color}]{q.operating_margin:.1f}%[/]"
+        else:
+            om_str_cell = "-"
+
+        # FCF
+        if q.free_cash_flow is not None:
+            fcf_color = "green" if q.free_cash_flow > 0 else "red"
+            fcf_str = f"[{fcf_color}]{format_large_number(q.free_cash_flow)}[/]"
+        else:
+            fcf_str = "-"
+
+        # PEG
+        if q.peg_ratio is not None:
+            peg_str = _color_value(
+                q.peg_ratio,
+                f"{q.peg_ratio:.2f}",
+                [(1.0, "green"), (2.0, "yellow")],
+                default_style="red",
+            )
+        else:
+            peg_str = "-"
+
         table.add_row(
             q.quarter,
-            format_large_number(q.revenue) if q.revenue is not None else "-",
-            format_large_number(q.net_income) if q.net_income is not None else "-",
-            f"{q.gross_margin:.1f}%" if q.gross_margin is not None else "-",
-            f"{q.operating_margin:.1f}%" if q.operating_margin is not None else "-",
-            f"{q.net_margin:.1f}%" if q.net_margin is not None else "-",
+            rev_str,
+            mcap_str,
+            eps_str,
+            pe_str,
+            pb_str,
+            nm_str_cell,
+            om_str_cell,
+            fcf_str,
+            peg_str,
         )
 
     console.print(table)
