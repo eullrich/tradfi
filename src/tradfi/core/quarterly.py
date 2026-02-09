@@ -73,8 +73,9 @@ def fetch_quarterly_financials(ticker_symbol: str, periods: int = 8) -> Optional
                 if operating_cf is not None and capex is not None:
                     fcf = operating_cf + capex  # capex is negative
 
-            # Get book value per share from balance sheet
+            # Get book value per share and D/E from balance sheet
             book_value_per_share = None
+            debt_to_equity = None
             shares = None
             if (
                 balance_sheet is not None
@@ -91,6 +92,17 @@ def fetch_quarterly_financials(ticker_symbol: str, periods: int = 8) -> Optional
                     shares = _safe_get(balance_sheet, "Share Issued", date)
                 if stockholders_equity is not None and shares is not None and shares > 0:
                     book_value_per_share = stockholders_equity / shares
+
+                # D/E ratio: Total Debt / Stockholders Equity
+                total_debt = _safe_get(balance_sheet, "Total Debt", date)
+                if total_debt is None:
+                    total_debt = _safe_get(balance_sheet, "Long Term Debt", date)
+                if (
+                    total_debt is not None
+                    and stockholders_equity is not None
+                    and stockholders_equity > 0
+                ):
+                    debt_to_equity = round(total_debt / stockholders_equity, 2)
             quarter_shares.append(shares if shares is not None and shares > 0 else None)
 
             quarterly_data = QuarterlyData(
@@ -105,6 +117,8 @@ def fetch_quarterly_financials(ticker_symbol: str, periods: int = 8) -> Optional
                 eps=eps,
                 free_cash_flow=fcf,
                 book_value_per_share=book_value_per_share,
+                debt_to_equity=debt_to_equity,
+                shares_outstanding=shares if shares and shares > 0 else None,
             )
             quarters.append(quarterly_data)
 
@@ -168,12 +182,12 @@ def fetch_quarterly_financials(ticker_symbol: str, periods: int = 8) -> Optional
 
                             if len(yoy_eps_values) == 4:
                                 prior_trailing_eps = sum(yoy_eps_values)
-                                if prior_trailing_eps > 0:
+                                if prior_trailing_eps != 0:
                                     eps_growth = (
                                         (trailing_eps - prior_trailing_eps)
                                         / abs(prior_trailing_eps)
                                     ) * 100
-                                    if eps_growth > 0:
+                                    if eps_growth != 0:
                                         q.peg_ratio = round(q.pe_ratio / eps_growth, 2)
         except Exception:
             pass  # P/E and PEG are nice-to-have, don't fail on them

@@ -659,8 +659,7 @@ class FilterPillsContainer(Horizontal):
         self.remove_children()
 
         has_any = bool(
-            universes or sectors or categories
-            or preset or metric_filters or text_filter
+            universes or sectors or categories or preset or metric_filters or text_filter
         )
 
         if not has_any:
@@ -2868,26 +2867,23 @@ class StockDetailScreen(Screen):
                 padding=(0, 1),
             )
             table.add_column("Quarter", style="cyan")
-            table.add_column("Revenue", justify="right")
+            table.add_column("Price", justify="right")
             table.add_column("Mkt Cap", justify="right")
-            table.add_column("EPS", justify="right")
             table.add_column("P/E", justify="right")
             table.add_column("P/B", justify="right")
-            table.add_column("Net %", justify="right")
+            table.add_column("PEG", justify="right")
+            table.add_column("D/E", justify="right")
+            table.add_column("EPS", justify="right")
+            table.add_column("Revenue", justify="right")
             table.add_column("Op %", justify="right")
             table.add_column("FCF", justify="right")
-            table.add_column("PEG", justify="right")
+            table.add_column("Shares", justify="right")
 
             for q in trends.quarters:
-                rev_s = format_large_number(q.revenue) if q.revenue is not None else "-"
-                mcap_s = (
-                    format_large_number(q.market_cap) if q.market_cap is not None else "-"
+                price_s = (
+                    f"${q.price_at_quarter_end:.2f}" if q.price_at_quarter_end is not None else "-"
                 )
-                if q.eps is not None:
-                    ec = "green" if q.eps > 0 else "red"
-                    eps_s = f"[{ec}]{q.eps:.2f}[/]"
-                else:
-                    eps_s = "-"
+                mcap_s = format_large_number(q.market_cap) if q.market_cap is not None else "-"
                 pe_s = (
                     _cv(q.pe_ratio, f"{q.pe_ratio:.1f}", [(15, "green"), (25, "yellow")], "red")
                     if q.pe_ratio is not None
@@ -2898,11 +2894,33 @@ class StockDetailScreen(Screen):
                     if q.pb_ratio is not None
                     else "-"
                 )
-                if q.net_margin is not None:
-                    nc = "green" if q.net_margin > 0 else "red"
-                    nm_s = f"[{nc}]{q.net_margin:.1f}%[/]"
+                if q.peg_ratio is not None:
+                    if q.peg_ratio < 0:
+                        peg_s = f"[red]{q.peg_ratio:.2f}[/]"
+                    else:
+                        peg_s = _cv(
+                            q.peg_ratio,
+                            f"{q.peg_ratio:.2f}",
+                            [(1.0, "green"), (2.0, "yellow")],
+                            "red",
+                        )
                 else:
-                    nm_s = "-"
+                    peg_s = "-"
+                if q.debt_to_equity is not None:
+                    de_s = _cv(
+                        q.debt_to_equity,
+                        f"{q.debt_to_equity:.2f}",
+                        [(0.5, "green"), (1.0, "yellow")],
+                        "red",
+                    )
+                else:
+                    de_s = "-"
+                if q.eps is not None:
+                    ec = "green" if q.eps > 0 else "red"
+                    eps_s = f"[{ec}]{q.eps:.2f}[/]"
+                else:
+                    eps_s = "-"
+                rev_s = format_large_number(q.revenue) if q.revenue is not None else "-"
                 if q.operating_margin is not None:
                     oc = "green" if q.operating_margin > 0 else "red"
                     om_s = f"[{oc}]{q.operating_margin:.1f}%[/]"
@@ -2913,18 +2931,24 @@ class StockDetailScreen(Screen):
                     fcf_s = f"[{fc}]{format_large_number(q.free_cash_flow)}[/]"
                 else:
                     fcf_s = "-"
-                peg_s = (
-                    _cv(
-                        q.peg_ratio,
-                        f"{q.peg_ratio:.2f}",
-                        [(1.0, "green"), (2.0, "yellow")],
-                        "red",
-                    )
-                    if q.peg_ratio is not None
+                shares_s = (
+                    format_large_number(q.shares_outstanding)
+                    if q.shares_outstanding is not None
                     else "-"
                 )
                 table.add_row(
-                    q.quarter, rev_s, mcap_s, eps_s, pe_s, pb_s, nm_s, om_s, fcf_s, peg_s
+                    q.quarter,
+                    price_s,
+                    mcap_s,
+                    pe_s,
+                    pb_s,
+                    peg_s,
+                    de_s,
+                    eps_s,
+                    rev_s,
+                    om_s,
+                    fcf_s,
+                    shares_s,
                 )
 
             quarterly_panel.update(table)
@@ -4981,7 +5005,8 @@ class ScreenerApp(App):
         if self.table_filter_text:
             query = self.table_filter_text
             sorted_stocks = [
-                s for s in sorted_stocks
+                s
+                for s in sorted_stocks
                 if query in s.ticker.lower() or (s.name and query in s.name.lower())
             ]
 
@@ -5531,9 +5556,7 @@ class ScreenerApp(App):
             # Extract metric expressions
             self.metric_filters = self._parse_metric_expression(raw)
             # Remainder after removing metric tokens is the text filter
-            remainder = re.sub(
-                r"[a-z0-9]+\s*[<>]=?\s*[-+]?\d*\.?\d+", "", raw.lower()
-            ).strip()
+            remainder = re.sub(r"[a-z0-9]+\s*[<>]=?\s*[-+]?\d*\.?\d+", "", raw.lower()).strip()
             self.table_filter_text = remainder
         self._update_filter_pills()
         self._populate_table()

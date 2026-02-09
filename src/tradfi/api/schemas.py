@@ -138,6 +138,8 @@ class QuarterlyDataSchema(BaseModel):
     pb_ratio: float | None = None
     price_at_quarter_end: float | None = None
     market_cap: float | None = None
+    debt_to_equity: float | None = None
+    shares_outstanding: float | None = None
 
 
 class QuarterlyTrendsSchema(BaseModel):

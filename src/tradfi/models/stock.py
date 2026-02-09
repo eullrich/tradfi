@@ -24,6 +24,8 @@ class QuarterlyData:
     pb_ratio: Optional[float] = None
     price_at_quarter_end: Optional[float] = None
     market_cap: Optional[float] = None
+    debt_to_equity: Optional[float] = None
+    shares_outstanding: Optional[float] = None
 
 
 @dataclass
@@ -177,11 +179,11 @@ class FinancialHealth:
     debt_to_assets: Optional[float] = None
     interest_coverage: Optional[float] = None
     free_cash_flow: Optional[float] = None
-    operating_cash_flow: Optional[float] = None    # yfinance: operatingCashflow
-    total_debt: Optional[float] = None             # yfinance: totalDebt
-    total_cash: Optional[float] = None             # yfinance: totalCash
-    net_income: Optional[float] = None             # yfinance: netIncomeToCommon
-    ebitda: Optional[float] = None                 # yfinance: ebitda
+    operating_cash_flow: Optional[float] = None  # yfinance: operatingCashflow
+    total_debt: Optional[float] = None  # yfinance: totalDebt
+    total_cash: Optional[float] = None  # yfinance: totalCash
+    net_income: Optional[float] = None  # yfinance: netIncomeToCommon
+    ebitda: Optional[float] = None  # yfinance: ebitda
 
 
 @dataclass

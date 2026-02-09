@@ -172,29 +172,24 @@ def _display_quarterly(ticker: str, periods: int) -> None:
         padding=(0, 1),
     )
     table.add_column("Quarter", style="cyan")
-    table.add_column("Revenue", justify="right")
+    table.add_column("Price", justify="right")
     table.add_column("Mkt Cap", justify="right")
-    table.add_column("EPS", justify="right")
     table.add_column("P/E", justify="right")
     table.add_column("P/B", justify="right")
-    table.add_column("Net %", justify="right")
+    table.add_column("PEG", justify="right")
+    table.add_column("D/E", justify="right")
+    table.add_column("EPS", justify="right")
+    table.add_column("Revenue", justify="right")
     table.add_column("Op %", justify="right")
     table.add_column("FCF", justify="right")
-    table.add_column("PEG", justify="right")
+    table.add_column("Shares", justify="right")
 
     for q in trends.quarters:
-        # Revenue
-        rev_str = format_large_number(q.revenue) if q.revenue is not None else "-"
+        # Price
+        price_str = f"${q.price_at_quarter_end:.2f}" if q.price_at_quarter_end is not None else "-"
 
         # Market Cap
         mcap_str = format_large_number(q.market_cap) if q.market_cap is not None else "-"
-
-        # EPS with color
-        if q.eps is not None:
-            eps_color = "green" if q.eps > 0 else "red"
-            eps_str = f"[{eps_color}]{q.eps:.2f}[/]"
-        else:
-            eps_str = "-"
 
         # P/E with Graham thresholds
         if q.pe_ratio is not None:
@@ -218,12 +213,40 @@ def _display_quarterly(ticker: str, periods: int) -> None:
         else:
             pb_str = "-"
 
-        # Net margin
-        if q.net_margin is not None:
-            nm_color = "green" if q.net_margin > 0 else "red"
-            nm_str_cell = f"[{nm_color}]{q.net_margin:.1f}%[/]"
+        # PEG with negative handling
+        if q.peg_ratio is not None:
+            if q.peg_ratio < 0:
+                peg_str = f"[red]{q.peg_ratio:.2f}[/]"
+            else:
+                peg_str = _color_value(
+                    q.peg_ratio,
+                    f"{q.peg_ratio:.2f}",
+                    [(1.0, "green"), (2.0, "yellow")],
+                    default_style="red",
+                )
         else:
-            nm_str_cell = "-"
+            peg_str = "-"
+
+        # D/E ratio with Burry thresholds
+        if q.debt_to_equity is not None:
+            de_str = _color_value(
+                q.debt_to_equity,
+                f"{q.debt_to_equity:.2f}",
+                [(0.5, "green"), (1.0, "yellow")],
+                default_style="red",
+            )
+        else:
+            de_str = "-"
+
+        # EPS with color
+        if q.eps is not None:
+            eps_color = "green" if q.eps > 0 else "red"
+            eps_str = f"[{eps_color}]{q.eps:.2f}[/]"
+        else:
+            eps_str = "-"
+
+        # Revenue
+        rev_str = format_large_number(q.revenue) if q.revenue is not None else "-"
 
         # Operating margin
         if q.operating_margin is not None:
@@ -239,28 +262,24 @@ def _display_quarterly(ticker: str, periods: int) -> None:
         else:
             fcf_str = "-"
 
-        # PEG
-        if q.peg_ratio is not None:
-            peg_str = _color_value(
-                q.peg_ratio,
-                f"{q.peg_ratio:.2f}",
-                [(1.0, "green"), (2.0, "yellow")],
-                default_style="red",
-            )
-        else:
-            peg_str = "-"
+        # Shares outstanding
+        shares_str = (
+            format_large_number(q.shares_outstanding) if q.shares_outstanding is not None else "-"
+        )
 
         table.add_row(
             q.quarter,
-            rev_str,
+            price_str,
             mcap_str,
-            eps_str,
             pe_str,
             pb_str,
-            nm_str_cell,
+            peg_str,
+            de_str,
+            eps_str,
+            rev_str,
             om_str_cell,
             fcf_str,
-            peg_str,
+            shares_str,
         )
 
     console.print(table)
