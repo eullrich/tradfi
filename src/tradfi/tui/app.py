@@ -5521,23 +5521,6 @@ class ScreenerApp(App):
         except NoMatches:
             pass
 
-    def _apply_unified_filter(self, raw: str) -> None:
-        """Parse unified filter input: extract metric expressions and text filter."""
-        raw = raw.strip()
-        if not raw:
-            self.metric_filters = []
-            self.table_filter_text = ""
-        else:
-            # Extract metric expressions
-            self.metric_filters = self._parse_metric_expression(raw)
-            # Remainder after removing metric tokens is the text filter
-            remainder = re.sub(
-                r"[a-z0-9]+\s*[<>]=?\s*[-+]?\d*\.?\d+", "", raw.lower()
-            ).strip()
-            self.table_filter_text = remainder
-        self._update_filter_pills()
-        self._populate_table()
-
     def action_save_list(self) -> None:
         """Save current screen results to a named list."""
         if not self.stocks:
@@ -5651,7 +5634,21 @@ class ScreenerApp(App):
         if event.input.id == "sector-search":
             self._display_filtered_sectors(event.value)
         elif event.input.id == "table-filter-input":
-            self._apply_unified_filter(event.value)
+            raw = event.value.strip()
+            if not raw:
+                self.table_filter_text = ""
+                if not self.metric_filters:
+                    self._update_filter_pills()
+                self._populate_table()
+            else:
+                # Reactively apply only text portion
+                # Skip tokens containing < or > (partial metric expressions)
+                tokens = raw.split()
+                text_tokens = [
+                    t for t in tokens if "<" not in t and ">" not in t
+                ]
+                self.table_filter_text = " ".join(text_tokens).lower()
+                self._populate_table()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         """Handle input submission."""
@@ -5664,7 +5661,17 @@ class ScreenerApp(App):
             # Just filter on submit as well (already handled by on_input_changed)
             pass
         elif event.input.id == "table-filter-input":
-            # Filter is already applied reactively; just move focus to table
+            # Parse metric expressions on Enter
+            raw = event.value.strip()
+            self.metric_filters = self._parse_metric_expression(raw)
+            # Remainder after removing metric tokens is the text filter
+            remainder = re.sub(
+                r"[a-z0-9]+\s*[<>]=?\s*[-+]?\d*\.?\d+",
+                "", raw.lower(),
+            ).strip()
+            self.table_filter_text = remainder
+            self._update_filter_pills()
+            self._populate_table()
             self.query_one("#results-table", DataTable).focus()
 
     def _search_ticker(self, ticker: str) -> None:
