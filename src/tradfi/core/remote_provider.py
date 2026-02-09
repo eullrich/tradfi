@@ -215,6 +215,8 @@ class RemoteDataProvider:
                     pb_ratio=q_data.get("pb_ratio"),
                     price_at_quarter_end=q_data.get("price_at_quarter_end"),
                     market_cap=q_data.get("market_cap"),
+                    debt_to_equity=q_data.get("debt_to_equity"),
+                    shares_outstanding=q_data.get("shares_outstanding"),
                 )
             )
         return QuarterlyTrends(quarters=quarters)

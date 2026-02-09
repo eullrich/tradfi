@@ -119,6 +119,8 @@ def quarterly_trends_to_schema(trends: QuarterlyTrends) -> QuarterlyTrendsSchema
             pb_ratio=q.pb_ratio,
             price_at_quarter_end=q.price_at_quarter_end,
             market_cap=q.market_cap,
+            debt_to_equity=q.debt_to_equity,
+            shares_outstanding=q.shares_outstanding,
         )
         for q in trends.quarters
     ]
