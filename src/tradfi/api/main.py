@@ -10,12 +10,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from tradfi.api.routers import cache, currency, lists, refresh, screening, stocks, watchlist
+from tradfi.api.routers import cache, currency, lists, refresh, screening, stocks, users, watchlist
 from tradfi.api.scheduler import setup_scheduler, shutdown_scheduler
 from tradfi.web.auth_routes import router as auth_router
 from tradfi.web.dependencies import RequiresLoginException, requires_login_exception_handler
 from tradfi.web.partials import router as partials_router
-from tradfi.web.routes import router as web_router, templates as web_templates
+from tradfi.web.routes import router as web_router
+from tradfi.web.routes import templates as web_templates
 from tradfi.web.template_helpers import register_filters
 
 # Configure logging
@@ -118,6 +119,7 @@ app.include_router(watchlist.router, prefix="/api/v1")
 app.include_router(cache.router, prefix="/api/v1")
 app.include_router(refresh.router, prefix="/api/v1")
 app.include_router(currency.router, prefix="/api/v1")
+app.include_router(users.router, prefix="/api/v1")
 
 # Static files
 _static_dir = Path(__file__).parent.parent / "static"
