@@ -49,7 +49,7 @@
                      placeholder="alice@wonderland.com">
               <label for="password" class="text-muted">The password</label>
               <input type="text" name="password" id="password" required autocomplete="off"
-                     placeholder="What must the gardeners do?">
+                     placeholder="Three words, no spaces">
               <button type="submit">Join the Court</button>
             </form>
           </div>
@@ -63,23 +63,20 @@
       </div>
     </div>
 
-    {# The Puzzle — the gardeners painting the roses #}
+    {# The Puzzle — Graham's three words #}
     <div class="puzzle-section">
-      <div class="puzzle-gardeners">
-        <span class="puzzle-card">♠ 2</span>
-        <span class="puzzle-card">♠ 5</span>
-        <span class="puzzle-card">♠ 7</span>
+      <div class="puzzle-quote">
+        <div class="puzzle-prices">
+          <span class="puzzle-price puzzle-price--market">$142.50<span class="puzzle-label">Price</span></span>
+          <span class="puzzle-gap">← _ _ _ →</span>
+          <span class="puzzle-price puzzle-price--intrinsic">$198.75<span class="puzzle-label">Value</span></span>
+        </div>
+        <blockquote class="puzzle-graham">
+          "Confronted with the need to distill the secret of sound investment
+          into three words, we venture the motto: <span class="puzzle-blank">_ _ _ _ _ _&ensp;_ _&ensp;_ _ _ _ _ _</span>"
+        </blockquote>
+        <cite class="puzzle-cite">— Ch. 20, The Intelligent Investor</cite>
       </div>
-      <div class="puzzle-roses">
-        <span class="rose rose--white">✿</span>
-        <span class="rose rose--white">✿</span>
-        <span class="rose rose--blush">✿</span>
-        <span class="rose rose--mid">✿</span>
-        <span class="rose rose--deep">✿</span>
-        <span class="rose rose--red">✿</span>
-        <span class="rose rose--red">✿</span>
-      </div>
-      <p class="puzzle-whisper">"Quick now! We must finish before She sees!"</p>
     </div>
   </div>
 </div>

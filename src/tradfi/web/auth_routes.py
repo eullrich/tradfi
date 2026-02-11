@@ -17,9 +17,10 @@ from tradfi.utils.cache import (
 router = APIRouter(tags=["auth"])
 
 # The answer to the puzzle on the entrance page.
-# The gardeners (Two, Five, and Seven of Spades) must paint the roses red
-# before the Queen of Hearts arrives.
-_REGISTRATION_PASSWORD = "painttherosesred"
+# Graham's three words: "Confronted with the need to distill the secret of
+# sound investment into three words, we venture the motto: MARGIN OF SAFETY."
+# — The Intelligent Investor, Chapter 20
+_REGISTRATION_PASSWORD = "marginofsafety"
 
 
 @router.post("/auth/register", response_class=HTMLResponse)

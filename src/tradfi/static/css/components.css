@@ -598,7 +598,7 @@
 }
 
 /* ==========================================================================
-   9c. Puzzle Section (The Gardeners)
+   9c. Puzzle Section (Graham's Three Words)
    ========================================================================== */
 
 .puzzle-section {
@@ -606,7 +606,7 @@
   flex-direction: column;
   align-items: center;
   gap: var(--space-md);
-  opacity: 0.5;
+  opacity: 0.45;
   transition: opacity 0.4s ease;
 }
 
@@ -614,40 +614,76 @@
   opacity: 0.85;
 }
 
-.puzzle-gardeners {
+.puzzle-quote {
   display: flex;
-  gap: var(--space-lg);
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-md);
+  max-width: 380px;
 }
 
-.puzzle-card {
+.puzzle-prices {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.puzzle-price {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   font-family: var(--font-mono);
-  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+  font-size: 1.1rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.puzzle-price--market {
+  color: var(--negative);
+}
+
+.puzzle-price--intrinsic {
+  color: var(--positive);
+}
+
+.puzzle-label {
+  font-size: 0.65rem;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
   color: var(--fg-muted);
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 4px 10px;
-  letter-spacing: 0.05em;
 }
 
-.puzzle-roses {
-  display: flex;
-  gap: var(--space-sm);
-  font-size: 1.5rem;
-  line-height: 1;
+.puzzle-gap {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--primary);
+  letter-spacing: 0.1em;
 }
 
-.rose--white { color: oklch(85% 0.01 80); }
-.rose--blush { color: oklch(70% 0.08 20); }
-.rose--mid   { color: oklch(60% 0.15 18); }
-.rose--deep  { color: oklch(55% 0.18 16); }
-.rose--red   { color: var(--accent); }
-
-.puzzle-whisper {
+.puzzle-graham {
   font-style: italic;
   font-size: 0.8rem;
   color: var(--fg-muted);
-  letter-spacing: 0.02em;
+  line-height: 1.6;
+  text-align: center;
+  border: none;
+  padding: 0;
+  margin: 0;
+}
+
+.puzzle-blank {
+  color: var(--primary);
+  letter-spacing: 0.12em;
+  font-style: normal;
+}
+
+.puzzle-cite {
+  font-size: 0.7rem;
+  color: var(--fg-muted);
+  opacity: 0.7;
+  font-style: normal;
 }
 
 /* ==========================================================================
