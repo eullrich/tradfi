@@ -12,6 +12,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException  # noqa: E402
 from fastapi.responses import JSONResponse  # noqa: E402
 from pydantic import BaseModel, EmailStr  # noqa: E402
 
+from tradfi.api.auth import require_admin_key  # noqa: E402
 from tradfi.core.portfolio import calculate_portfolio_metrics  # noqa: E402
 from tradfi.utils.cache import (  # noqa: E402
     create_magic_link_token,
@@ -240,13 +241,17 @@ def get_optional_user(authorization: Annotated[str | None, Header()] = None) -> 
 # ============================================================================
 
 
-@app.post("/api/auth/register", response_model=RegisterResponse)
+@app.post(
+    "/api/auth/register",
+    response_model=RegisterResponse,
+    dependencies=[Depends(require_admin_key)],
+)
 def register(request: RegisterRequest) -> RegisterResponse:
     """
-    Register a new user or request login for existing user.
+    Register a new user (admin only).
 
-    This creates a magic link token. In production, this would be sent
-    via email. For development, the token is returned in the response.
+    Requires X-Admin-Key header. Creates a magic link token for the user.
+    In production, this would be sent via email.
     """
     token, user = create_magic_link_token(request.email)
 
