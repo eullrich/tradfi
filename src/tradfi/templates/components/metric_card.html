@@ -1,0 +1,75 @@
+{#
+  Metric Card Component
+  =====================
+  Renders a single metric with label, formatted value, color class, and tooltip.
+
+  Usage as macro:
+    {% from "components/metric_card.html" import metric_card %}
+    {{ metric_card(label="P/E Ratio", value=stock.valuation.pe_trailing,
+                   formatted=stock.valuation.pe_trailing | fmt_ratio,
+                   thresholds=METRIC_THRESHOLDS.pe_trailing,
+                   tooltip=INDICATOR_TOOLTIPS.get("pe_trailing")) }}
+
+  Usage with pre-computed values (from route):
+    {{ metric_card(label=m.label, formatted=m.formatted, css_class=m.css_class,
+                   tooltip=m.tooltip) }}
+
+  Parameters:
+    label      — Display name for the metric (e.g., "P/E Ratio")
+    value      — Raw numeric value (optional if css_class is provided)
+    formatted  — Pre-formatted display string (e.g., "12.3", "$45.00")
+    thresholds — Threshold tuple for metric_class filter (optional if css_class given)
+    css_class  — Pre-computed CSS class string (overrides value+thresholds)
+    tooltip    — Dict with keys: desc, good (optional), bad (optional)
+    size       — "sm", "md" (default), or "lg" for card sizing
+#}
+
+{% macro metric_card(label, value=None, formatted="-", thresholds=None, css_class=None, tooltip=None, size="md") %}
+{%- set computed_class = css_class if css_class else (value | metric_class(thresholds) if value is not none and thresholds else "metric--dim") -%}
+<div class="metric-card metric-card--{{ size }}">
+  <span class="metric-label"
+    {%- if tooltip %}
+        data-tooltip="{{ tooltip.desc }}{% if tooltip.good %} | Good: {{ tooltip.good }}{% endif %}{% if tooltip.bad %} | Bad: {{ tooltip.bad }}{% endif %}"
+    {%- endif %}>
+    {{ label }}{% if tooltip %} <span class="metric-info" aria-hidden="true">&#9432;</span>{% endif %}
+  </span>
+  <span class="metric-value font-mono {{ computed_class }}">
+    {{ formatted }}
+  </span>
+</div>
+{% endmacro %}
+
+
+{#
+  Metric Grid Section
+  ===================
+  Renders a titled group of metric cards.
+
+  Usage:
+    {% from "components/metric_card.html" import metric_card, metric_section %}
+    {{ metric_section("Valuation", metrics.valuation) }}
+
+  Parameters:
+    title   — Section heading
+    metrics — List of dicts with keys matching metric_card params
+    id      — Optional HTML id for the section
+#}
+
+{% macro metric_section(title, metrics, id=None) %}
+<section class="metric-section" {% if id %}id="{{ id }}"{% endif %}>
+  <h3 class="metric-section-title font-brand">{{ title }}</h3>
+  <div class="metric-grid">
+    {%- for m in metrics %}
+    {{ metric_card(
+        label=m.label,
+        value=m.get("value"),
+        formatted=m.get("formatted", "-"),
+        thresholds=m.get("thresholds"),
+        css_class=m.get("css_class"),
+        tooltip=m.get("tooltip"),
+        size=m.get("size", "md")
+    ) }}
+    {%- endfor %}
+  </div>
+</section>
+{% endmacro %}

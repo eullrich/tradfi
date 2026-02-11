@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% from "components/signal_badge.html" import signal_badge %}
+{% block title %}{{ list_name }} — Red Queen{% endblock %}
+{% block content %}
+<div class="list-detail-page">
+  <div style="display: flex; align-items: baseline; gap: 1rem; margin-bottom: 1rem;">
+    <h1 class="font-brand">{{ list_name }}</h1>
+    <a href="/lists" class="text-muted">← All Lists</a>
+  </div>
+
+  {% if items %}
+  <div class="table-container">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Ticker</th><th>Company</th><th>Price</th>
+          <th>P/E</th><th>ROE</th><th>RSI</th><th>MoS%</th>
+          <th>Signal</th><th>Notes</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in items %}
+        {% set stock = stocks.get(item.ticker) %}
+        <tr>
+          <td class="col-ticker"><a href="/stock/{{ item.ticker }}">{{ item.ticker }}</a></td>
+          <td class="col-company truncate">{{ stock.name if stock else "-" }}</td>
+          <td class="col-price font-mono">{{ stock.current_price | fmt_price if stock else "-" }}</td>
+          {% if stock %}
+          <td class="font-mono {{ stock.valuation.pe_trailing | metric_class(METRIC_THRESHOLDS.pe_trailing) }}">{{ stock.valuation.pe_trailing | fmt_ratio }}</td>
+          <td class="font-mono {{ stock.profitability.roe | metric_class(METRIC_THRESHOLDS.roe) }}">{{ stock.profitability.roe | fmt_pct }}</td>
+          <td class="font-mono {{ stock.technical.rsi_14 | metric_class(METRIC_THRESHOLDS.rsi_14) }}">{% if stock.technical.rsi_14 is not none %}{{ "%.0f" | format(stock.technical.rsi_14) }}{% else %}-{% endif %}</td>
+          <td class="font-mono {{ stock.fair_value.margin_of_safety_pct | metric_class(METRIC_THRESHOLDS.margin_of_safety_pct) }}">{{ stock.fair_value.margin_of_safety_pct | fmt_signed_pct }}</td>
+          <td>{{ signal_badge(stock.signal) }}</td>
+          {% else %}
+          <td colspan="5" class="metric--dim">Not cached</td>
+          {% endif %}
+          <td class="text-muted">{{ item.get("notes", "") or "" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <p>This list is empty.</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

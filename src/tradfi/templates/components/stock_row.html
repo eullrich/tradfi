@@ -1,0 +1,135 @@
+{#
+  Stock Row Component
+  ===================
+  Renders a single <tr> for the screener data table.
+  Columns change based on the active column profile.
+
+  Usage:
+    {% from "components/stock_row.html" import stock_row %}
+    {{ stock_row(stock, profile) }}
+
+  Parameters:
+    stock   — Stock object with nested attributes (valuation, profitability, etc.)
+    profile — Column profile key: "overview", "value", "quality", "cashflow", "technical", "ownership"
+
+  Fixed columns (always shown): Ticker, Company, Price
+  Profile columns: 8 per profile, matching the <th> headers in screener.html
+#}
+
+{% from "components/signal_badge.html" import signal_badge %}
+
+{% macro stock_row(stock, profile) %}
+<tr>
+  {# Fixed columns — always visible #}
+  <td class="col-ticker"><a href="/stock/{{ stock.ticker }}">{{ stock.ticker }}</a></td>
+  <td class="col-company truncate">{{ stock.name or stock.ticker }}</td>
+  <td class="col-price font-mono">{{ stock.current_price | fmt_price }}</td>
+
+  {# ── Overview ────────────────────────────────────────────── #}
+  {% if profile == "overview" %}
+  <td class="font-mono {{ stock.valuation.pe_trailing | metric_class(METRIC_THRESHOLDS.pe_trailing) }}"
+    >{{ stock.valuation.pe_trailing | fmt_ratio }}</td>
+  <td class="font-mono {{ stock.valuation.ev_ebitda | metric_class(METRIC_THRESHOLDS.ev_ebitda) }}"
+    >{{ stock.valuation.ev_ebitda | fmt_ratio }}</td>
+  <td class="font-mono {{ stock.profitability.roe | metric_class(METRIC_THRESHOLDS.roe) }}"
+    >{{ stock.profitability.roe | fmt_pct }}</td>
+  <td class="font-mono {% if stock.financial_health.debt_to_equity is not none %}{% set de = stock.financial_health.debt_to_equity / 100 %}{% if de > 1.5 %}metric--red{% elif de > 1.0 %}metric--yellow{% elif de < 0.3 %}metric--green{% endif %}{% else %}metric--dim{% endif %}"
+    >{% if stock.financial_health.debt_to_equity is not none %}{{ "%.2f" | format(stock.financial_health.debt_to_equity / 100) }}{% else %}-{% endif %}</td>
+  <td class="font-mono {{ stock.buyback.fcf_yield_pct | metric_class(METRIC_THRESHOLDS.fcf_yield_pct) }}"
+    >{{ stock.buyback.fcf_yield_pct | fmt_pct1 }}</td>
+  <td class="font-mono {{ stock.technical.rsi_14 | metric_class(METRIC_THRESHOLDS.rsi_14) }}"
+    >{% if stock.technical.rsi_14 is not none %}{{ "%.0f" | format(stock.technical.rsi_14) }}{% else %}-{% endif %}</td>
+  <td class="font-mono {{ stock.fair_value.margin_of_safety_pct | metric_class(METRIC_THRESHOLDS.margin_of_safety_pct) }}"
+    >{{ stock.fair_value.margin_of_safety_pct | fmt_signed_pct }}</td>
+  <td>{{ signal_badge(stock.signal) }}</td>
+
+  {# ── Value ───────────────────────────────────────────────── #}
+  {% elif profile == "value" %}
+  <td class="font-mono {{ stock.valuation.pe_trailing | metric_class(METRIC_THRESHOLDS.pe_trailing) }}"
+    >{{ stock.valuation.pe_trailing | fmt_ratio }}</td>
+  <td class="font-mono {{ stock.valuation.pe_forward | metric_class(METRIC_THRESHOLDS.pe_forward) }}"
+    >{{ stock.valuation.pe_forward | fmt_ratio }}</td>
+  <td class="font-mono {{ stock.valuation.pb_ratio | metric_class(METRIC_THRESHOLDS.pb_ratio) }}"
+    >{% if stock.valuation.pb_ratio is not none %}{{ "%.2f" | format(stock.valuation.pb_ratio) }}{% else %}-{% endif %}</td>
+  <td class="font-mono {{ stock.valuation.ev_ebitda | metric_class(METRIC_THRESHOLDS.ev_ebitda) }}"
+    >{{ stock.valuation.ev_ebitda | fmt_ratio }}</td>
+  <td class="font-mono {{ stock.valuation.ps_ratio | metric_class(METRIC_THRESHOLDS.ps_ratio) }}"
+    >{% if stock.valuation.ps_ratio is not none %}{{ "%.2f" | format(stock.valuation.ps_ratio) }}{% else %}-{% endif %}</td>
+  <td class="font-mono {{ stock.valuation.peg_ratio | metric_class(METRIC_THRESHOLDS.peg_ratio) }}"
+    >{% if stock.valuation.peg_ratio is not none %}{{ "%.2f" | format(stock.valuation.peg_ratio) }}{% else %}-{% endif %}</td>
+  <td class="font-mono {{ stock.fair_value.margin_of_safety_pct | metric_class(METRIC_THRESHOLDS.margin_of_safety_pct) }}"
+    >{{ stock.fair_value.margin_of_safety_pct | fmt_signed_pct }}</td>
+  <td class="font-mono"
+    >{% if stock.fair_value.graham_number is not none %}${{ "%.0f" | format(stock.fair_value.graham_number) }}{% else %}-{% endif %}</td>
+
+  {# ── Quality ─────────────────────────────────────────────── #}
+  {% elif profile == "quality" %}
+  <td class="font-mono {{ stock.profitability.roe | metric_class(METRIC_THRESHOLDS.roe) }}"
+    >{{ stock.profitability.roe | fmt_pct }}</td>
+  <td class="font-mono {{ stock.profitability.roa | metric_class(METRIC_THRESHOLDS.roa) }}"
+    >{{ stock.profitability.roa | fmt_pct }}</td>
+  <td class="font-mono {{ stock.profitability.operating_margin | metric_class(METRIC_THRESHOLDS.operating_margin) }}"
+    >{{ stock.profitability.operating_margin | fmt_pct1 }}</td>
+  <td class="font-mono {{ stock.profitability.net_margin | metric_class(METRIC_THRESHOLDS.net_margin) }}"
+    >{{ stock.profitability.net_margin | fmt_pct1 }}</td>
+  <td class="font-mono {{ stock.financial_health.current_ratio | metric_class(METRIC_THRESHOLDS.current_ratio) }}"
+    >{% if stock.financial_health.current_ratio is not none %}{{ "%.2f" | format(stock.financial_health.current_ratio) }}{% else %}-{% endif %}</td>
+  <td class="font-mono {% if stock.financial_health.debt_to_equity is not none %}{% set de = stock.financial_health.debt_to_equity / 100 %}{% if de > 1.5 %}metric--red{% elif de > 1.0 %}metric--yellow{% elif de < 0.3 %}metric--green{% endif %}{% else %}metric--dim{% endif %}"
+    >{% if stock.financial_health.debt_to_equity is not none %}{{ "%.2f" | format(stock.financial_health.debt_to_equity / 100) }}{% else %}-{% endif %}</td>
+  <td class="font-mono {{ stock.financial_health.interest_coverage | metric_class(METRIC_THRESHOLDS.interest_coverage) }}"
+    >{{ stock.financial_health.interest_coverage | fmt_ratio }}</td>
+  <td class="font-mono {{ stock.growth.revenue_growth_yoy | metric_class(METRIC_THRESHOLDS.revenue_growth_yoy) }}"
+    >{{ stock.growth.revenue_growth_yoy | fmt_signed_pct }}</td>
+
+  {# ── Cash Flow ───────────────────────────────────────────── #}
+  {% elif profile == "cashflow" %}
+  <td class="font-mono {{ stock.buyback.fcf_yield_pct | metric_class(METRIC_THRESHOLDS.fcf_yield_pct) }}"
+    >{{ stock.buyback.fcf_yield_pct | fmt_pct1 }}</td>
+  <td class="font-mono">{{ stock.financial_health.free_cash_flow | fmt_large }}</td>
+  <td class="font-mono">{{ stock.financial_health.operating_cash_flow | fmt_large }}</td>
+  <td class="font-mono"
+    >{% if stock.buyback.cash_per_share is not none %}${{ "%.1f" | format(stock.buyback.cash_per_share) }}{% else %}-{% endif %}</td>
+  <td class="font-mono"
+    >{% if stock.valuation.enterprise_value and stock.financial_health.free_cash_flow and stock.financial_health.free_cash_flow > 0 %}{{ "%.1f" | format(stock.valuation.enterprise_value / stock.financial_health.free_cash_flow) }}{% else %}-{% endif %}</td>
+  <td class="font-mono">{{ stock.financial_health.total_debt | fmt_large }}</td>
+  <td class="font-mono">{{ stock.financial_health.total_cash | fmt_large }}</td>
+  <td class="font-mono">{{ stock.financial_health.net_income | fmt_large }}</td>
+
+  {# ── Technical ───────────────────────────────────────────── #}
+  {% elif profile == "technical" %}
+  <td class="font-mono {{ stock.technical.rsi_14 | metric_class(METRIC_THRESHOLDS.rsi_14) }}"
+    >{% if stock.technical.rsi_14 is not none %}{{ "%.0f" | format(stock.technical.rsi_14) }}{% else %}-{% endif %}</td>
+  <td class="font-mono"
+    >{% if stock.technical.price_vs_ma_50_pct is not none %}{{ "%+.1f%%" | format(stock.technical.price_vs_ma_50_pct) }}{% else %}-{% endif %}</td>
+  <td class="font-mono"
+    >{% if stock.technical.price_vs_ma_200_pct is not none %}{{ "%+.1f%%" | format(stock.technical.price_vs_ma_200_pct) }}{% else %}-{% endif %}</td>
+  <td class="font-mono"
+    >{% if stock.technical.pct_from_52w_high is not none %}{{ "%.0f%%" | format(stock.technical.pct_from_52w_high) }}{% else %}-{% endif %}</td>
+  <td class="font-mono"
+    >{% if stock.technical.return_1m is not none %}{{ "%+.1f%%" | format(stock.technical.return_1m) }}{% else %}-{% endif %}</td>
+  <td class="font-mono"
+    >{% if stock.technical.return_6m is not none %}{{ "%+.1f%%" | format(stock.technical.return_6m) }}{% else %}-{% endif %}</td>
+  <td class="font-mono"
+    >{% if stock.technical.return_1y is not none %}{{ "%+.1f%%" | format(stock.technical.return_1y) }}{% else %}-{% endif %}</td>
+  <td class="font-mono"
+    >{% if stock.technical.pct_from_52w_low is not none %}{{ "%+.0f%%" | format(stock.technical.pct_from_52w_low) }}{% else %}-{% endif %}</td>
+
+  {# ── Ownership ───────────────────────────────────────────── #}
+  {% elif profile == "ownership" %}
+  <td class="font-mono"
+    >{% if stock.buyback.insider_ownership_pct is not none %}{{ "%.1f%%" | format(stock.buyback.insider_ownership_pct) }}{% else %}-{% endif %}</td>
+  <td class="font-mono"
+    >{% if stock.buyback.institutional_ownership_pct is not none %}{{ "%.1f%%" | format(stock.buyback.institutional_ownership_pct) }}{% else %}-{% endif %}</td>
+  <td class="font-mono {{ stock.buyback.fcf_yield_pct | metric_class(METRIC_THRESHOLDS.fcf_yield_pct) }}"
+    >{{ stock.buyback.fcf_yield_pct | fmt_pct1 }}</td>
+  <td class="font-mono">{{ stock.valuation.market_cap | fmt_large }}</td>
+  <td class="font-mono {{ stock.dividends.dividend_yield | metric_class(METRIC_THRESHOLDS.dividend_yield) }}"
+    >{{ stock.dividends.dividend_yield | fmt_pct1 }}</td>
+  <td class="font-mono {{ stock.dividends.payout_ratio | metric_class(METRIC_THRESHOLDS.payout_ratio) }}"
+    >{{ stock.dividends.payout_ratio | fmt_pct }}</td>
+  <td class="font-mono {{ stock.growth.earnings_growth_yoy | metric_class(METRIC_THRESHOLDS.earnings_growth_yoy) }}"
+    >{{ stock.growth.earnings_growth_yoy | fmt_signed_pct }}</td>
+  <td>{{ signal_badge(stock.signal) }}</td>
+  {% endif %}
+</tr>
+{% endmacro %}

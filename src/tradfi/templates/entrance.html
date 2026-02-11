@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block title %}Red Queen — Enter{% endblock %}
+
+{% block body %}
+{# No nav header on entrance page - override entire body block #}
+<div class="entrance">
+  <div class="card-scene">
+    <div class="card-flip" id="card">
+      {# Front of the card: brand + enter button #}
+      <div class="card-face card-front">
+        <div class="card-suit card-suit--top">♠</div>
+        <h1 class="font-brand">Red Queen</h1>
+        <p class="card-subtitle">"It takes all the running you can do,<br>to keep in the same place."</p>
+        <p class="card-tagline text-muted">Value Investing, Quantified</p>
+        <button class="card-enter" onclick="document.getElementById('card').classList.toggle('is-flipped')">
+          Enter ♥
+        </button>
+        <div class="card-suit card-suit--bottom">♣</div>
+      </div>
+
+      {# Back of the card: login form #}
+      <div class="card-face card-back">
+        <h2 class="font-brand">Down the Rabbit Hole</h2>
+        <p class="text-muted" style="margin-bottom: 1.5rem;">Invitation only</p>
+        <form class="login-form" hx-post="/auth/login" hx-target="#auth-message" hx-swap="innerHTML">
+          <label for="email" class="text-muted">Your email</label>
+          <input type="email" name="email" id="email" required autocomplete="email"
+                 placeholder="alice@wonderland.com">
+          <button type="submit">Send Magic Link</button>
+        </form>
+        <div id="auth-message"></div>
+        <button class="btn-link text-muted" style="margin-top: var(--space-sm)"
+                onclick="document.getElementById('card').classList.toggle('is-flipped')">
+          ← Back
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="/static/js/htmx.min.js"></script>
+{% endblock %}

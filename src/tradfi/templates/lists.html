@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Lists — Red Queen{% endblock %}
+{% block content %}
+<div class="lists-page">
+  <h1 class="font-brand">Your Lists</h1>
+  {% if lists %}
+  <div class="list-cards">
+    {% for lst in lists %}
+    <a href="/lists/{{ lst.name }}" class="list-card">
+      <h3 class="font-brand">{{ lst.name }}</h3>
+      {% if lst.get("item_count") is not none %}
+      <span class="list-count font-mono">{{ lst.item_count }} stocks</span>
+      {% endif %}
+      {% if lst.get("description") %}
+      <p class="text-muted">{{ lst.description }}</p>
+      {% endif %}
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <p>No lists yet.</p>
+    <p class="text-muted">Create one from the CLI: <code>tradfi list create mylist AAPL,MSFT</code></p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

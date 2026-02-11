@@ -3,13 +3,20 @@
 import logging
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from tradfi.api.routers import cache, currency, lists, refresh, screening, stocks, watchlist
 from tradfi.api.scheduler import setup_scheduler, shutdown_scheduler
+from tradfi.web.auth_routes import router as auth_router
+from tradfi.web.dependencies import RequiresLoginException, requires_login_exception_handler
+from tradfi.web.partials import router as partials_router
+from tradfi.web.routes import router as web_router, templates as web_templates
+from tradfi.web.template_helpers import register_filters
 
 # Configure logging
 logging.basicConfig(
@@ -69,7 +76,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-Frame-Options"] = "SAMEORIGIN"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         return response
@@ -112,23 +119,18 @@ app.include_router(cache.router, prefix="/api/v1")
 app.include_router(refresh.router, prefix="/api/v1")
 app.include_router(currency.router, prefix="/api/v1")
 
+# Static files
+_static_dir = Path(__file__).parent.parent / "static"
+app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
 
-@app.get("/")
-async def root():
-    """Root endpoint with API info."""
-    return {
-        "name": "TradFi API",
-        "version": "0.1.0",
-        "docs": "/docs",
-        "endpoints": {
-            "stocks": "/api/v1/stocks/{ticker}",
-            "screening": "/api/v1/screening/run",
-            "lists": "/api/v1/lists",
-            "watchlist": "/api/v1/watchlist",
-            "cache": "/api/v1/cache/stats",
-            "refresh": "/api/v1/refresh/status",
-        },
-    }
+# Web frontend routes (after API routers to avoid path conflicts)
+app.add_exception_handler(RequiresLoginException, requires_login_exception_handler)
+app.include_router(auth_router)
+app.include_router(partials_router)
+app.include_router(web_router)
+
+# Register Jinja2 template filters and globals
+register_filters(web_templates.env)
 
 
 @app.get("/health")

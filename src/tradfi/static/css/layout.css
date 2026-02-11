@@ -1,0 +1,143 @@
+/* ==========================================================================
+   Red Queen — Layout
+   Sticky header, navigation, main content area, responsive breakpoints.
+   ========================================================================== */
+
+/* ---------- App Shell ---------- */
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  height: 56px;
+  padding: 0 var(--space-lg);
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  gap: var(--space-lg);
+}
+
+.app-logo {
+  font-family: var(--font-brand);
+  font-size: 1.25rem;
+  color: var(--fg);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.app-logo span {
+  color: var(--accent);
+}
+
+/* ---------- Navigation ---------- */
+.app-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex: 1;
+  min-width: 0;
+}
+
+.app-nav a {
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius);
+  color: var(--fg-muted);
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: color 0.15s ease, background 0.15s ease;
+  white-space: nowrap;
+}
+
+.app-nav a:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+
+.app-nav a.active {
+  color: var(--primary);
+  background: oklch(65% 0.15 185 / 0.1);
+}
+
+/* ---------- User Area ---------- */
+.app-user {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+}
+
+.inline {
+  display: inline;
+}
+
+.btn-link {
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  font-family: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius);
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.btn-link:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+
+/* ---------- Main Content ---------- */
+.app-main {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: var(--space-lg);
+  width: 100%;
+}
+
+/* ---------- Responsive ---------- */
+@media (max-width: 768px) {
+  .app-header {
+    flex-wrap: wrap;
+    height: auto;
+    padding: var(--space-sm) var(--space-md);
+    gap: var(--space-sm);
+  }
+
+  .app-logo {
+    width: 100%;
+    padding-bottom: var(--space-xs);
+  }
+
+  .app-nav {
+    flex-wrap: wrap;
+    gap: var(--space-xs);
+    order: 3;
+    width: 100%;
+    padding-bottom: var(--space-sm);
+  }
+
+  .app-user {
+    order: 2;
+    margin-left: auto;
+  }
+
+  .app-main {
+    padding: var(--space-md);
+  }
+}
+
+@media (max-width: 480px) {
+  .app-nav {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .app-nav a {
+    width: 100%;
+  }
+}
