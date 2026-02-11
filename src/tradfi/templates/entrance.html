@@ -5,38 +5,92 @@
 {% block body %}
 {# No nav header on entrance page - override entire body block #}
 <div class="entrance">
-  <div class="card-scene">
-    <div class="card-flip" id="card">
-      {# Front of the card: brand + enter button #}
-      <div class="card-face card-front">
-        <div class="card-suit card-suit--top">♠</div>
-        <h1 class="font-brand">Red Queen</h1>
-        <p class="card-subtitle">"It takes all the running you can do,<br>to keep in the same place."</p>
-        <p class="card-tagline text-muted">Value Investing, Quantified</p>
-        <button class="card-enter" onclick="document.getElementById('card').classList.toggle('is-flipped')">
-          Enter ♥
-        </button>
-        <div class="card-suit card-suit--bottom">♣</div>
-      </div>
+  <div class="entrance-inner">
+    <div class="card-scene">
+      <div class="card-flip" id="card">
+        {# Front of the card: brand + enter button #}
+        <div class="card-face card-front">
+          <div class="card-suit card-suit--top">♠</div>
+          <h1 class="font-brand">Red Queen</h1>
+          <p class="card-subtitle">"It takes all the running you can do,<br>to keep in the same place."</p>
+          <p class="card-tagline text-muted">Value Investing, Quantified</p>
+          <button class="card-enter" onclick="document.getElementById('card').classList.toggle('is-flipped')">
+            Enter ♥
+          </button>
+          <div class="card-suit card-suit--bottom">♣</div>
+        </div>
 
-      {# Back of the card: login form #}
-      <div class="card-face card-back">
-        <h2 class="font-brand">Down the Rabbit Hole</h2>
-        <p class="text-muted" style="margin-bottom: 1.5rem;">Invitation only</p>
-        <form class="login-form" hx-post="/auth/login" hx-target="#auth-message" hx-swap="innerHTML">
-          <label for="email" class="text-muted">Your email</label>
-          <input type="email" name="email" id="email" required autocomplete="email"
-                 placeholder="alice@wonderland.com">
-          <button type="submit">Send Magic Link</button>
-        </form>
-        <div id="auth-message"></div>
-        <button class="btn-link text-muted" style="margin-top: var(--space-sm)"
-                onclick="document.getElementById('card').classList.toggle('is-flipped')">
-          ← Back
-        </button>
+        {# Back of the card: login / register forms #}
+        <div class="card-face card-back">
+          <div class="auth-tabs">
+            <button class="auth-tab auth-tab--active" id="tab-login"
+                    onclick="switchTab('login')">Sign In</button>
+            <button class="auth-tab" id="tab-register"
+                    onclick="switchTab('register')">Register</button>
+          </div>
+
+          {# Login form (existing magic link flow) #}
+          <div class="auth-panel" id="panel-login">
+            <p class="text-muted" style="margin-bottom: 1rem;">Invitation only</p>
+            <form class="login-form" hx-post="/auth/login" hx-target="#auth-message" hx-swap="innerHTML">
+              <label for="email-login" class="text-muted">Your email</label>
+              <input type="email" name="email" id="email-login" required autocomplete="email"
+                     placeholder="alice@wonderland.com">
+              <button type="submit">Send Magic Link</button>
+            </form>
+          </div>
+
+          {# Registration form (puzzle password) #}
+          <div class="auth-panel" id="panel-register" style="display: none;">
+            <p class="text-muted" style="margin-bottom: 1rem;">Solve the riddle to enter</p>
+            <form class="login-form" hx-post="/auth/register" hx-target="#auth-message" hx-swap="innerHTML">
+              <label for="email-register" class="text-muted">Your email</label>
+              <input type="email" name="email" id="email-register" required autocomplete="email"
+                     placeholder="alice@wonderland.com">
+              <label for="password" class="text-muted">The password</label>
+              <input type="text" name="password" id="password" required autocomplete="off"
+                     placeholder="What must the gardeners do?">
+              <button type="submit">Join the Court</button>
+            </form>
+          </div>
+
+          <div id="auth-message"></div>
+          <button class="btn-link text-muted" style="margin-top: var(--space-sm)"
+                  onclick="document.getElementById('card').classList.toggle('is-flipped')">
+            ← Back
+          </button>
+        </div>
       </div>
+    </div>
+
+    {# The Puzzle — the gardeners painting the roses #}
+    <div class="puzzle-section">
+      <div class="puzzle-gardeners">
+        <span class="puzzle-card">♠ 2</span>
+        <span class="puzzle-card">♠ 5</span>
+        <span class="puzzle-card">♠ 7</span>
+      </div>
+      <div class="puzzle-roses">
+        <span class="rose rose--white">✿</span>
+        <span class="rose rose--white">✿</span>
+        <span class="rose rose--blush">✿</span>
+        <span class="rose rose--mid">✿</span>
+        <span class="rose rose--deep">✿</span>
+        <span class="rose rose--red">✿</span>
+        <span class="rose rose--red">✿</span>
+      </div>
+      <p class="puzzle-whisper">"Quick now! We must finish before She sees!"</p>
     </div>
   </div>
 </div>
 <script src="/static/js/htmx.min.js"></script>
+<script>
+function switchTab(tab) {
+  document.getElementById('panel-login').style.display = tab === 'login' ? '' : 'none';
+  document.getElementById('panel-register').style.display = tab === 'register' ? '' : 'none';
+  document.getElementById('tab-login').classList.toggle('auth-tab--active', tab === 'login');
+  document.getElementById('tab-register').classList.toggle('auth-tab--active', tab === 'register');
+  document.getElementById('auth-message').innerHTML = '';
+}
+</script>
 {% endblock %}

@@ -1,16 +1,107 @@
-"""Authentication routes for the web frontend (magic link login)."""
+"""Authentication routes for the web frontend (magic link login + registration)."""
+
+import hmac
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from tradfi.utils.cache import (
     create_magic_link_token,
+    create_session_token,
+    create_user,
     get_user_by_email,
     revoke_session_token,
     verify_magic_link_token,
 )
 
 router = APIRouter(tags=["auth"])
+
+# The answer to the puzzle on the entrance page.
+# The gardeners (Two, Five, and Seven of Spades) must paint the roses red
+# before the Queen of Hearts arrives.
+_REGISTRATION_PASSWORD = "painttherosesred"
+
+
+@router.post("/auth/register", response_class=HTMLResponse)
+async def register(
+    request: Request,
+    email: str = Form(...),
+    password: str = Form(...),
+) -> HTMLResponse:
+    """Handle registration form submission.
+
+    Validates the password against the puzzle answer and creates a new user
+    account. On success, sets a session cookie and returns an HX-Redirect
+    header so HTMX navigates to the screener.
+
+    Args:
+        request: The incoming request.
+        email: Email address from the registration form.
+        password: The puzzle answer.
+
+    Returns:
+        HTMX partial HTML snippet with status/redirect.
+    """
+    email = email.lower().strip()
+    password = password.lower().strip().replace(" ", "")
+
+    # Constant-time comparison to avoid timing attacks
+    if not hmac.compare_digest(password, _REGISTRATION_PASSWORD):
+        return HTMLResponse(
+            '<div id="auth-message" class="auth-message auth-message--error">'
+            "<p>The Queen is not amused.</p>"
+            "</div>",
+            status_code=200,
+        )
+
+    # Check if user already exists
+    existing = get_user_by_email(email)
+    if existing:
+        return HTMLResponse(
+            '<div id="auth-message" class="auth-message auth-message--error">'
+            "<p>You've been here before, Alice. Try logging in.</p>"
+            "</div>",
+            status_code=200,
+        )
+
+    # Create the user
+    user = create_user(email)
+    if not user:
+        return HTMLResponse(
+            '<div id="auth-message" class="auth-message auth-message--error">'
+            "<p>Something went wrong down the rabbit hole.</p>"
+            "</div>",
+            status_code=200,
+        )
+
+    # Create session and auto-login
+    session_token = create_session_token(user["id"])
+    if not session_token:
+        return HTMLResponse(
+            '<div id="auth-message" class="auth-message auth-message--error">'
+            "<p>Something went wrong. Try again.</p>"
+            "</div>",
+            status_code=200,
+        )
+
+    # Return success with HX-Redirect — HTMX will set the cookie from
+    # the response and navigate to the screener.
+    response = HTMLResponse(
+        '<div id="auth-message" class="auth-message auth-message--success">'
+        "<p>Welcome to Wonderland.</p>"
+        "</div>",
+        status_code=200,
+    )
+    response.set_cookie(
+        key="session",
+        value=session_token,
+        httponly=True,
+        samesite="lax",
+        secure=False,  # Set True in production behind HTTPS
+        max_age=30 * 24 * 60 * 60,  # 30 days
+    )
+    response.headers["HX-Redirect"] = "/screener"
+    return response
 
 
 @router.post("/auth/login", response_class=HTMLResponse)
