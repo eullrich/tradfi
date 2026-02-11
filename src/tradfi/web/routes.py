@@ -207,7 +207,7 @@ def _run_screener(
 # ============================================================================
 
 
-@router.get("/", response_class=HTMLResponse)
+@router.get("/", response_class=HTMLResponse, response_model=None)
 async def entrance(request: Request) -> HTMLResponse | RedirectResponse:
     """Render the entrance / login page.
 
