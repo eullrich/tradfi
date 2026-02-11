@@ -1683,6 +1683,43 @@ def verify_magic_link_token(token: str) -> tuple[str, dict] | tuple[None, None]:
         conn.close()
 
 
+def create_session_token(user_id: int) -> str | None:
+    """
+    Create a session token for a user (used after registration or login).
+
+    Args:
+        user_id: The user's database ID
+
+    Returns:
+        Session token string, or None if user doesn't exist
+    """
+    now = int(time.time())
+    conn = get_db_connection()
+    try:
+        # Verify user exists
+        user = conn.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone()
+        if not user:
+            return None
+
+        # Update last login
+        conn.execute("UPDATE users SET last_login_at = ? WHERE id = ?", (now, user_id))
+
+        # Create session token
+        session_token = secrets.token_urlsafe(32)
+        session_expires = now + SESSION_TOKEN_EXPIRY
+
+        conn.execute(
+            """INSERT INTO auth_tokens (user_id, token, token_type, created_at, expires_at)
+               VALUES (?, ?, 'session', ?, ?)""",
+            (user_id, session_token, now, session_expires),
+        )
+
+        conn.commit()
+        return session_token
+    finally:
+        conn.close()
+
+
 def validate_session_token(token: str) -> dict | None:
     """
     Validate a session token and return the user.

@@ -365,6 +365,13 @@
   background: var(--bg);
 }
 
+.entrance-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2.5rem;
+}
+
 .card-scene {
   perspective: 800px;
   width: 380px;
@@ -529,6 +536,154 @@
 
 .auth-message--error p {
   color: var(--negative);
+}
+
+/* ==========================================================================
+   9b. Auth Tabs (Login / Register toggle)
+   ========================================================================== */
+
+.auth-tabs {
+  display: flex;
+  gap: 0;
+  width: 100%;
+  margin-bottom: var(--space-lg);
+  border-bottom: 1px solid var(--border);
+}
+
+.auth-tab {
+  flex: 1;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: var(--space-sm) var(--space-md);
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.auth-tab:hover {
+  color: var(--fg);
+}
+
+.auth-tab--active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+
+.auth-panel {
+  width: 100%;
+}
+
+/* Password input on card back (same style as email) */
+.card-back .login-form input[type="text"],
+.card-back .login-form input[type="password"] {
+  width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  color: var(--fg);
+  font-size: 0.9rem;
+  font-family: inherit;
+  transition: border-color 0.15s ease;
+}
+
+.card-back .login-form input[type="text"]:focus,
+.card-back .login-form input[type="password"]:focus {
+  border-color: var(--primary);
+  outline: none;
+}
+
+/* ==========================================================================
+   9c. Puzzle Section (Graham's Three Words)
+   ========================================================================== */
+
+.puzzle-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-md);
+  opacity: 0.45;
+  transition: opacity 0.4s ease;
+}
+
+.puzzle-section:hover {
+  opacity: 0.85;
+}
+
+.puzzle-quote {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-md);
+  max-width: 380px;
+}
+
+.puzzle-prices {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.puzzle-price {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 1.1rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.puzzle-price--market {
+  color: var(--negative);
+}
+
+.puzzle-price--intrinsic {
+  color: var(--positive);
+}
+
+.puzzle-label {
+  font-size: 0.65rem;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg-muted);
+}
+
+.puzzle-gap {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--primary);
+  letter-spacing: 0.1em;
+}
+
+.puzzle-graham {
+  font-style: italic;
+  font-size: 0.8rem;
+  color: var(--fg-muted);
+  line-height: 1.6;
+  text-align: center;
+  border: none;
+  padding: 0;
+  margin: 0;
+}
+
+.puzzle-blank {
+  color: var(--primary);
+  letter-spacing: 0.12em;
+  font-style: normal;
+}
+
+.puzzle-cite {
+  font-size: 0.7rem;
+  color: var(--fg-muted);
+  opacity: 0.7;
+  font-style: normal;
 }
 
 /* ==========================================================================
