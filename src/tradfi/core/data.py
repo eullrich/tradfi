@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from dataclasses import asdict
 from datetime import datetime
@@ -413,6 +414,31 @@ def fetch_stock_from_api(ticker_symbol: str) -> Stock | None:
             return _dict_to_stock(stale_cached)
 
         return None
+
+
+async def fetch_stock_from_api_async(ticker_symbol: str, timeout: float = 30.0) -> Stock | None:
+    """Async wrapper for fetch_stock_from_api with per-ticker timeout.
+
+    Runs the synchronous yfinance call in a thread pool to avoid
+    blocking the event loop, with a timeout to prevent hangs.
+
+    Args:
+        ticker_symbol: Stock ticker (e.g., "AAPL")
+        timeout: Max seconds to wait for a single ticker fetch
+
+    Returns:
+        Stock object or None if failed/timed out
+
+    Raises:
+        TimeoutError: If the fetch exceeds the timeout
+    """
+    try:
+        return await asyncio.wait_for(
+            asyncio.to_thread(fetch_stock_from_api, ticker_symbol),
+            timeout=timeout,
+        )
+    except asyncio.TimeoutError:
+        raise TimeoutError(f"Fetch timed out after {timeout}s for {ticker_symbol}")
 
 
 def _to_pct(value: float | None) -> float | None:
