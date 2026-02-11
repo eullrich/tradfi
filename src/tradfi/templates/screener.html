@@ -38,7 +38,7 @@
 {% macro sortable_th(label, sort_key) %}
 {% set next_dir = "desc" if (sort == sort_key and dir == "asc") else "asc" %}
 <th class="sortable {% if sort == sort_key %}sorted sorted--{{ dir }}{% endif %}">
-  <a href="/screener?universe={{ universe }}{% if preset %}&preset={{ preset }}{% endif %}&profile={{ profile }}&sort={{ sort_key }}&dir={{ next_dir }}{% if search %}&search={{ search }}{% endif %}">
+  <a href="/screener?universe={{ universe }}{% if preset %}&preset={{ preset }}{% endif %}&profile={{ profile }}&sort={{ sort_key }}&dir={{ next_dir }}{% if search %}&search={{ search | urlencode_value }}{% endif %}">
     {{ label }}
     {% if sort == sort_key %}
     <span class="sort-arrow">{{ "&#9650;" if dir == "asc" else "&#9660;" }}</span>
@@ -81,7 +81,7 @@
              hx-get="/screener/results"
              hx-trigger="input changed delay:300ms, search"
              hx-target="#screener-tbody"
-             hx-swap="innerHTML"
+             hx-swap="outerHTML"
              hx-include="#universe-select, #preset-input, #profile-input, #sort-input, #sort-dir-input">
     </div>
 
@@ -104,7 +104,7 @@
   {# ── Profile Tabs ───────────────────────────────────────── #}
   <div class="profile-tabs">
     {% for key in profile_order %}
-    <a href="/screener?universe={{ universe }}{% if preset %}&preset={{ preset }}{% endif %}&profile={{ key }}&sort={{ sort }}&dir={{ dir }}{% if search %}&search={{ search }}{% endif %}"
+    <a href="/screener?universe={{ universe }}{% if preset %}&preset={{ preset }}{% endif %}&profile={{ key }}&sort={{ sort }}&dir={{ dir }}{% if search %}&search={{ search | urlencode_value }}{% endif %}"
        class="profile-tab {% if key == profile %}profile-tab--active{% endif %}">{{ profiles[key] }}</a>
     {% endfor %}
   </div>

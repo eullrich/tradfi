@@ -431,6 +431,14 @@ def de_class(value: float | None) -> str:
     return metric_class(value / 100, DE_THRESHOLDS)
 
 
+def urlencode_value(value: str | None) -> str:
+    """URL-encode a value for safe use in query string parameters."""
+    if not value:
+        return ""
+    from urllib.parse import quote
+    return quote(str(value), safe="")
+
+
 def signal_class(signal: str | None) -> str:
     """Return CSS class for a signal value.
 
@@ -494,6 +502,7 @@ def register_filters(env: "Environment") -> None:
     env.filters["de_class"] = de_class
     env.filters["signal_class"] = signal_class
     env.filters["signal_label"] = signal_label
+    env.filters["urlencode_value"] = urlencode_value
 
     # Globals (accessible in all templates)
     env.globals["METRIC_THRESHOLDS"] = METRIC_THRESHOLDS

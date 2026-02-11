@@ -7,10 +7,11 @@ entrance page require authentication via the session cookie.
 from __future__ import annotations
 
 from pathlib import Path
+from collections.abc import Callable
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from tradfi.core.data import fetch_stock, fetch_stocks_batch
@@ -29,6 +30,7 @@ from tradfi.utils.cache import (
     user_get_lists,
     user_get_watchlist,
 )
+from tradfi.utils.cache import validate_session_token
 from tradfi.web.dependencies import get_current_user
 
 router = APIRouter(tags=["pages"])
@@ -44,7 +46,7 @@ templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
 # Maps sort key strings to (extractor_fn, default_reverse, display_name).
 # Reuses the same logic as the TUI's SORT_OPTIONS.
 
-SORT_KEYS: dict[str, tuple[callable, bool, str]] = {
+SORT_KEYS: dict[str, tuple[Callable, bool, str]] = {
     "ticker": (lambda s: s.ticker, False, "Ticker"),
     "sector": (lambda s: s.sector or "ZZZ", False, "Sector"),
     "price": (lambda s: s.current_price or 0, True, "Price"),
@@ -206,12 +208,15 @@ def _run_screener(
 
 
 @router.get("/", response_class=HTMLResponse)
-async def entrance(request: Request) -> HTMLResponse:
+async def entrance(request: Request) -> HTMLResponse | RedirectResponse:
     """Render the entrance / login page.
 
-    No authentication required. This is the landing page for unauthenticated
-    users.
+    No authentication required. Redirects to /screener if already logged in.
     """
+    token = request.cookies.get("session")
+    if token and validate_session_token(token):
+        return RedirectResponse(url="/screener", status_code=303)
+
     return templates.TemplateResponse(
         "entrance.html",
         {"request": request},
