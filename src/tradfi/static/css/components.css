@@ -1,0 +1,750 @@
+/* ==========================================================================
+   Red Queen — Components
+   UI components for the stock screener: tables, cards, filters, signals,
+   the entrance playing-card flip, tooltips, and HTMX indicators.
+   ========================================================================== */
+
+/* ==========================================================================
+   1. Metric Colors (matching template_helpers.py)
+   ========================================================================== */
+
+.metric--green  { color: var(--positive); }
+.metric--red    { color: var(--negative); }
+.metric--yellow { color: var(--warning); }
+.metric--dim    { color: var(--fg-muted); }
+
+/* ==========================================================================
+   2. Signal Badges
+   ========================================================================== */
+
+.signal-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.signal--strong-buy { background: oklch(60% 0.17 155 / 0.2);  color: var(--positive); }
+.signal--buy        { background: oklch(60% 0.17 155 / 0.12); color: var(--positive); }
+.signal--watch      { background: oklch(70% 0.15 85 / 0.15);  color: var(--warning); }
+.signal--neutral    { background: oklch(55% 0.01 250 / 0.15); color: var(--fg-muted); }
+
+/* ==========================================================================
+   3. Data Table
+   ========================================================================== */
+
+.table-container {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--bg);
+  font-size: 0.875rem;
+}
+
+.data-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--bg-card);
+}
+
+.data-table th {
+  text-align: left;
+  font-weight: 500;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  color: var(--fg-muted);
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.data-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.data-table tbody tr {
+  transition: background 0.1s ease;
+}
+
+.data-table tbody tr:hover {
+  background: var(--bg-hover);
+}
+
+.col-ticker {
+  font-weight: 600;
+  color: var(--primary);
+  white-space: nowrap;
+}
+
+.col-company {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.col-price {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.data-table .font-mono td {
+  text-align: right;
+}
+
+.data-table th.col-right,
+.data-table td.col-right {
+  text-align: right;
+}
+
+/* Sortable column header */
+.data-table th.sortable {
+  cursor: pointer;
+}
+
+.data-table th.sortable:hover {
+  color: var(--fg);
+}
+
+.data-table th.sorted {
+  color: var(--primary);
+}
+
+.data-table th.sortable a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.sort-arrow {
+  font-size: 0.65rem;
+  margin-left: 2px;
+}
+
+/* ==========================================================================
+   4. Metric Cards & Grid (matching metric_card.html macros)
+   ========================================================================== */
+
+.metric-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  transition: border-color 0.15s ease;
+}
+
+.metric-card:hover {
+  border-color: var(--border-hover);
+}
+
+.metric-label {
+  font-size: 0.75rem;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.metric-label[data-tooltip] {
+  cursor: help;
+}
+
+.metric-value {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.metric-value--sm {
+  font-size: 1rem;
+}
+
+.metric-info {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  font-size: 0.6rem;
+  color: var(--fg-muted);
+  flex-shrink: 0;
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-md);
+}
+
+.metric-section {
+  margin-bottom: var(--space-xl);
+}
+
+.metric-section-title {
+  font-family: var(--font-brand);
+  font-size: 1.1rem;
+  margin-bottom: var(--space-md);
+  padding-bottom: var(--space-sm);
+  border-bottom: 1px solid var(--border);
+}
+
+@media (max-width: 1024px) {
+  .metric-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .metric-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .metric-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ==========================================================================
+   5. Filter Bar
+   ========================================================================== */
+
+.filter-bar {
+  display: flex;
+  gap: var(--space-sm);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.filter-bar select {
+  appearance: none;
+  background: var(--bg-input) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23888' stroke-width='1.5' fill='none'/%3E%3C/svg%3E") no-repeat right 10px center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--fg);
+  padding: 6px 32px 6px 10px;
+  font-size: 0.85rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.filter-bar select:hover,
+.filter-bar select:focus {
+  border-color: var(--border-hover);
+  outline: none;
+}
+
+.filter-bar input[type="search"] {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--fg);
+  padding: 6px 10px;
+  width: 200px;
+  font-size: 0.85rem;
+  font-family: inherit;
+  transition: border-color 0.15s ease;
+}
+
+.filter-bar input[type="search"]::placeholder {
+  color: var(--fg-muted);
+}
+
+.filter-bar input[type="search"]:focus {
+  border-color: var(--primary);
+  outline: none;
+}
+
+/* ==========================================================================
+   6. Preset Pills
+   ========================================================================== */
+
+.preset-pills {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.pill {
+  display: inline-block;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  padding: 4px 12px;
+  border-radius: 16px;
+  font-size: 0.8rem;
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  text-decoration: none;
+  font-family: inherit;
+}
+
+.pill:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-hover);
+  color: var(--fg);
+}
+
+.pill--active {
+  background: oklch(65% 0.15 185 / 0.2);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+/* ==========================================================================
+   7. Profile Tabs
+   ========================================================================== */
+
+.profile-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: var(--space-lg);
+}
+
+.profile-tab {
+  padding: 8px 16px;
+  color: var(--fg-muted);
+  font-size: 0.875rem;
+  font-weight: 500;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s ease, border-color 0.15s ease;
+  cursor: pointer;
+  text-decoration: none;
+  background: none;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+  font-family: inherit;
+}
+
+.profile-tab:hover {
+  color: var(--fg);
+}
+
+.profile-tab--active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+
+/* ==========================================================================
+   8. Playing Card Flip (Entrance / Login Page)
+   ========================================================================== */
+
+.entrance {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+.card-scene {
+  perspective: 800px;
+  width: 380px;
+  height: 480px;
+}
+
+.card-flip {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transition: transform 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+  transform-style: preserve-3d;
+}
+
+.card-flip.is-flipped {
+  transform: rotateY(180deg);
+}
+
+.card-face {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+
+.card-back {
+  transform: rotateY(180deg);
+}
+
+.card-front h1 {
+  font-family: var(--font-brand);
+  font-size: 3rem;
+  color: var(--fg);
+  line-height: 1.1;
+}
+
+.card-front h1 span {
+  color: var(--accent);
+}
+
+.card-subtitle {
+  color: var(--fg-muted);
+  margin-top: var(--space-sm);
+  font-style: italic;
+  font-size: 0.95rem;
+  text-align: center;
+}
+
+.card-enter {
+  margin-top: 2rem;
+  background: none;
+  border: 1px solid var(--primary);
+  color: var(--primary);
+  padding: 10px 28px;
+  cursor: pointer;
+  border-radius: var(--radius);
+  font-size: 1rem;
+  font-family: inherit;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.card-enter:hover {
+  background: var(--primary);
+  color: white;
+}
+
+/* Card suit decorations */
+.card-suit {
+  font-size: 2rem;
+  color: var(--accent);
+  opacity: 0.3;
+  position: absolute;
+}
+
+.card-suit--top {
+  top: 1rem;
+  left: 1.5rem;
+}
+
+.card-suit--bottom {
+  bottom: 1rem;
+  right: 1.5rem;
+  transform: rotate(180deg);
+}
+
+.card-tagline {
+  margin-top: var(--space-xs);
+  font-size: 0.8rem;
+}
+
+/* Login form on card back */
+.card-back .login-form {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.card-back .login-form label {
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+  margin-bottom: var(--space-xs);
+  display: block;
+}
+
+.card-back .login-form input[type="email"] {
+  width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  color: var(--fg);
+  font-size: 0.9rem;
+  font-family: inherit;
+  transition: border-color 0.15s ease;
+}
+
+.card-back .login-form input[type="email"]:focus {
+  border-color: var(--primary);
+  outline: none;
+}
+
+.card-back .login-form button {
+  width: 100%;
+  background: var(--primary);
+  border: none;
+  border-radius: var(--radius);
+  padding: 10px;
+  color: white;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s ease;
+}
+
+.card-back .login-form button:hover {
+  background: var(--primary-hover);
+}
+
+/* ==========================================================================
+   9. Auth Messages
+   ========================================================================== */
+
+.auth-message {
+  text-align: center;
+  padding: var(--space-md);
+  margin-top: var(--space-md);
+  border-radius: var(--radius);
+}
+
+.auth-message--success p {
+  color: var(--positive);
+}
+
+.auth-message--error p {
+  color: var(--negative);
+}
+
+/* ==========================================================================
+   10. CSS-only Tooltips
+   ========================================================================== */
+
+[data-tooltip] {
+  position: relative;
+  cursor: help;
+}
+
+[data-tooltip]:hover::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: oklch(20% 0.02 250);
+  border: 1px solid var(--border);
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  font-size: 0.78rem;
+  color: var(--fg);
+  white-space: pre-line;
+  max-width: 300px;
+  z-index: 100;
+  pointer-events: none;
+  line-height: 1.4;
+  box-shadow: 0 4px 12px oklch(0% 0 0 / 0.4);
+}
+
+/* Prevent tooltip from clipping off-screen on left-aligned elements */
+[data-tooltip].tooltip-right:hover::after {
+  left: 0;
+  transform: none;
+}
+
+/* ==========================================================================
+   11. Screener Page
+   ========================================================================== */
+
+.screener-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.result-count {
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+}
+
+/* ==========================================================================
+   12. Stock Detail / Profile
+   ========================================================================== */
+
+.stock-detail {
+  max-width: 900px;
+}
+
+.stock-header h1 {
+  font-family: var(--font-brand);
+  font-size: 1.75rem;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.stock-ticker {
+  font-family: var(--font-mono);
+  color: var(--primary);
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.stock-sector {
+  color: var(--fg-muted);
+  font-size: 0.9rem;
+}
+
+.price-bar {
+  display: flex;
+  gap: 2rem;
+  align-items: baseline;
+  padding: var(--space-md) 0;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.price-bar .price-current {
+  font-family: var(--font-mono);
+  font-size: 1.5rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.price-bar .price-change {
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ==========================================================================
+   13. Lists Page
+   ========================================================================== */
+
+.list-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-md);
+}
+
+.list-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  padding: var(--space-lg);
+  border-radius: var(--radius);
+  transition: background 0.15s ease, border-color 0.15s ease;
+  text-decoration: none;
+  color: inherit;
+  display: block;
+}
+
+.list-card:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-hover);
+}
+
+.list-card h3 {
+  font-family: var(--font-brand);
+  font-size: 1.1rem;
+  margin-bottom: var(--space-xs);
+}
+
+.list-count {
+  font-family: var(--font-mono);
+  color: var(--fg-muted);
+  font-size: 0.85rem;
+}
+
+@media (max-width: 768px) {
+  .list-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .list-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ==========================================================================
+   14. Watchlist
+   ========================================================================== */
+
+.btn-icon {
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: var(--radius);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.btn-icon:hover {
+  color: var(--negative);
+  background: oklch(55% 0.2 25 / 0.1);
+}
+
+/* ==========================================================================
+   15. Empty State
+   ========================================================================== */
+
+.empty-state {
+  text-align: center;
+  padding: 3rem var(--space-lg);
+  color: var(--fg-muted);
+}
+
+.empty-state p {
+  margin-top: var(--space-sm);
+  font-size: 0.9rem;
+}
+
+/* ==========================================================================
+   16. HTMX Loading Indicators
+   ========================================================================== */
+
+.htmx-indicator {
+  display: none;
+}
+
+.htmx-request .htmx-indicator,
+.htmx-request.htmx-indicator {
+  display: inline;
+}
+
+/* Spinner animation for htmx loading */
+@keyframes rq-spin {
+  to { transform: rotate(360deg); }
+}
+
+.htmx-indicator .spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: rq-spin 0.6s linear infinite;
+  vertical-align: middle;
+  margin-right: var(--space-xs);
+}

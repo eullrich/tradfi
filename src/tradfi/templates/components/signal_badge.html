@@ -1,0 +1,20 @@
+{#
+  Signal Badge Component
+  ======================
+  Renders a colored badge for a stock's signal classification.
+
+  Usage:
+    {% from "components/signal_badge.html" import signal_badge %}
+    {{ signal_badge(stock.signal) }}
+
+  Parameters:
+    signal — Signal string (e.g., "strong_buy", "buy", "hold", "sell", "strong_sell")
+
+  Filters used:
+    signal_class — Returns CSS class (e.g., "signal--strong-buy", "signal--sell")
+    signal_label — Returns display label (e.g., "Strong Buy", "Sell")
+#}
+
+{% macro signal_badge(signal) %}
+<span class="signal-badge {{ signal | signal_class }}">{{ signal | signal_label }}</span>
+{% endmacro %}

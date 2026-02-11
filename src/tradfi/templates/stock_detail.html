@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% from "components/metric_card.html" import metric_card, metric_section %}
+{% from "components/signal_badge.html" import signal_badge %}
+
+{% block title %}{{ ticker }} — Red Queen{% endblock %}
+
+{% block content %}
+{% if not stock %}
+<div class="empty-state">
+  <h2>{{ ticker }} not found</h2>
+  <p>This stock may not be in the cache. Try refreshing.</p>
+  <a href="/screener">Back to Screener</a>
+</div>
+{% else %}
+<div class="stock-detail">
+  <header class="stock-header">
+    <div>
+      <h1 class="font-brand">{{ stock.name or stock.ticker }}</h1>
+      <span class="stock-ticker font-mono">{{ stock.ticker }}</span>
+      <span class="stock-sector text-muted">{{ stock.sector or "Unknown" }} · {{ stock.industry or "Unknown" }}</span>
+    </div>
+    {{ signal_badge(stock.signal) }}
+  </header>
+
+  <div class="price-bar">
+    <span class="price-current font-mono">{{ stock.current_price | fmt_price }}</span>
+    <span class="text-muted">MktCap: {{ stock.valuation.market_cap | fmt_large }}</span>
+    {% if stock.technical.low_52w and stock.technical.high_52w %}
+    <span class="text-muted">52W: {{ stock.technical.low_52w | fmt_price }} — {{ stock.technical.high_52w | fmt_price }}</span>
+    {% endif %}
+  </div>
+
+  {# Valuation section #}
+  {{ metric_section("Valuation", [
+    {"label": "P/E (TTM)", "value": stock.valuation.pe_trailing, "formatted": stock.valuation.pe_trailing | fmt_ratio, "thresholds": METRIC_THRESHOLDS.pe_trailing, "tooltip": INDICATOR_TOOLTIPS.get("pe_trailing")},
+    {"label": "P/E (Fwd)", "value": stock.valuation.pe_forward, "formatted": stock.valuation.pe_forward | fmt_ratio, "thresholds": METRIC_THRESHOLDS.pe_forward, "tooltip": INDICATOR_TOOLTIPS.get("pe_forward")},
+    {"label": "P/B", "value": stock.valuation.pb_ratio, "formatted": stock.valuation.pb_ratio | fmt_ratio, "thresholds": METRIC_THRESHOLDS.pb_ratio, "tooltip": INDICATOR_TOOLTIPS.get("pb_ratio")},
+    {"label": "EV/EBITDA", "value": stock.valuation.ev_ebitda, "formatted": stock.valuation.ev_ebitda | fmt_ratio, "thresholds": METRIC_THRESHOLDS.ev_ebitda, "tooltip": INDICATOR_TOOLTIPS.get("ev_ebitda")},
+    {"label": "P/S", "value": stock.valuation.ps_ratio, "formatted": stock.valuation.ps_ratio | fmt_ratio, "thresholds": METRIC_THRESHOLDS.ps_ratio, "tooltip": INDICATOR_TOOLTIPS.get("ps_ratio")},
+    {"label": "PEG", "value": stock.valuation.peg_ratio, "formatted": stock.valuation.peg_ratio | fmt_ratio, "thresholds": METRIC_THRESHOLDS.peg_ratio, "tooltip": INDICATOR_TOOLTIPS.get("peg_ratio")},
+    {"label": "Graham Number", "value": stock.fair_value.graham_number, "formatted": stock.fair_value.graham_number | fmt_price, "tooltip": INDICATOR_TOOLTIPS.get("graham_number")},
+    {"label": "Margin of Safety", "value": stock.fair_value.margin_of_safety_pct, "formatted": stock.fair_value.margin_of_safety_pct | fmt_signed_pct, "thresholds": METRIC_THRESHOLDS.margin_of_safety_pct, "tooltip": INDICATOR_TOOLTIPS.get("margin_of_safety_pct")},
+  ], id="valuation") }}
+
+  {# Profitability section #}
+  {{ metric_section("Profitability", [
+    {"label": "ROE", "value": stock.profitability.roe, "formatted": stock.profitability.roe | fmt_pct, "thresholds": METRIC_THRESHOLDS.roe, "tooltip": INDICATOR_TOOLTIPS.get("roe")},
+    {"label": "ROA", "value": stock.profitability.roa, "formatted": stock.profitability.roa | fmt_pct, "thresholds": METRIC_THRESHOLDS.roa, "tooltip": INDICATOR_TOOLTIPS.get("roa")},
+    {"label": "Gross Margin", "value": stock.profitability.gross_margin, "formatted": stock.profitability.gross_margin | fmt_pct1, "thresholds": METRIC_THRESHOLDS.gross_margin, "tooltip": INDICATOR_TOOLTIPS.get("gross_margin")},
+    {"label": "Op Margin", "value": stock.profitability.operating_margin, "formatted": stock.profitability.operating_margin | fmt_pct1, "thresholds": METRIC_THRESHOLDS.operating_margin, "tooltip": INDICATOR_TOOLTIPS.get("operating_margin")},
+    {"label": "Net Margin", "value": stock.profitability.net_margin, "formatted": stock.profitability.net_margin | fmt_pct1, "thresholds": METRIC_THRESHOLDS.net_margin, "tooltip": INDICATOR_TOOLTIPS.get("net_margin")},
+  ], id="profitability") }}
+
+  {# Financial Health section - note: D/E needs division by 100 #}
+  {% set de_val = stock.financial_health.debt_to_equity %}
+  {% set de_ratio = (de_val / 100) if de_val is not none else none %}
+  {{ metric_section("Financial Health", [
+    {"label": "Current Ratio", "value": stock.financial_health.current_ratio, "formatted": stock.financial_health.current_ratio | fmt_ratio, "thresholds": METRIC_THRESHOLDS.current_ratio, "tooltip": INDICATOR_TOOLTIPS.get("current_ratio")},
+    {"label": "D/E Ratio", "value": de_ratio, "formatted": ("%.2f" | format(de_ratio)) if de_ratio is not none else "-", "thresholds": METRIC_THRESHOLDS.debt_to_equity, "tooltip": INDICATOR_TOOLTIPS.get("debt_to_equity")},
+    {"label": "Interest Coverage", "value": stock.financial_health.interest_coverage, "formatted": stock.financial_health.interest_coverage | fmt_ratio, "thresholds": METRIC_THRESHOLDS.interest_coverage, "tooltip": INDICATOR_TOOLTIPS.get("interest_coverage")},
+    {"label": "Free Cash Flow", "value": stock.financial_health.free_cash_flow, "formatted": stock.financial_health.free_cash_flow | fmt_large, "tooltip": INDICATOR_TOOLTIPS.get("free_cash_flow")},
+  ], id="financial-health") }}
+
+  {# Technical section #}
+  {{ metric_section("Technical / Oversold", [
+    {"label": "RSI (14-day)", "value": stock.technical.rsi_14, "formatted": stock.technical.rsi_14 | fmt_ratio, "thresholds": METRIC_THRESHOLDS.rsi_14, "tooltip": INDICATOR_TOOLTIPS.get("rsi_14")},
+    {"label": "vs 50-day MA", "value": stock.technical.price_vs_ma_50_pct, "formatted": stock.technical.price_vs_ma_50_pct | fmt_signed_pct, "tooltip": INDICATOR_TOOLTIPS.get("price_vs_ma_50_pct")},
+    {"label": "vs 200-day MA", "value": stock.technical.price_vs_ma_200_pct, "formatted": stock.technical.price_vs_ma_200_pct | fmt_signed_pct, "tooltip": INDICATOR_TOOLTIPS.get("price_vs_ma_200_pct")},
+    {"label": "From 52W High", "value": stock.technical.pct_from_52w_high, "formatted": stock.technical.pct_from_52w_high | fmt_signed_pct, "tooltip": INDICATOR_TOOLTIPS.get("pct_from_52w_high")},
+    {"label": "From 52W Low", "value": stock.technical.pct_from_52w_low, "formatted": stock.technical.pct_from_52w_low | fmt_signed_pct, "tooltip": INDICATOR_TOOLTIPS.get("pct_from_52w_low")},
+  ], id="technical") }}
+
+  {# Growth section #}
+  {{ metric_section("Growth", [
+    {"label": "Revenue Growth (YoY)", "value": stock.growth.revenue_growth_yoy, "formatted": stock.growth.revenue_growth_yoy | fmt_signed_pct, "thresholds": METRIC_THRESHOLDS.revenue_growth_yoy, "tooltip": INDICATOR_TOOLTIPS.get("revenue_growth_yoy")},
+    {"label": "Earnings Growth (YoY)", "value": stock.growth.earnings_growth_yoy, "formatted": stock.growth.earnings_growth_yoy | fmt_signed_pct, "thresholds": METRIC_THRESHOLDS.earnings_growth_yoy, "tooltip": INDICATOR_TOOLTIPS.get("earnings_growth_yoy")},
+    {"label": "FCF Yield", "value": stock.buyback.fcf_yield_pct, "formatted": stock.buyback.fcf_yield_pct | fmt_pct1, "thresholds": METRIC_THRESHOLDS.fcf_yield_pct, "tooltip": INDICATOR_TOOLTIPS.get("fcf_yield_pct")},
+  ], id="growth") }}
+
+  {# Dividends section (conditional) #}
+  {% if stock.dividends.dividend_yield and stock.dividends.dividend_yield > 0 %}
+  {{ metric_section("Dividends", [
+    {"label": "Dividend Yield", "value": stock.dividends.dividend_yield, "formatted": stock.dividends.dividend_yield | fmt_pct1, "thresholds": METRIC_THRESHOLDS.dividend_yield, "tooltip": INDICATOR_TOOLTIPS.get("dividend_yield")},
+    {"label": "Payout Ratio", "value": stock.dividends.payout_ratio, "formatted": stock.dividends.payout_ratio | fmt_pct, "thresholds": METRIC_THRESHOLDS.payout_ratio, "tooltip": INDICATOR_TOOLTIPS.get("payout_ratio")},
+    {"label": "Annual Dividend", "value": stock.dividends.dividend_rate, "formatted": stock.dividends.dividend_rate | fmt_price},
+  ], id="dividends") }}
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

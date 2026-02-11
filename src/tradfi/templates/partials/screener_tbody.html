@@ -1,0 +1,21 @@
+{#
+  Screener Table Body
+  ===================
+  Renders the <tbody> for the screener data table.
+  Used both on full page load and as an HTMX swap target for search.
+
+  Context:
+    stocks  — List of Stock objects to render
+    profile — Current column profile key
+#}
+
+{% from "components/stock_row.html" import stock_row %}
+
+<tbody id="screener-tbody">
+{% for stock in stocks %}
+  {{ stock_row(stock, profile) }}
+{% endfor %}
+{% if not stocks %}
+  <tr><td colspan="11" class="empty-state">No stocks match the current filters.</td></tr>
+{% endif %}
+</tbody>

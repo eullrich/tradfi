@@ -1,0 +1,197 @@
+{#
+  Screener Page
+  =============
+  Main stock screening data table with filter bar, column profiles, sort, and search.
+
+  Context variables (from routes.py):
+    stocks        — List of Stock objects
+    universe      — Current universe key (e.g., "sp500")
+    preset        — Current preset key or None
+    sort          — Current sort key
+    dir      — "asc" or "desc"
+    profile       — Current column profile key (e.g., "overview")
+    search        — Search string or ""
+    universes     — Dict of universe_key -> description
+    presets       — Dict of preset_key -> {name, criteria}
+    profiles      — Dict of profile_key -> display_name
+    profile_order — List of profile keys in display order
+    total_count   — Number of matching stocks
+    user          — Authenticated user dict
+#}
+
+{% extends "base.html" %}
+
+{% block title %}Screener — Red Queen{% endblock %}
+
+{% block content %}
+
+{# ── Sortable Table Header Macro ──────────────────────────── #}
+{#
+  Renders a <th> with a sort toggle link.
+  Clicking toggles asc/desc on the current sort key, or sets asc for a new key.
+  Uses hx-boost from the <body> for HTMX-powered navigation.
+
+  Parameters:
+    label    — Display text for the column header
+    sort_key — Sort key string matching SORT_KEYS
+#}
+{% macro sortable_th(label, sort_key) %}
+{% set next_dir = "desc" if (sort == sort_key and dir == "asc") else "asc" %}
+<th class="sortable {% if sort == sort_key %}sorted sorted--{{ dir }}{% endif %}">
+  <a href="/screener?universe={{ universe }}{% if preset %}&preset={{ preset }}{% endif %}&profile={{ profile }}&sort={{ sort_key }}&dir={{ next_dir }}{% if search %}&search={{ search }}{% endif %}">
+    {{ label }}
+    {% if sort == sort_key %}
+    <span class="sort-arrow">{{ "&#9650;" if dir == "asc" else "&#9660;" }}</span>
+    {% endif %}
+  </a>
+</th>
+{% endmacro %}
+
+<div class="screener-page">
+
+  {# ── Filter Bar ──────────────────────────────────────────── #}
+  <div class="filter-bar">
+
+    {# Universe selector #}
+    <div>
+      <label for="universe-select" class="text-muted" style="font-size:0.8rem">Universe</label>
+      <select id="universe-select" name="universe"
+              hx-get="/screener"
+              hx-trigger="change"
+              hx-target="body"
+              hx-push-url="true"
+              hx-include="#preset-input, #profile-input, #sort-input, #sort-dir-input">
+        {% for key, desc in universes.items() %}
+        <option value="{{ key }}" {% if key == universe %}selected{% endif %}>{{ desc }}</option>
+        {% endfor %}
+      </select>
+      <input type="hidden" id="preset-input" name="preset" value="{{ preset or '' }}">
+      <input type="hidden" id="profile-input" name="profile" value="{{ profile }}">
+      <input type="hidden" id="sort-input" name="sort" value="{{ sort }}">
+      <input type="hidden" id="sort-dir-input" name="dir" value="{{ dir }}">
+    </div>
+
+    {# Search #}
+    <div>
+      <input type="search"
+             id="screener-search"
+             name="search"
+             placeholder="Search ticker or name..."
+             value="{{ search }}"
+             hx-get="/screener/results"
+             hx-trigger="input changed delay:300ms, search"
+             hx-target="#screener-tbody"
+             hx-swap="innerHTML"
+             hx-include="#universe-select, #preset-input, #profile-input, #sort-input, #sort-dir-input">
+    </div>
+
+    {# Stock count #}
+    <div>
+      <span class="result-count text-muted">{{ total_count }} stock{{ "s" if total_count != 1 }}</span>
+    </div>
+  </div>
+
+  {# ── Preset Pills ───────────────────────────────────────── #}
+  <div class="preset-pills">
+    <a href="/screener?universe={{ universe }}&profile={{ profile }}&sort={{ sort }}&dir={{ dir }}"
+       class="pill {% if not preset %}pill--active{% endif %}">All</a>
+    {% for key, p in presets.items() %}
+    <a href="/screener?universe={{ universe }}&preset={{ key }}&profile={{ profile }}&sort={{ sort }}&dir={{ dir }}"
+       class="pill {% if key == preset %}pill--active{% endif %}">{{ p.name }}</a>
+    {% endfor %}
+  </div>
+
+  {# ── Profile Tabs ───────────────────────────────────────── #}
+  <div class="profile-tabs">
+    {% for key in profile_order %}
+    <a href="/screener?universe={{ universe }}{% if preset %}&preset={{ preset }}{% endif %}&profile={{ key }}&sort={{ sort }}&dir={{ dir }}{% if search %}&search={{ search }}{% endif %}"
+       class="profile-tab {% if key == profile %}profile-tab--active{% endif %}">{{ profiles[key] }}</a>
+    {% endfor %}
+  </div>
+
+  {# ── Data Table ──────────────────────────────────────────── #}
+  <div class="table-container">
+    <table class="data-table">
+      <thead>
+        <tr>
+          {# Fixed headers #}
+          {{ sortable_th("Ticker", "ticker") }}
+          <th class="col-company">Company</th>
+          {{ sortable_th("Price", "price") }}
+
+          {# ── Overview headers ──────────────────────────── #}
+          {% if profile == "overview" %}
+          {{ sortable_th("P/E", "pe") }}
+          {{ sortable_th("EV/EBITDA", "ev") }}
+          {{ sortable_th("ROE", "roe") }}
+          {{ sortable_th("D/E", "de") }}
+          {{ sortable_th("FCF Yld", "fcfy") }}
+          {{ sortable_th("RSI", "rsi") }}
+          {{ sortable_th("MoS%", "mos") }}
+          {{ sortable_th("Signal", "signal") }}
+
+          {# ── Value headers ─────────────────────────────── #}
+          {% elif profile == "value" %}
+          {{ sortable_th("P/E", "pe") }}
+          <th>P/E Fwd</th>
+          {{ sortable_th("P/B", "pb") }}
+          {{ sortable_th("EV/EBITDA", "ev") }}
+          <th>P/S</th>
+          <th>PEG</th>
+          {{ sortable_th("MoS%", "mos") }}
+          <th>Graham</th>
+
+          {# ── Quality headers ───────────────────────────── #}
+          {% elif profile == "quality" %}
+          {{ sortable_th("ROE", "roe") }}
+          <th>ROA</th>
+          <th>OpMarg</th>
+          <th>NetMarg</th>
+          <th>CurRat</th>
+          {{ sortable_th("D/E", "de") }}
+          <th>IntCov</th>
+          <th>RevGr</th>
+
+          {# ── Cash Flow headers ─────────────────────────── #}
+          {% elif profile == "cashflow" %}
+          {{ sortable_th("FCF Yld", "fcfy") }}
+          <th>FCF</th>
+          <th>OCF</th>
+          <th>Cash/Sh</th>
+          <th>EV/FCF</th>
+          <th>TotDebt</th>
+          <th>TotCash</th>
+          <th>NetInc</th>
+
+          {# ── Technical headers ─────────────────────────── #}
+          {% elif profile == "technical" %}
+          {{ sortable_th("RSI", "rsi") }}
+          <th>vs50MA</th>
+          <th>vs200MA</th>
+          <th>Frm52H</th>
+          <th>1M</th>
+          <th>6M</th>
+          <th>1Y</th>
+          <th>Frm52L</th>
+
+          {# ── Ownership headers ─────────────────────────── #}
+          {% elif profile == "ownership" %}
+          <th>Insider%</th>
+          <th>Instit%</th>
+          {{ sortable_th("FCF Yld", "fcfy") }}
+          <th>MktCap</th>
+          {{ sortable_th("Div%", "div") }}
+          <th>Payout</th>
+          <th>ErnGr</th>
+          {{ sortable_th("Signal", "signal") }}
+          {% endif %}
+        </tr>
+      </thead>
+
+      {# Table body — swappable via HTMX for search #}
+      {% include "partials/screener_tbody.html" %}
+    </table>
+  </div>
+
+</div>
+{% endblock %}
