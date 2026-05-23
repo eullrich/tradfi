@@ -3,8 +3,6 @@
 `fastapi-cli` looks for `main.py` / `app.py` / `api.py` at the repo root and
 imports `app` from it. This module exists solely to satisfy that contract;
 the real FastAPI app lives in `src/tradfi/api/main.py`.
-
-For Railway/Heroku-style deploys see `server.py`.
 """
 
 import sys

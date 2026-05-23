@@ -7,22 +7,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 TradFi is a Python value-investing tool with three surfaces sharing one backend:
 1. **CLI** (`tradfi ...`) — Typer-based commands for analyze/screen/quarterly/list/compare.
 2. **TUI** (`tradfi ui`) — Textual app for browsing/screening.
-3. **Web + REST API** (`tradfi api`, deployed to Railway) — FastAPI server with HTMX/Jinja web frontend at `/` and JSON API at `/api/v1/*`.
+3. **Web + REST API** (`tradfi api`, deployed to FastAPI Cloud) — FastAPI server with HTMX/Jinja web frontend at `/` and JSON API at `/api/v1/*`.
 
 ## Architecture
 
 ### Remote-first CLI/TUI
 
-The CLI and TUI **do not fetch yfinance data directly**. They call the hosted API at `TRADFI_API_URL` (defaults to `https://deepv-production.up.railway.app`) via `core/remote_provider.py` (persistent `httpx.Client` with connection pooling). Only the server-side code (`core/data.py`) talks to yfinance. When testing screening/analysis logic locally without a running API, you need to either run `tradfi api` in a separate terminal or point `TRADFI_API_URL` at a local server.
+The CLI and TUI **do not fetch yfinance data directly**. They call the hosted API at `TRADFI_API_URL` (default in `cli.py`) via `core/remote_provider.py` (persistent `httpx.Client` with connection pooling). Only the server-side code (`core/data.py`) talks to yfinance. When testing screening/analysis logic locally without a running API, you need to either run `tradfi api` in a separate terminal or point `TRADFI_API_URL` at a local server.
 
-### Deployment entry points
+### Deployment entry point
 
-Two entry-point shims at the repo root both re-export the same `app` from `tradfi.api.main`:
+`main.py` at the repo root re-exports `app` from `tradfi.api.main` and is what `fastapi deploy` / `fastapi run` auto-discover (`fastapi-cli` scans `main.py` / `app.py` / `api.py`). It injects `src/` onto `sys.path` so `tradfi` is importable without `pip install`.
 
-- **`main.py`** — auto-discovered by `fastapi deploy` (FastAPI Cloud). `fastapi-cli` scans `main.py` / `app.py` / `api.py` at the cwd and imports `app`. Used by `fastapi deploy` and `fastapi run`.
-- **`server.py`** — booted by `Procfile` / `nixpacks.toml` / `railway.json` via `uvicorn server:app` for Railway-style deploys.
-
-Both inject `src/` onto `sys.path` so `tradfi` is importable when the app isn't pip-installed. The bare `src/tradfi/api.py` file is **legacy** — the live app lives in `src/tradfi/api/main.py`, which mounts API routers under `/api/v1` (stocks, screening, lists, watchlist, cache, refresh, currency, users), web routes (Jinja templates under `templates/`), static files from `static/`, an APScheduler lifespan running `api/scheduler.py:refresh_universe` daily, and `SecurityHeadersMiddleware` + optional CORS.
+The bare `src/tradfi/api.py` file is **legacy** — the live app lives in `src/tradfi/api/main.py`, which mounts API routers under `/api/v1` (stocks, screening, lists, watchlist, cache, refresh, currency, users), web routes (Jinja templates under `templates/`), static files from `static/`, an APScheduler lifespan running `api/scheduler.py:refresh_universe` daily, and `SecurityHeadersMiddleware` + optional CORS.
 
 ### FastAPI Cloud deploy
 
@@ -116,7 +113,7 @@ ruff check . && ruff format .
 
 | Var | Purpose |
 |-----|---------|
-| `TRADFI_API_URL` | Remote API endpoint for CLI/TUI (default: hosted Railway URL) |
+| `TRADFI_API_URL` | Remote API endpoint for CLI/TUI (default: hosted production URL in `cli.py`) |
 | `TRADFI_ADMIN_KEY` | Server-side admin key + client `X-Admin-Key` for destructive ops |
 | `TRADFI_ADMIN_DEV_MODE` | `1` to allow admin endpoints without a key (local dev only) |
 | `TRADFI_DEV_MODE` | `1` to return magic-link tokens in HTTP responses (else email-only) |
