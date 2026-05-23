@@ -15,10 +15,27 @@ TradFi is a Python value-investing tool with three surfaces sharing one backend:
 
 The CLI and TUI **do not fetch yfinance data directly**. They call the hosted API at `TRADFI_API_URL` (defaults to `https://deepv-production.up.railway.app`) via `core/remote_provider.py` (persistent `httpx.Client` with connection pooling). Only the server-side code (`core/data.py`) talks to yfinance. When testing screening/analysis logic locally without a running API, you need to either run `tradfi api` in a separate terminal or point `TRADFI_API_URL` at a local server.
 
-### Deployment entry point
+### Deployment entry points
 
-- `server.py` (repo root) imports `tradfi.api.main:app` and is what `Procfile` / `nixpacks.toml` / `railway.json` boot via `uvicorn server:app`. The bare `src/tradfi/api.py` file is **legacy** — the live app lives in `src/tradfi/api/main.py`.
-- `api/main.py` mounts: API routers under `/api/v1` (stocks, screening, lists, watchlist, cache, refresh, currency, users), web routes (Jinja templates under `templates/`), static files from `static/`, an APScheduler lifespan that runs `api/scheduler.py:refresh_universe` daily, and `SecurityHeadersMiddleware` + optional CORS.
+Two entry-point shims at the repo root both re-export the same `app` from `tradfi.api.main`:
+
+- **`main.py`** — auto-discovered by `fastapi deploy` (FastAPI Cloud). `fastapi-cli` scans `main.py` / `app.py` / `api.py` at the cwd and imports `app`. Used by `fastapi deploy` and `fastapi run`.
+- **`server.py`** — booted by `Procfile` / `nixpacks.toml` / `railway.json` via `uvicorn server:app` for Railway-style deploys.
+
+Both inject `src/` onto `sys.path` so `tradfi` is importable when the app isn't pip-installed. The bare `src/tradfi/api.py` file is **legacy** — the live app lives in `src/tradfi/api/main.py`, which mounts API routers under `/api/v1` (stocks, screening, lists, watchlist, cache, refresh, currency, users), web routes (Jinja templates under `templates/`), static files from `static/`, an APScheduler lifespan running `api/scheduler.py:refresh_universe` daily, and `SecurityHeadersMiddleware` + optional CORS.
+
+### FastAPI Cloud deploy
+
+```bash
+fastapi login                                       # one-time
+fastapi cloud env set TURSO_DATABASE_URL libsql://... # persistent DB
+fastapi cloud env set TURSO_AUTH_TOKEN ...
+fastapi cloud env set TRADFI_ADMIN_KEY ...
+fastapi cloud env set TRADFI_DB_PATH /tmp/cache.db  # writable on ephemeral host
+fastapi deploy                                      # creates / updates the app
+```
+
+`.fastapicloud/cloud.json` (created on first deploy/link) holds the app+team IDs and is gitignored per FastAPI Cloud's docs.
 
 ### Auth model (two tiers)
 

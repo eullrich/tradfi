@@ -58,3 +58,6 @@ Thumbs.db
 
 # Project specific
 tradfi_cache.db
+
+# FastAPI Cloud link metadata (per their docs — do not commit)
+.fastapicloud/
