@@ -17,6 +17,14 @@ CACHE_DIR = Path(os.environ.get("TRADFI_DATA_DIR", str(Path.home() / ".tradfi"))
 CACHE_DB = Path(os.environ.get("TRADFI_DB_PATH", str(CACHE_DIR / "cache.db")))
 CONFIG_FILE = Path(os.environ.get("TRADFI_CONFIG_PATH", str(CACHE_DIR / "config.json")))
 
+# Turso (libSQL) configuration. When TURSO_DATABASE_URL is set, the SQLite
+# file at CACHE_DB becomes a libSQL embedded replica: reads stay disk-fast,
+# writes go to the remote primary, so data persists across deploys on
+# ephemeral hosts like FastAPI Cloud.
+TURSO_DATABASE_URL = os.environ.get("TURSO_DATABASE_URL")
+TURSO_AUTH_TOKEN = os.environ.get("TURSO_AUTH_TOKEN")
+TURSO_ENABLED = bool(TURSO_DATABASE_URL)
+
 # Default settings - use env var for cloud deployments
 DEFAULT_CACHE_TTL = int(os.environ.get("TRADFI_CACHE_TTL", 24 * 60 * 60))  # 24 hours default
 # Yahoo Finance allows ~360 requests/hour = 1 request per 10 seconds
@@ -265,7 +273,7 @@ class _PersistentConnection:
     pooling, we want to keep the connection alive, so close() is a no-op.
     """
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn) -> None:
         self._conn = conn
 
     def close(self) -> None:
@@ -275,12 +283,137 @@ class _PersistentConnection:
         return getattr(self._conn, name)
 
 
-def get_db_connection() -> sqlite3.Connection:
+# ----------------------------------------------------------------------------
+# libSQL (Turso) compatibility shim
+#
+# libsql-experimental returns plain tuples and raises ValueError for constraint
+# violations. The codebase relies on sqlite3.Row (dict-style access, dict(row))
+# and `except sqlite3.IntegrityError`. These wrappers make libsql look like
+# sqlite3 so the rest of the module stays unchanged.
+# ----------------------------------------------------------------------------
+
+
+class _RowDict:
+    """sqlite3.Row-compatible view over a libsql tuple row."""
+
+    __slots__ = ("_row", "_cols")
+
+    def __init__(self, row: tuple, cols: dict[str, int]) -> None:
+        self._row = row
+        self._cols = cols
+
+    def __getitem__(self, key):
+        if isinstance(key, str):
+            return self._row[self._cols[key]]
+        return self._row[key]
+
+    def __iter__(self):
+        return iter(self._cols)  # iterate keys, like sqlite3.Row
+
+    def __len__(self) -> int:
+        return len(self._row)
+
+    def keys(self) -> list[str]:
+        return list(self._cols.keys())
+
+
+class _LibsqlCursor:
+    """Wraps a libsql Cursor to yield _RowDict rows on fetch."""
+
+    def __init__(self, cur) -> None:
+        self._cur = cur
+        self._cols_cache: dict[str, int] | None = None
+
+    def _cols(self) -> dict[str, int]:
+        if self._cols_cache is None and self._cur.description:
+            self._cols_cache = {d[0]: i for i, d in enumerate(self._cur.description)}
+        return self._cols_cache or {}
+
+    def fetchone(self):
+        row = self._cur.fetchone()
+        return _RowDict(row, self._cols()) if row is not None else None
+
+    def fetchall(self) -> list:
+        cols = self._cols()
+        return [_RowDict(r, cols) for r in self._cur.fetchall()]
+
+    def __getattr__(self, name: str):
+        return getattr(self._cur, name)
+
+
+def _translate_libsql_error(exc: ValueError) -> Exception | None:
+    """Map libsql constraint ValueErrors to sqlite3.IntegrityError."""
+    msg = str(exc)
+    lowered = msg.lower()
+    if "unique" in lowered or "constraint" in lowered or "foreign key" in lowered:
+        return sqlite3.IntegrityError(msg)
+    return None
+
+
+class _LibsqlConnection:
+    """Adapts a libsql Connection to the subset of the sqlite3 API the codebase uses."""
+
+    def __init__(self, conn) -> None:
+        self._conn = conn
+
+    def execute(self, sql: str, params=()):
+        try:
+            return _LibsqlCursor(self._conn.execute(sql, params))
+        except ValueError as e:
+            mapped = _translate_libsql_error(e)
+            if mapped:
+                raise mapped from e
+            raise
+
+    def executescript(self, sql: str):
+        try:
+            return self._conn.executescript(sql)
+        except ValueError as e:
+            mapped = _translate_libsql_error(e)
+            if mapped:
+                raise mapped from e
+            raise
+
+    def commit(self):
+        try:
+            return self._conn.commit()
+        except ValueError as e:
+            mapped = _translate_libsql_error(e)
+            if mapped:
+                raise mapped from e
+            raise
+
+    def __getattr__(self, name: str):
+        return getattr(self._conn, name)
+
+
+def _open_turso_connection():
+    """Open a libsql embedded-replica connection synced to the remote primary."""
+    import libsql_experimental as libsql
+
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    raw = libsql.connect(
+        str(CACHE_DB),
+        sync_url=TURSO_DATABASE_URL,
+        auth_token=TURSO_AUTH_TOKEN,
+    )
+    # Pull latest from remote into the local replica. On first connection
+    # against an empty remote this is a no-op; subsequent boots populate
+    # the ephemeral local file from the persistent remote.
+    try:
+        raw.sync()
+    except Exception:
+        pass
+    return _LibsqlConnection(raw)
+
+
+def get_db_connection():
     """Get a thread-local connection to the cache database.
 
     Uses connection pooling (one connection per thread) and applies
     performance-tuned PRAGMAs on first connection. Schema initialization
-    runs only once per process.
+    runs only once per process. When TURSO_DATABASE_URL is set, uses a
+    libsql embedded replica instead of a plain SQLite file.
     """
     global _db_initialized
 
@@ -288,17 +421,27 @@ def get_db_connection() -> sqlite3.Connection:
     if conn is not None:
         return _PersistentConnection(conn)
 
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(CACHE_DB, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
+    if TURSO_ENABLED:
+        conn = _open_turso_connection()
+    else:
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(CACHE_DB, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
 
-    # Performance PRAGMAs — applied once per connection
-    conn.execute("PRAGMA journal_mode=WAL")  # ~5x faster concurrent reads
-    conn.execute("PRAGMA synchronous=NORMAL")  # Safe with WAL, ~2x faster writes
-    conn.execute("PRAGMA busy_timeout=5000")  # Wait 5s on lock instead of failing
-    conn.execute("PRAGMA cache_size=-64000")  # 64MB page cache
-    conn.execute("PRAGMA mmap_size=268435456")  # 256MB memory-mapped I/O
-    conn.execute("PRAGMA temp_store=MEMORY")  # Temp tables in RAM
+    # Performance PRAGMAs — applied once per connection.
+    # libsql may reject some, so swallow errors individually.
+    for pragma in (
+        "PRAGMA journal_mode=WAL",
+        "PRAGMA synchronous=NORMAL",
+        "PRAGMA busy_timeout=5000",
+        "PRAGMA cache_size=-64000",
+        "PRAGMA mmap_size=268435456",
+        "PRAGMA temp_store=MEMORY",
+    ):
+        try:
+            conn.execute(pragma)
+        except Exception:
+            pass
 
     if not _db_initialized:
         _init_db(conn)
@@ -308,7 +451,7 @@ def get_db_connection() -> sqlite3.Connection:
     return _PersistentConnection(conn)
 
 
-def _init_db(conn: sqlite3.Connection) -> None:
+def _init_db(conn) -> None:
     """Initialize the database schema."""
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS stock_cache (
@@ -473,7 +616,7 @@ def _init_db(conn: sqlite3.Connection) -> None:
     _run_migrations(conn)
 
 
-def _run_migrations(conn: sqlite3.Connection) -> None:
+def _run_migrations(conn) -> None:
     """Run schema migrations to add new columns."""
     # Check and add 'shares' column to list_item_notes
     cursor = conn.execute("PRAGMA table_info(list_item_notes)")

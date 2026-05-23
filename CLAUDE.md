@@ -27,9 +27,10 @@ The CLI and TUI **do not fetch yfinance data directly**. They call the hosted AP
 
 ### Cache layer
 
-- SQLite at `~/.tradfi/cache.db` (override via `TRADFI_DATA_DIR` or `TRADFI_DB_PATH` for cloud deployments).
-- `utils/cache.py` (~2400 LOC) is the single source of truth: stock cache w/ TTL, watchlist, saved lists, list categories, list item notes/positions, smart lists, users, and auth tokens. Connections use `check_same_thread=False`; a `ttl_cache` decorator memoizes aggregate queries (stats, sectors) to avoid hammering SQLite.
+- SQLite at `~/.tradfi/cache.db` by default (override via `TRADFI_DATA_DIR` or `TRADFI_DB_PATH`).
+- `utils/cache.py` (~2500 LOC) is the single source of truth: stock cache w/ TTL, watchlist, saved lists, list categories, list item notes/positions, smart lists, users, and auth tokens. Connections use `check_same_thread=False`; a `ttl_cache` decorator memoizes aggregate queries (stats, sectors) to avoid hammering SQLite.
 - `DEFAULT_CACHE_TTL` is 24h (`TRADFI_CACHE_TTL` env override).
+- **Turso (libSQL) embedded replica mode** for persistent storage on ephemeral hosts (FastAPI Cloud, Fly Machines): set `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN` and the SQLite file at `CACHE_DB` becomes a local replica that reads from disk and writes through to the remote primary. `get_db_connection()` swaps drivers transparently — `_LibsqlConnection` / `_LibsqlCursor` / `_RowDict` in `utils/cache.py` translate libsql's tuple rows back into `sqlite3.Row`-style dict access and map `ValueError` constraint violations to `sqlite3.IntegrityError` so the rest of the module is unchanged.
 
 ### Screening pipeline
 
@@ -103,6 +104,7 @@ ruff check . && ruff format .
 | `TRADFI_ADMIN_DEV_MODE` | `1` to allow admin endpoints without a key (local dev only) |
 | `TRADFI_DEV_MODE` | `1` to return magic-link tokens in HTTP responses (else email-only) |
 | `TRADFI_DATA_DIR` / `TRADFI_DB_PATH` | Override SQLite location (cloud deploys) |
+| `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` | When set, the DB at `CACHE_DB` becomes a libSQL embedded replica syncing to Turso (required for persistent storage on ephemeral hosts) |
 | `TRADFI_CACHE_TTL` | Cache TTL in seconds (default 86400) |
 | `TRADFI_CORS_ORIGINS` | `*` for dev, comma-separated origins for prod, unset = no CORS |
 | `TRADFI_REFRESH_HOUR` / `TRADFI_REFRESH_UNIVERSES` / `TRADFI_REFRESH_ENABLED` | Daily refresh config |
